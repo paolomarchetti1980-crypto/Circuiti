@@ -1114,7 +1114,9 @@ async function makeImage(){
 
 /* ---------- pubblicazione ---------- */
 async function sendLoginLink(){
-  const email = (ui.loginEmail || '').trim();
+  const inp = document.getElementById('lemail');
+  const email = ((inp && inp.value) || ui.loginEmail || '').trim();
+  ui.loginEmail = email;
   if(!SB || !/^\S+@\S+\.\S+$/.test(email)){ toast('Scrivi un\'email valida.'); return; }
   const { error } = await SB.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname } });
   if(error){ toast('Invio non riuscito: ' + (error.message || 'riprova tra poco.')); return; }
@@ -1351,8 +1353,8 @@ document.addEventListener('click', e => {
 
 document.addEventListener('input', e => {
   const c = curCircuit(), w = curWall();
+  if(e.target.id === 'lemail'){ ui.loginEmail = e.target.value.trim(); return; }
   if(!EDIT) return;
-  if(e.target.id === 'lemail'){ ui.loginEmail = e.target.value.trim(); }
   if(e.target.id === 'cname' && c){ c.name = e.target.value || 'Circuito'; renderChips(); touch(); }
   if(e.target.id === 'wname' && w){ w.name = e.target.value || 'Muro'; renderTop(); touch(); }
   if(e.target.id === 'cgrade' && c){ if(e.target.value) c.grade = e.target.value; else delete c.grade; renderChips(); touch(); }
