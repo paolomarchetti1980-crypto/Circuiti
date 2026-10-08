@@ -32,4 +32,4 @@ create policy "foto caricamento" on storage.objects for insert with check (bucke
 create policy "foto aggiornamento" on storage.objects for update using (bucket_id = 'walls' and public.is_editor());
 
 -- gestori: chi può modificare (aggiungere altre email con la stessa riga)
-insert into public.editors (email) values ('EMAIL_GESTORE') on conflict do nothing;
+insert into public.editors (email) values ('paolo.marchetti1980@gmail.com') on conflict do nothing;
