@@ -570,6 +570,156 @@ async function samplePanelColor(w, x, y){
   const d = g.getImageData(0, 0, 1, 1).data;
   return [d[0], d[1], d[2]];
 }
+
+/* ---------- SAM (MobileSAM) nel browser: il telefono "studia" la foto una volta, poi ogni tocco dà il contorno quasi subito ---------- */
+const SAMCFG = { ort: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/', enc: 'models/mobilesam_encoder.onnx', dec: 'models/mobilesam_decoder.onnx' };
+const sam = { state: 'off', enc: null, dec: null, emb: {}, loading: null };
+function loadScript(src){ return new Promise((res, rej) => { const el = document.createElement('script'); el.src = src; el.onload = res; el.onerror = rej; document.head.appendChild(el); }); }
+async function samInit(){
+  if(sam.state === 'ready') return true;
+  if(sam.state === 'failed') return false;
+  if(sam.loading) return sam.loading;
+  sam.loading = (async () => {
+    sam.state = 'loading'; renderTools();
+    try{
+      if(!window.ort) await loadScript(SAMCFG.ort + 'ort.min.js');
+      ort.env.wasm.wasmPaths = SAMCFG.ort;
+      ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
+      const o = { executionProviders: ['wasm'], graphOptimizationLevel: 'all' };
+      sam.dec = await ort.InferenceSession.create(SAMCFG.dec, o);
+      sam.enc = await ort.InferenceSession.create(SAMCFG.enc, o);
+      sam.state = 'ready'; return true;
+    }catch(e){ console.warn('SAM non disponibile', e); sam.state = 'failed'; return false; }
+    finally{ sam.loading = null; renderTools(); }
+  })();
+  return sam.loading;
+}
+function samKey(w){ return w.id + '|' + w.w + 'x' + w.h + '|' + String(w.img).length + String(w.img).slice(-32); }
+async function samEmbed(w){
+  const key = samKey(w), cur = sam.emb[w.id];
+  if(cur && cur.key === key){ return cur.e ? cur : cur.pending; }
+  const pending = (async () => {
+    const im = await loadImg(w.img);
+    const s = 1024 / Math.max(w.w, w.h);
+    const rw = Math.max(1, Math.round(w.w*s)), rh = Math.max(1, Math.round(w.h*s));
+    const cv = document.createElement('canvas'); cv.width = rw; cv.height = rh;
+    const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0, rw, rh);
+    const d = g.getImageData(0, 0, rw, rh).data, P = 1024*1024, t = new Float32Array(3*P);
+    for(let y=0; y<rh; y++) for(let x=0; x<rw; x++){
+      const i = (y*rw + x)*4, j = y*1024 + x;
+      t[j] = (d[i] - 123.675)/58.395; t[P+j] = (d[i+1] - 116.28)/57.12; t[2*P+j] = (d[i+2] - 103.53)/57.375;
+    }
+    const out = await sam.enc.run({ image: new ort.Tensor('float32', t, [1,3,1024,1024]) });
+    return { key, e: out.embeddings, s, rw, rh };
+  })();
+  sam.emb[w.id] = { key, pending };
+  renderTools();
+  try{ const r = await pending; if(sam.emb[w.id] && sam.emb[w.id].key === key) sam.emb[w.id] = r; return r; }
+  catch(e){ delete sam.emb[w.id]; throw e; }
+  finally{ renderTools(); }
+}
+/* prepara il modello e la foto in anticipo, così il primo tocco non aspetta */
+function samWarm(w){
+  if(!w || sam.state === 'failed') return;
+  samInit().then(ok => { if(ok) samEmbed(w).catch(() => {}); });
+}
+const SDIRS = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+function maskToPoly(m, W, H, tx, ty){
+  /* componente connessa che contiene il tocco (o la più vicina) */
+  let seed = -1;
+  const tix = Math.max(0, Math.min(W-1, Math.round(tx))), tiy = Math.max(0, Math.min(H-1, Math.round(ty)));
+  if(m[tiy*W + tix]) seed = tiy*W + tix;
+  else{
+    let best = 1e18;
+    const r = 12;
+    for(let y = Math.max(0, tiy-r); y <= Math.min(H-1, tiy+r); y++) for(let x = Math.max(0, tix-r); x <= Math.min(W-1, tix+r); x++){
+      if(m[y*W+x]){ const dd = (x-tix)*(x-tix) + (y-tiy)*(y-tiy); if(dd < best){ best = dd; seed = y*W+x; } }
+    }
+  }
+  if(seed < 0) return null;
+  const comp = new Uint8Array(W*H), st = [seed]; comp[seed] = 1;
+  let n = 0, top = seed;
+  while(st.length){
+    const p = st.pop(); n++; if(p < top) top = p;
+    const x = p % W, y = (p - x)/W;
+    if(x > 0 && m[p-1] && !comp[p-1]){ comp[p-1] = 1; st.push(p-1); }
+    if(x < W-1 && m[p+1] && !comp[p+1]){ comp[p+1] = 1; st.push(p+1); }
+    if(y > 0 && m[p-W] && !comp[p-W]){ comp[p-W] = 1; st.push(p-W); }
+    if(y < H-1 && m[p+W] && !comp[p+W]){ comp[p+W] = 1; st.push(p+W); }
+  }
+  /* bordo (Moore), partendo dal pixel più in alto a sinistra */
+  const sx = top % W, sy = (top - sx)/W, pts = [[sx, sy]];
+  let x = sx, y = sy, bx = sx-1, by = sy, guard = 0, moved = false;
+  while(guard++ < 400000){
+    let idx = 0;
+    for(let k=0; k<8; k++){ if(SDIRS[k][0] === bx-x && SDIRS[k][1] === by-y){ idx = k; break; } }
+    let found = false;
+    for(let k=1; k<=8; k++){
+      const dd = (idx+k) % 8, nx = x + SDIRS[dd][0], ny = y + SDIRS[dd][1];
+      if(nx >= 0 && ny >= 0 && nx < W && ny < H && comp[ny*W+nx]){
+        const pd = (dd+7) % 8; bx = x + SDIRS[pd][0]; by = y + SDIRS[pd][1]; x = nx; y = ny; found = true; break;
+      }
+    }
+    if(!found) break;
+    if(x === sx && y === sy && moved) break;
+    moved = true; pts.push([x, y]);
+  }
+  return { pts, n, inside: !!m[tiy*W + tix] };
+}
+function rdpPts(p, eps){
+  if(p.length < 4) return p;
+  const keep = new Uint8Array(p.length); keep[0] = 1; keep[p.length-1] = 1;
+  const st = [[0, p.length-1]];
+  while(st.length){
+    const [a, b] = st.pop(); let md = 0, mi = -1;
+    const ax = p[a][0], ay = p[a][1], dx = p[b][0]-ax, dy = p[b][1]-ay, L = Math.hypot(dx, dy) || 1;
+    for(let i=a+1; i<b; i++){ const dd = Math.abs(dy*(p[i][0]-ax) - dx*(p[i][1]-ay))/L; if(dd > md){ md = dd; mi = i; } }
+    if(md > eps && mi > 0){ keep[mi] = 1; st.push([a, mi], [mi, b]); }
+  }
+  return p.filter((_, i) => keep[i]);
+}
+async function samSegment(w, x, y, ts, strict){
+  if(!(await samInit())) return undefined;
+  const E = await samEmbed(w);
+  const N = E.rw*E.rh;
+  const r = await sam.dec.run({
+    image_embeddings: E.e,
+    point_coords: new ort.Tensor('float32', new Float32Array([x*E.s, y*E.s, 0, 0]), [1,2,2]),
+    point_labels: new ort.Tensor('float32', new Float32Array([1, -1]), [1,2]),
+    mask_input: new ort.Tensor('float32', new Float32Array(256*256), [1,1,256,256]),
+    has_mask_input: new ort.Tensor('float32', new Float32Array([0]), [1]),
+    orig_im_size: new ort.Tensor('float32', new Float32Array([E.rh, E.rw]), [2])
+  });
+  const md = r.masks.data, iou = r.iou_predictions.data, nm = r.masks.dims[1];
+  const cands = [];
+  for(let k = (nm > 1 ? 1 : 0); k < nm; k++){
+    let a = 0; const off = k*N; for(let i=0; i<N; i++) if(md[off+i] > 0) a++;
+    cands.push({ k, a, q: iou[k] });
+  }
+  const ok = cands.filter(c => c.a > 6 && c.q > (strict ? 0.8 : 0.5));
+  if(!ok.length) return null;
+  ok.sort((a, b) => a.a - b.a);
+  let base = ok.findIndex(c => c.k === 1); if(base < 0) base = 0;
+  const step = Math.round(Math.log(ts || 1)/Math.log(1.35));
+  const pick = ok[Math.max(0, Math.min(ok.length-1, base + step))];
+  const m = new Uint8Array(N), off = pick.k*N;
+  for(let i=0; i<N; i++) m[i] = md[off+i] > 0 ? 1 : 0;
+  const tr = maskToPoly(m, E.rw, E.rh, x*E.s, y*E.s);
+  if(!tr || tr.pts.length < 3) return null;
+  if(strict && !tr.inside) return null;
+  const simp = rdpPts(tr.pts, 0.9);
+  if(simp.length < 3) return null;
+  const k = 1/E.s, flat = [];
+  simp.forEach(p => { flat.push(Math.round((p[0] + 0.5)*k), Math.round((p[1] + 0.5)*k)); });
+  let A = 0, cx = 0, cy = 0;
+  for(let i=0; i<simp.length; i++){ const a = simp[i], b = simp[(i+1) % simp.length], c = a[0]*b[1] - b[0]*a[1]; A += c; cx += (a[0]+b[0])*c; cy += (a[1]+b[1])*c; }
+  if(Math.abs(A) < 1) return null;
+  A /= 2; cx = (cx/(6*A) + 0.5)*k; cy = (cy/(6*A) + 0.5)*k;
+  const area = Math.abs(A)*k*k;
+  const solid = Math.abs(A) / (hullAreaFlat(simp.flat()) || 1);
+  if(strict && solid < 0.6) return null;
+  return { poly: flat, cx, cy, area, solid, score: pick.q, sam: true };
+}
 const segCache = {};
 async function getSeg(w){
   if(Object.prototype.hasOwnProperty.call(segCache, w.id)) return segCache[w.id];
@@ -593,21 +743,136 @@ async function getSeg(w){
   return segCache[w.id];
 }
 async function detect(w, x, y, ts, strict){
+  if(sam.state !== 'failed'){
+    try{
+      const r = await samSegment(w, x, y, ts || 1, strict);
+      if(r) return r;
+      if(r === null && strict) return null;
+    }catch(e){ console.warn('SAM errore', e); }
+  }
   const sg = await Promise.race([getSeg(w), new Promise(r => setTimeout(() => r(null), 6000))]); if(!sg) return null;
   try{ return sg.segment(x, y, ts || 1, strict); }catch(e){ return null; }
 }
+
+/* mappa dei "candidati": pixel che si staccano dal pannello circostante (mediana locale), a bassa risoluzione */
+async function samCandidates(w){
+  const im = await loadImg(w.img);
+  const S = 480 / Math.max(w.w, w.h), cw = Math.max(1, Math.round(w.w*S)), ch = Math.max(1, Math.round(w.h*S));
+  const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+  const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0, cw, ch);
+  const d = g.getImageData(0, 0, cw, ch).data, N = cw*ch, R = 15;
+  const bg = [new Float32Array(N), new Float32Array(N), new Float32Array(N)];
+  for(let c = 0; c < 3; c++){
+    const out = bg[c], hist = new Int32Array(256), half = ((2*R+1)*(2*R+1)) >> 1;
+    const px = (x, y) => d[(Math.min(ch-1, Math.max(0, y))*cw + Math.min(cw-1, Math.max(0, x)))*4 + c];
+    for(let y = 0; y < ch; y++){
+      hist.fill(0);
+      for(let dy = -R; dy <= R; dy++) for(let dx = -R; dx <= R; dx++) hist[px(dx, y+dy)]++;
+      for(let x = 0; x < cw; x++){
+        if(x > 0){ for(let dy = -R; dy <= R; dy++){ hist[px(x-R-1, y+dy)]--; hist[px(x+R, y+dy)]++; } }
+        let acc = 0, v = 0; while(v < 255){ acc += hist[v]; if(acc > half) break; v++; }
+        out[y*cw + x] = v;
+      }
+    }
+    if(c < 2) await new Promise(r => setTimeout(r, 0));
+  }
+  let m = new Uint8Array(N);
+  for(let i = 0; i < N; i++){
+    const a = d[i*4]-bg[0][i], b = d[i*4+1]-bg[1][i], e = d[i*4+2]-bg[2][i];
+    m[i] = a*a + b*b + e*e > 22*22 ? 1 : 0;
+  }
+  /* apertura (erosione + dilatazione a croce) per togliere il rumore */
+  const morph = (src, er) => { const o = new Uint8Array(N); for(let y = 0; y < ch; y++) for(let x = 0; x < cw; x++){ const i = y*cw+x;
+    const n = [src[i], x>0?src[i-1]:0, x<cw-1?src[i+1]:0, y>0?src[i-cw]:0, y<ch-1?src[i+cw]:0];
+    o[i] = er ? (n[0]&&n[1]&&n[2]&&n[3]&&n[4] ? 1 : 0) : (n[0]||n[1]||n[2]||n[3]||n[4] ? 1 : 0); } return o; };
+  m = morph(morph(m, true), false);
+  return { m, cw, ch, S };
+}
+function candSeeds(C){
+  const { m, cw, ch } = C, N = cw*ch, dt = new Float32Array(N);
+  for(let i = 0; i < N; i++) dt[i] = m[i] ? 1e9 : 0;
+  for(let y = 0; y < ch; y++) for(let x = 0; x < cw; x++){ const i = y*cw+x; if(!dt[i]) continue;
+    let v = dt[i]; if(x > 0) v = Math.min(v, dt[i-1]+1); if(y > 0) v = Math.min(v, dt[i-cw]+1);
+    if(x > 0 && y > 0) v = Math.min(v, dt[i-cw-1]+1.414); if(x < cw-1 && y > 0) v = Math.min(v, dt[i-cw+1]+1.414); dt[i] = v; }
+  for(let y = ch-1; y >= 0; y--) for(let x = cw-1; x >= 0; x--){ const i = y*cw+x; if(!dt[i]) continue;
+    let v = dt[i]; if(x < cw-1) v = Math.min(v, dt[i+1]+1); if(y < ch-1) v = Math.min(v, dt[i+cw]+1);
+    if(x < cw-1 && y < ch-1) v = Math.min(v, dt[i+cw+1]+1.414); if(x > 0 && y < ch-1) v = Math.min(v, dt[i+cw-1]+1.414); dt[i] = v; }
+  const lab = new Int32Array(N), seeds = []; let id = 0;
+  for(let i = 0; i < N; i++){
+    if(!m[i] || lab[i]) continue;
+    id++; const st = [i]; lab[i] = id; let n = 0, best = i, pix = [];
+    while(st.length){ const p = st.pop(); n++; pix.push(p); if(dt[p] > dt[best]) best = p;
+      const x = p % cw;
+      if(x > 0 && m[p-1] && !lab[p-1]){ lab[p-1] = id; st.push(p-1); }
+      if(x < cw-1 && m[p+1] && !lab[p+1]){ lab[p+1] = id; st.push(p+1); }
+      if(p >= cw && m[p-cw] && !lab[p-cw]){ lab[p-cw] = id; st.push(p-cw); }
+      if(p < N-cw && m[p+cw] && !lab[p+cw]){ lab[p+cw] = id; st.push(p+cw); } }
+    if(n < 3){ pix.forEach(p => { m[p] = 0; }); continue; }
+    seeds.push([best % cw, Math.floor(best / cw)]);
+  }
+  return seeds;
+}
+function candClear(C, x0, y0, x1, y1, test){
+  const { m, cw, ch } = C;
+  for(let y = Math.max(0, y0); y <= Math.min(ch-1, y1); y++) for(let x = Math.max(0, x0); x <= Math.min(cw-1, x1); x++){
+    if(!test || test(x, y)) m[y*cw + x] = 0;
+  }
+}
+/* scansione con SAM: semi dove qualcosa si stacca dal pannello, ogni seme rifinito da SAM; più giri per separare prese vicine */
+async function samAutoScan(w){
+  const holds = (w.holds = w.holds || []);
+  const maxArea = w.w * w.h * 0.008;
+  ui.scan = { i: 0, total: 1, found: 0, stop: false, prep: true }; renderTools();
+  try{ await samEmbed(w); }catch(e){ ui.scan = null; toast('Non riesco a preparare il riconoscimento su questa foto.'); render(); return; }
+  const C = await samCandidates(w);
+  const inAny = (x, y) => { for(let k = 0; k < holds.length; k++){ const p = holds[k].poly; if(p && inPoly(p, x, y)) return true; } return false; };
+  let done = 0;
+  for(let round = 0; round < 4 && !ui.scan.stop; round++){
+    const seeds = candSeeds(C);
+    if(!seeds.length) break;
+    ui.scan.prep = false; ui.scan.total = done + seeds.length; ui.scan.round = round + 1; renderTools();
+    for(const [sx, sy] of seeds){
+      if(ui.scan.stop) break;
+      const X = (sx + 0.5)/C.S, Y = (sy + 0.5)/C.S;
+      let ok = false;
+      if(inAny(X, Y)) ok = true;
+      else{
+        let res = null;
+        try{ res = await samSegment(w, X, Y, 1, true); }catch(e){ res = null; }
+        if(res && res.area > 90 && res.area < maxArea){
+          const poly = res.poly;
+          holds.push({ id: uid(), poly, x: res.cx, y: res.cy, sx: X, sy: Y, det: 1 }); ui.scan.found++; ok = true;
+          let bx0 = 1e9, by0 = 1e9, bx1 = -1, by1 = -1;
+          for(let i = 0; i < poly.length; i += 2){ bx0 = Math.min(bx0, poly[i]); bx1 = Math.max(bx1, poly[i]); by0 = Math.min(by0, poly[i+1]); by1 = Math.max(by1, poly[i+1]); }
+          candClear(C, Math.floor(bx0*C.S)-1, Math.floor(by0*C.S)-1, Math.ceil(bx1*C.S)+1, Math.ceil(by1*C.S)+1,
+            (x, y) => inPoly(poly, (x+0.5)/C.S, (y+0.5)/C.S) || inPoly(poly, (x-0.5)/C.S, (y+0.5)/C.S) || inPoly(poly, (x+1.5)/C.S, (y+0.5)/C.S) || inPoly(poly, (x+0.5)/C.S, (y-0.5)/C.S) || inPoly(poly, (x+0.5)/C.S, (y+1.5)/C.S));
+        }
+      }
+      if(!ok) candClear(C, sx-3, sy-3, sx+3, sy+3);
+      else candClear(C, sx-1, sy-1, sx+1, sy+1);
+      done++; ui.scan.i = done;
+      if(done % 3 === 0){ renderTools(); await new Promise(r => setTimeout(r, 0)); }
+      if(done % 60 === 0){ touch(); render(); }
+    }
+  }
+  const stopped = ui.scan.stop, found = ui.scan.found;
+  ui.scan = null; touch(); render();
+  toast(stopped ? `Fermato: ${found} nuove prese aggiunte.` : `Fatto: ${found} nuove prese trovate. Controlla e aggiungi a mano quelle mancanti.`);
+}
 async function autoDetectAll(w){
   if(!w || ui.scan || w.locked) return;
-  const step = Math.max(14, Math.round(Math.max(w.w, w.h) / 85));
+  const useSam = sam.state !== 'failed' && await samInit();
+  if(useSam) return samAutoScan(w);
+  const step = useSam ? Math.max(14, Math.round(Math.max(w.w, w.h) / 64)) : Math.max(14, Math.round(Math.max(w.w, w.h) / 85));
   const cols = Math.max(1, Math.floor(w.w / step)), rows = Math.max(1, Math.floor(w.h / step));
   const total = cols * rows;
   const holds = (w.holds = w.holds || []);
   const maxArea = w.w * w.h * 0.008;
-  ui.scan = { i: 0, total: total * 2, found: 0, stop: false };
+  ui.scan = { i: 0, total: total * (useSam ? 1 : 2), found: 0, stop: false };
   renderTools();
   let idx = 0;
   /* due passate: 1) tentativo unico, il piu' severo possibile; 2) solo sui buchi rimasti, piu' permissiva (rischia qualche fusione in cambio di piu' prese) */
-  for(const level of [2, 1]){
+  for(const level of (useSam ? [2] : [2, 1])){
     outer: for(let ry = 0; ry < rows; ry++){
       for(let rx = 0; rx < cols; rx++){
         idx++;
@@ -624,7 +889,7 @@ async function autoDetectAll(w){
           }
         }
         ui.scan.i = idx;
-        if(idx % 30 === 0){ renderTools(); await new Promise(r => setTimeout(r, 0)); }
+        if(idx % (useSam ? 5 : 30) === 0){ renderTools(); await new Promise(r => setTimeout(r, 0)); }
         if(idx % 200 === 0){ touch(); render(); }
       }
     }
@@ -923,6 +1188,14 @@ function renderChips(){
     `<i class="dot" style="background:${c.color}"></i><span class="nm">${esc(c.name)}${c.grade ? ' · '+esc(c.grade) : ''}</span><span class="n">${c.holds.length}</span></button>`
   ).join('') + (EDIT ? `<button class="chip add" data-act="addc">+ Circuito</button>` : '');
 }
+function samStatus(w){
+  const e = sam.emb[w.id];
+  if(sam.state === 'failed') return 'Riconoscimento intelligente non disponibile su questo telefono: uso il metodo semplice.';
+  if(sam.state === 'loading') return 'Scarico il riconoscimento intelligente (circa 33 MB, solo la prima volta)…';
+  if(sam.state === 'ready' && e && !e.e) return 'Studio la foto del muro (qualche secondo)…';
+  if(sam.state === 'ready' && e && e.e) return 'Riconoscimento intelligente pronto: tocca una presa.';
+  return 'Riconoscimento intelligente: si attiva al primo uso.';
+}
 function renderTools(){
   const w = curWall(), c = curCircuit(), el = $('#tools');
   if(!w){ el.innerHTML = ''; return; }
@@ -930,7 +1203,7 @@ function renderTools(){
     const n = (w.holds || []).length;
     if(ui.scan){
       const s = ui.scan, pct = Math.round(100 * s.i / s.total);
-      el.innerHTML = `<p class="hint">Rilevamento automatico in corso: ${pct}% — ${s.found} nuove prese trovate finora. Può volerci qualche minuto su una foto densa.</p>`+
+      el.innerHTML = `<p class="hint">${s.prep ? 'Preparo il riconoscimento intelligente…' : `Rilevamento automatico in corso${s.round ? ` (giro ${s.round})` : ''}: ${pct}% — ${s.found} nuove prese trovate finora. Può volerci qualche minuto: puoi fermarlo quando vuoi.`}</p>`+
         `<button class="btn primary" data-act="stopauto">Ferma</button>`;
       return;
     }
@@ -957,7 +1230,8 @@ function renderTools(){
     let h = `<p class="hint">${hint}</p><div class="seg">${tb('detect','Rileva')}${tb('draw','Disegna')}${tb('erase','Gomma')}${tb('panel','Colore pannello')}</div>`+
       (ui.tool === 'panel' ? `<button class="btn primary" data-act="panelDone">Fine campionamento</button>` : '') +
       `<p class="hint">Riferimento colore pannello: ${panelLine}</p>`+
-      `<button class="btn" data-act="autoall">Rileva tutte le prese (salta quelle bianche/chiarissime)</button>`;
+      `<p class="hint">${samStatus(w)}</p>`+
+      `<button class="btn" data-act="autoall">Rileva tutte le prese</button>`;
     if(drawing){
       h += `<button class="btn primary" data-act="closeDraw" ${ui.draft.length >= 3 ? '' : 'disabled'}>Chiudi</button>`+
            `<button class="btn" data-act="undoPt" ${ui.draft.length ? '' : 'disabled'}>Annulla punto</button>`+
@@ -1012,6 +1286,7 @@ function renderTools(){
 }
 function render(){
   { const w0 = curWall(); if(EDIT && w0 && !w0.locked && S.mode === 'edit') S.mode = 'wall'; }
+  { const w1 = curWall(); if(EDIT && w1 && !w1.locked && S.mode === 'wall' && sam.state !== 'failed' && !(sam.emb[w1.id] && sam.emb[w1.id].key === samKey(w1))) samWarm(w1); }
   renderTop(); renderPub(); renderStage(); renderChips(); renderTools(); }
 
 /* ---------- pannelli ---------- */
