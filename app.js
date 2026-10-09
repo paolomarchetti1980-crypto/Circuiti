@@ -11,6 +11,7 @@ const BODY = `
       <span id="wallName">Nessun muro</span>
       <svg id="chev" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 5l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
+    <button class="btn" id="instBtn" data-act="install" hidden>Installa app</button>
     <div class="seg" id="modes" hidden>
       <button data-act="mode" data-v="edit">Traccia</button>
       <button data-act="mode" data-v="view">Guarda</button>
@@ -148,6 +149,24 @@ let saveTimer;
 function save(){ if(!EDIT) return; clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 300); }
 function touch(){ S.rev = Math.max(Date.now(), S.rev + 1); save(); }
 
+/* ---------- installazione come app ---------- */
+let installEvt = null;
+const isStandalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const canInstall = () => !isStandalone() && (!!installEvt || isIOS());
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; try{ renderTop(); }catch(err){} });
+window.addEventListener('appinstalled', () => { installEvt = null; try{ renderTop(); toast('App installata: la trovi sulla schermata Home.'); }catch(err){} });
+async function doInstall(){
+  if(installEvt){
+    installEvt.prompt();
+    try{ await installEvt.userChoice; }catch(e){}
+    installEvt = null; renderTop(); return;
+  }
+  openSheet('install');
+}
+if('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')){
+  window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+}
 let toastTimer;
 function toast(msg){
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
@@ -1149,6 +1168,7 @@ function renderTop(){
   $('#wallBtn').disabled = !EDIT && !multi && !SB;
   $('#chev').hidden = !EDIT && !multi && !SB;
   $('#modes').hidden = !EDIT;
+  $('#instBtn').hidden = EDIT || !canInstall();
   document.querySelectorAll('#modes button').forEach(b => {
     b.setAttribute('aria-pressed', String(b.dataset.v === S.mode));
     b.disabled = !w || (b.dataset.v === 'edit' && !w.locked);
@@ -1333,8 +1353,13 @@ function renderSheet(){
         `<p class="note">Le modifiche restano su questo dispositivo finché non premi Pubblica. Dopo la pubblicazione, chi apre il link vede i circuiti aggiornati, in sola lettura.</p>`+
         (SB ? `<div class="row" style="margin-top:10px"><button class="btn" data-act="logout">Esci</button></div>` : '');
     } else {
-      h += `<div class="row">${SB ? `<button class="btn" data-act="login">Accedi come gestore</button>` : ''}<button class="btn primary" data-act="close">Chiudi</button></div>`;
+      h += `<div class="row">${canInstall() ? `<button class="btn" data-act="install">Installa l'app</button>` : ''}${SB ? `<button class="btn" data-act="login">Accedi come gestore</button>` : ''}<button class="btn primary" data-act="close">Chiudi</button></div>`;
     }
+  } else if(ui.sheet === 'install'){
+    h = `<h2>Installa l'app</h2>`+
+      (isIOS() ? `<p>Su iPhone:</p><ol style="margin:0 0 14px;padding-left:20px;line-height:1.6"><li>tocca <b>Condividi</b> (il quadrato con la freccia in su), in basso in Safari</li><li>scorri e scegli <b>Aggiungi alla schermata Home</b></li><li>tocca <b>Aggiungi</b></li></ol><p class="note" style="margin:0 0 12px">Funziona da Safari: se hai aperto il link da un'altra app, aprilo prima in Safari.</p>`
+               : `<p>Apri il menu del browser (⋮ in alto a destra) e scegli <b>Installa app</b> oppure <b>Aggiungi a schermata Home</b>.</p>`)+
+      `<div class="row"><button class="btn primary" data-act="close">Ok</button></div>`;
   } else if(ui.sheet === 'login'){
     h = `<h2>Accesso gestore</h2>`+
       (ui.loginSent ? `<p>Ti ho mandato un'email con un link. Aprila da questo telefono e tocca il link: tornerai qui già dentro.</p>` :
@@ -1633,6 +1658,7 @@ document.addEventListener('click', e => {
       S.active = S.walls[0] ? S.walls[0].id : null;
       ui.sel = null; ui.sheet = null; ui.confirm = null; touch(); render(); renderSheet(); break;
     case 'close': ui.sheet = null; ui.confirm = null; renderSheet(); break;
+    case 'install': ui.sheet = null; renderSheet(); doInstall(); break;
   }
 });
 
