@@ -73,6 +73,7 @@ let PUBREV = S.rev;
 let SEEDWALLS = S.walls;
 let EDIT = false, ART = null, SB = null;
 const ui = { view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:null, csel:null, busy:false, warnedRing:false, sel:null, move:false, nextRole:'start', zoom:1, sheet:null, confirm:null, imgUrl:null, ready:false, publishing:false, saveWarned:false, scan:null, nextHand:'', crop:null };
+try{ const f = JSON.parse(localStorage.getItem('circ-filters') || '{}'); ui.fAngle = f.a || ''; ui.fGrade = f.g || ''; }catch(e){}
 
 const uid = () => Math.random().toString(36).slice(2,9);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -1104,7 +1105,7 @@ function overlay(w, o){
   }
   const act = w.circuits.find(c => c.id === w.activeCircuit) || w.circuits[0];
   let s = '';
-  if(o.others) w.circuits.forEach(c => { if(c !== act) s += circuitSVG(c, w.w, 0.28, {numbers:false, lines:false}); });
+  if(o.others) visibleCircuits(w).forEach(c => { if(c !== act) s += circuitSVG(c, w.w, 0.28, {numbers:false, lines:false}); });
   if(o.dim && act && act.holds.length){
     let d = `M0,0H${w.w}V${w.h}H0Z`;
     act.holds.forEach(h => {
@@ -1179,14 +1180,24 @@ function renderStage(){
   sv.innerHTML = overlay(w, { numbers: editing || S.prefs.numbers, lines: S.prefs.lines, others: S.prefs.others, edit: editing, dim: !editing && S.prefs.dim, wall: EDIT && S.mode === 'wall' });
   fit();
 }
+function visibleCircuits(w){
+  return w.circuits.filter(c => (!ui.fAngle || String(c.angle) === String(ui.fAngle)) && (!ui.fGrade || c.grade === ui.fGrade));
+}
 function renderChips(){
   const w = curWall(), el = $('#chips');
   if(!w || (EDIT && S.mode === 'wall')){ el.innerHTML = ''; return; }
   const act = curCircuit();
-  el.innerHTML = w.circuits.map(c =>
+  const angles = [...new Set(w.circuits.map(c => c.angle).filter(a => a != null))].sort((a, b) => a - b);
+  const grades = GRADES.filter(g => g && w.circuits.some(c => c.grade === g));
+  const sel = (id, cur, all, opts) => `<select id="${id}" class="fsel" aria-label="${all}"><option value="">${all}</option>${opts.map(o => `<option value="${o[0]}" ${String(cur) === String(o[0]) ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>`;
+  const filt = (angles.length || grades.length) ?
+    (angles.length ? sel('fangle', ui.fAngle || '', 'Tutte le inclinazioni', angles.map(a => [a, a + '°'])) : '') +
+    (grades.length ? sel('fgrade', ui.fGrade || '', 'Tutti i gradi', grades.map(g => [g, g])) : '') : '';
+  const vis = visibleCircuits(w);
+  el.innerHTML = filt + vis.map(c =>
     `<button class="chip ${act && c.id === act.id ? 'active' : ''}" data-act="circ" data-id="${c.id}">`+
-    `<i class="dot" style="background:${c.color}"></i><span class="nm">${esc(c.name)}${c.grade ? ' · '+esc(c.grade) : ''}</span><span class="n">${c.holds.length}</span></button>`
-  ).join('') + (EDIT ? `<button class="chip add" data-act="addc">+ Circuito</button>` : '');
+    `<i class="dot" style="background:${c.color}"></i><span class="nm">${esc(c.name)}${c.grade ? ' · '+esc(c.grade) : ''}${c.angle != null ? ' · '+c.angle+'°' : ''}</span><span class="n">${c.holds.length}</span></button>`
+  ).join('') + (!vis.length && w.circuits.length ? `<span class="chip" style="border-style:dashed;color:var(--muted)">Nessun circuito con questi filtri</span>` : '') + (EDIT ? `<button class="chip add" data-act="addc">+ Circuito</button>` : '');
 }
 function samStatus(w){
   const e = sam.emb[w.id];
@@ -1306,16 +1317,15 @@ function renderSheet(){
       `</div>`+
       `<label class="field">Grado<select id="cgrade">${GRADES.map(gradeOpt).join('')}</select></label>`+
       `<label class="field">Stile<select id="cstyle">${STYLES.map(styleOpt).join('')}</select></label>`+
+      `<label class="field">Inclinazione (gradi dalla verticale)<select id="cangle"><option value="" ${c.angle == null ? 'selected' : ''}>—</option>${ANGLES.map(a => `<option value="${a}" ${c.angle === a ? 'selected' : ''}>${a}°</option>`).join('')}</select></label>`+
       `<div class="row"><button class="btn danger" data-act="delc">${ui.confirm === 'delc' ? 'Tocca ancora per eliminare' : 'Elimina circuito'}</button>`+
       `<button class="btn primary" data-act="close">Fatto</button></div>`;
   } else if(ui.sheet === 'wall'){
     h = `<h2>Muri</h2><div class="list">`+
-      S.walls.map(x => `<button class="wrow ${w && x.id === w.id ? 'active' : ''}" data-act="pickw" data-id="${x.id}"><span>${esc(x.name)}${x.angle != null ? ' · '+x.angle+'°' : ''}</span><small>${x.circuits.length} circuiti</small></button>`).join('') +
+      S.walls.map(x => `<button class="wrow ${w && x.id === w.id ? 'active' : ''}" data-act="pickw" data-id="${x.id}"><span>${esc(x.name)}</span><small>${x.circuits.length} circuiti</small></button>`).join('') +
       `</div>`;
     if(EDIT){
-      const angleOpt = v => `<option value="${v}" ${w && w.angle === v ? 'selected' : ''}>${v}°</option>`;
       h += (w ? `<label class="field">Nome del muro<input id="wname" value="${esc(w.name)}" maxlength="40"></label>` : '') +
-        (w ? `<label class="field">Inclinazione dalla verticale<select id="wangle"><option value="" ${w.angle == null ? 'selected' : ''}>—</option>${ANGLES.map(angleOpt).join('')}</select></label>` : '') +
         `<div class="row">${PICK_BTNS}</div>`+
         `<div class="row" style="margin-top:10px">` +
         (w ? `<button class="btn danger" data-act="delw">${ui.confirm === 'delw' ? 'Tocca ancora per eliminare' : 'Elimina muro'}</button>` : '') +
@@ -1629,12 +1639,19 @@ document.addEventListener('click', e => {
 document.addEventListener('input', e => {
   const c = curCircuit(), w = curWall();
   if(e.target.id === 'lemail'){ ui.loginEmail = e.target.value.trim(); return; }
+  if(e.target.id === 'fangle' || e.target.id === 'fgrade'){
+    if(e.target.id === 'fangle') ui.fAngle = e.target.value; else ui.fGrade = e.target.value;
+    try{ localStorage.setItem('circ-filters', JSON.stringify({ a: ui.fAngle || '', g: ui.fGrade || '' })); }catch(err){}
+    const wf = curWall(), vis = wf ? visibleCircuits(wf) : [];
+    if(wf && vis.length && !vis.some(x => x.id === wf.activeCircuit)){ wf.activeCircuit = vis[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); }
+    render(); return;
+  }
   if(!EDIT) return;
   if(e.target.id === 'cname' && c){ c.name = e.target.value || 'Circuito'; renderChips(); touch(); }
   if(e.target.id === 'wname' && w){ w.name = e.target.value || 'Muro'; renderTop(); touch(); }
   if(e.target.id === 'cgrade' && c){ if(e.target.value) c.grade = e.target.value; else delete c.grade; renderChips(); touch(); }
   if(e.target.id === 'cstyle' && c){ if(e.target.value) c.style = e.target.value; else delete c.style; touch(); }
-  if(e.target.id === 'wangle' && w){ if(e.target.value !== '') w.angle = +e.target.value; else delete w.angle; touch(); }
+  if(e.target.id === 'cangle' && c){ if(e.target.value !== '') c.angle = +e.target.value; else delete c.angle; renderChips(); touch(); }
 });
 document.addEventListener('keydown', e => {
   if(e.key === 'Escape' && ui.sheet){ ui.sheet = null; ui.confirm = null; renderSheet(); return; }
