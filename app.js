@@ -1351,7 +1351,7 @@ function renderSheet(){
         (w ? `<button class="btn danger" data-act="delw">${ui.confirm === 'delw' ? 'Tocca ancora per eliminare' : 'Elimina muro'}</button>` : '') +
         `<button class="btn primary" data-act="close">Fatto</button></div>`+
         `<p class="note">Le modifiche restano su questo dispositivo finché non premi Pubblica. Dopo la pubblicazione, chi apre il link vede i circuiti aggiornati, in sola lettura.</p>`+
-        (SB ? `<div class="row" style="margin-top:10px"><button class="btn" data-act="logout">Esci</button></div>` : '');
+        (SB ? `<div class="row" style="margin-top:10px"><button class="btn" data-act="setpass">Imposta password</button><button class="btn" data-act="logout">Esci</button></div>` : '');
     } else {
       h += `<div class="row">${canInstall() ? `<button class="btn" data-act="install">Installa l'app</button>` : ''}${SB ? `<button class="btn" data-act="login">Accedi come gestore</button>` : ''}<button class="btn primary" data-act="close">Chiudi</button></div>`;
     }
@@ -1364,8 +1364,12 @@ function renderSheet(){
     h = `<h2>Accesso gestore</h2>`+
       (ui.loginSent ? `<p>Ti ho mandato un'email con un link. Aprila da questo telefono e tocca il link: tornerai qui già dentro.</p>` :
       `<label class="field">La tua email<input id="lemail" type="email" autocomplete="email" inputmode="email" value="${esc(ui.loginEmail || '')}"></label>`+
-      `<p class="note" style="margin:0 0 12px">Ricevi un link per entrare, senza password.</p>`)+
-      `<div class="row">${ui.loginSent ? '' : `<button class="btn primary" data-act="sendlink">Mandami il link</button>`}<button class="btn" data-act="close">Chiudi</button></div>`;
+      `<label class="field">Password<input id="lpass" type="password" autocomplete="current-password"></label>`)+
+      `<div class="row">${ui.loginSent ? '' : `<button class="btn primary" data-act="passlogin">Entra</button><button class="btn" data-act="sendlink">Non ho la password: mandami un link</button>`}<button class="btn" data-act="close">Chiudi</button></div>`;
+  } else if(ui.sheet === 'setpass'){
+    h = `<h2>Imposta una password</h2><p class="note" style="margin:0 0 12px">Così la prossima volta entri con email e password, senza aspettare l'email.</p>`+
+      `<label class="field">Nuova password (almeno 8 caratteri)<input id="npass" type="password" autocomplete="new-password"></label>`+
+      `<div class="row"><button class="btn primary" data-act="savepass">Salva password</button><button class="btn" data-act="close">Annulla</button></div>`;
   } else if(ui.sheet === 'img'){
     h = `<h2>Immagine del circuito</h2>`+
       (ui.imgUrl === 'err' ? `<p>Non sono riuscito a creare l'immagine. Riprova.</p>` :
@@ -1423,6 +1427,22 @@ async function makeImage(){
 }
 
 /* ---------- pubblicazione ---------- */
+async function passLogin(){
+  const em = document.getElementById('lemail'), pw = document.getElementById('lpass');
+  const email = ((em && em.value) || '').trim(), password = (pw && pw.value) || '';
+  ui.loginEmail = email;
+  if(!SB || !/^\S+@\S+\.\S+$/.test(email) || !password){ toast('Scrivi email e password.'); return; }
+  const { error } = await SB.auth.signInWithPassword({ email, password });
+  if(error){ toast(/invalid/i.test(error.message || '') ? 'Email o password non corrette. Se non hai ancora una password, usa il link.' : 'Accesso non riuscito: ' + error.message); return; }
+  location.reload();
+}
+async function savePassword(){
+  const pw = document.getElementById('npass'), password = (pw && pw.value) || '';
+  if(password.length < 8){ toast('La password deve avere almeno 8 caratteri.'); return; }
+  const { error } = await SB.auth.updateUser({ password });
+  if(error){ toast('Non riuscito: ' + error.message); return; }
+  ui.sheet = null; renderSheet(); toast('Password salvata: da ora puoi entrare con email e password.');
+}
 async function sendLoginLink(){
   const inp = document.getElementById('lemail');
   const email = ((inp && inp.value) || ui.loginEmail || '').trim();
@@ -1571,6 +1591,9 @@ document.addEventListener('click', e => {
     case 'camlive': openCamera(); break;
     case 'login': ui.loginSent = false; openSheet('login'); break;
     case 'sendlink': sendLoginLink(); break;
+    case 'passlogin': passLogin(); break;
+    case 'setpass': openSheet('setpass'); break;
+    case 'savepass': savePassword(); break;
     case 'logout': if(SB){ SB.auth.signOut().finally(() => location.reload()); } break;
     case 'camCancel': closeCamera(); break;
     case 'camShot': shootCamera(); break;
