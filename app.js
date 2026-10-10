@@ -73,6 +73,7 @@ const S = {
 let PUBREV = S.rev;
 let SEEDWALLS = S.walls;
 let EDIT = false, ART = null, SB = null, BASE = null, ME = null;
+const isMgr = () => !ME || ME.role === 'gestore';
 const ui = { view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:null, csel:null, busy:false, warnedRing:false, sel:null, move:false, nextRole:'start', zoom:1, sheet:null, confirm:null, imgUrl:null, ready:false, publishing:false, saveWarned:false, scan:null, nextHand:'', crop:null };
 try{ const f = JSON.parse(localStorage.getItem('circ-filters') || '{}'); ui.fAngle = f.a || ''; ui.fGrade = f.g || ''; }catch(e){}
 
@@ -1173,6 +1174,7 @@ function renderTop(){
   document.querySelectorAll('#modes button').forEach(b => {
     b.setAttribute('aria-pressed', String(b.dataset.v === S.mode));
     b.disabled = !w || (b.dataset.v === 'edit' && !w.locked);
+    b.hidden = b.dataset.v === 'wall' && !isMgr();
   });
 }
 function renderPub(){
@@ -1317,7 +1319,9 @@ function renderTools(){
     `<button class="btn" data-act="undo" ${c && c.holds.length ? '' : 'disabled'}>Annulla</button>`;
 }
 function render(){
-  { const w0 = curWall(); if(EDIT && w0 && !w0.locked && S.mode === 'edit') S.mode = 'wall'; }
+  { const w0 = curWall();
+    if(EDIT && !isMgr()){ if(S.mode === 'wall' || (w0 && !w0.locked && S.mode === 'edit')) S.mode = 'view'; }
+    else if(EDIT && w0 && !w0.locked && S.mode === 'edit') S.mode = 'wall'; }
   { const w1 = curWall(); if(EDIT && w1 && !w1.locked && S.mode === 'wall' && sam.state !== 'failed' && !(sam.emb[w1.id] && sam.emb[w1.id].key === samKey(w1))) samWarm(w1); }
   renderTop(); renderPub(); renderStage(); renderChips(); renderTools(); }
 
@@ -1346,10 +1350,11 @@ function renderSheet(){
       S.walls.map(x => `<button class="wrow ${w && x.id === w.id ? 'active' : ''}" data-act="pickw" data-id="${x.id}"><span>${esc(x.name)}</span><small>${x.circuits.length} circuiti</small></button>`).join('') +
       `</div>`;
     if(EDIT){
-      h += (w ? `<label class="field">Nome del muro<input id="wname" value="${esc(w.name)}" maxlength="40"></label>` : '') +
-        `<div class="row">${PICK_BTNS}</div>`+
+      h += (w && isMgr() ? `<label class="field">Nome del muro<input id="wname" value="${esc(w.name)}" maxlength="40"></label>` : '') +
+        (w && !isMgr() && !w.locked ? `<p class="note" style="margin:0 0 12px">Questo muro è ancora in preparazione: potrai tracciarci quando il gestore lo blocca.</p>` : '') +
+        (isMgr() ? `<div class="row">${PICK_BTNS}</div>` : '')+
         `<div class="row" style="margin-top:10px">` +
-        (w && (!ME || ME.role === 'gestore') ? `<button class="btn danger" data-act="delw">${ui.confirm === 'delw' ? 'Tocca ancora per eliminare' : 'Elimina muro'}</button>` : '') +
+        (w && isMgr() ? `<button class="btn danger" data-act="delw">${ui.confirm === 'delw' ? 'Tocca ancora per eliminare' : 'Elimina muro'}</button>` : '') +
         `<button class="btn primary" data-act="close">Fatto</button></div>`+
         `<p class="note">Le modifiche restano su questo dispositivo finché non premi Pubblica. Se nel frattempo un altro tracciatore ha pubblicato, i suoi circuiti vengono tenuti e si aggiungono i tuoi.</p>`+
         (ME ? `<p class="note">Sei dentro come <b>${esc(ME.email)}</b> (${ME.role === 'gestore' ? 'gestore' : 'tracciatore'}).</p>` : '')+
@@ -1518,6 +1523,13 @@ function mergeWall(b, l, r){
 function mergeWalls(base, local, remote){ return mergeList(base, local, remote, mergeWall); }
 async function publishRemote(){
   const snap = JSON.parse(JSON.stringify(snapshot()));
+  if(!isMgr() && BASE){
+    /* il tracciatore porta solo i circuiti: muri, foto e prese restano quelli della versione di partenza */
+    snap.walls = BASE.map(bw => {
+      const lw = snap.walls.find(x => x.id === bw.id);
+      return lw ? Object.assign(JSON.parse(JSON.stringify(bw)), { circuits: lw.circuits, activeCircuit: lw.activeCircuit }) : JSON.parse(JSON.stringify(bw));
+    });
+  }
   const { data: row, error: rerr } = await SB.from('app_state').select('data,rev').eq('id', 1).maybeSingle();
   if(rerr) throw rerr;
   if(row && row.data && Array.isArray(row.data.walls) && (row.rev || 0) > PUBREV){
@@ -1627,8 +1639,9 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b || b.disabled) return;
   const a = b.dataset.act, w = curWall(), c = curCircuit();
   if(EDIT_ONLY.includes(a) && !EDIT) return;
+  if(!isMgr() && ['lock','unlock','autoall','stopauto','delw','addw','cropTap','cropUndo','cropClose','cropReset','cropDone','camlive','camShot','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext'].includes(a)) return;
   switch(a){
-    case 'mode': if(EDIT && !ui.scan){ S.mode = b.dataset.v; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.redraw = null; ui.tool = 'detect'; render(); } break;
+    case 'mode': if(EDIT && !ui.scan && !(b.dataset.v === 'wall' && !isMgr())){ S.mode = b.dataset.v; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.redraw = null; ui.tool = 'detect'; render(); } break;
     case 'tool': ui.tool = b.dataset.v; ui.draft = []; ui.redraw = null; render(); break;
     case 'undel': if(w && ui.trash.length){ const ch = ui.trash.pop(); (w.holds = w.holds || []).push(ch); ui.csel = w.holds.length - 1; touch(); render(); } break;
     case 'susnext': {
@@ -1748,7 +1761,7 @@ document.addEventListener('click', e => {
       ui.sheet = null; ui.confirm = null; touch(); render(); renderSheet(); break;
     case 'pickw': if(ui.scan) break; S.active = b.dataset.id; ui.sel = null; ui.zoom = 1; ui.move = false; ui.sheet = null; save(); render(); renderSheet(); break;
     case 'delw':
-      if(!w || (ME && ME.role !== 'gestore')) break;
+      if(!w || !isMgr()) break;
       if(ui.confirm !== 'delw'){ ui.confirm = 'delw'; renderSheet(); break; }
       S.walls = S.walls.filter(x => x.id !== w.id);
       S.active = S.walls[0] ? S.walls[0].id : null;
@@ -1816,7 +1829,7 @@ function shootCamera(){
 }
 async function onFile(e){
   const f = e.target.files && e.target.files[0]; e.target.value = '';
-  if(!f || !EDIT) return;
+  if(!f || !EDIT || !isMgr()) return;
   try{
     const p = await readPhoto(f);
     ui.crop = { w: p.w, h: p.h, img: p.img, pts: [], closed: false };
