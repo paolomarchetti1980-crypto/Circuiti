@@ -33,3 +33,23 @@ create policy "foto aggiornamento" on storage.objects for update using (bucket_i
 
 -- gestori: chi può modificare (aggiungere altre email con la stessa riga)
 insert into public.editors (email) values ('paolo.marchetti1980@gmail.com') on conflict do nothing;
+
+-- ===== Aggiornamento: staff con ruoli (gestore / tracciatore) =====
+alter table public.editors add column if not exists role text not null default 'tracciatore';
+update public.editors set role = 'gestore' where lower(email) = lower('paolo.marchetti1980@gmail.com');
+create or replace function public.my_role() returns text
+language sql security definer stable set search_path = public as $$
+  select role from public.editors where lower(email) = lower(auth.jwt() ->> 'email') limit 1;
+$$;
+create or replace function public.is_manager() returns boolean
+language sql security definer stable set search_path = public as $$
+  select coalesce(public.my_role() = 'gestore', false);
+$$;
+drop policy if exists "staff legge" on public.editors;
+drop policy if exists "gestore aggiunge" on public.editors;
+drop policy if exists "gestore modifica" on public.editors;
+drop policy if exists "gestore toglie" on public.editors;
+create policy "staff legge" on public.editors for select using (public.is_editor());
+create policy "gestore aggiunge" on public.editors for insert with check (public.is_manager());
+create policy "gestore modifica" on public.editors for update using (public.is_manager()) with check (public.is_manager());
+create policy "gestore toglie" on public.editors for delete using (public.is_manager() and lower(email) <> lower(auth.jwt() ->> 'email'));

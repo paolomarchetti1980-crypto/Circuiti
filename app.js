@@ -72,7 +72,7 @@ const S = {
 };
 let PUBREV = S.rev;
 let SEEDWALLS = S.walls;
-let EDIT = false, ART = null, SB = null;
+let EDIT = false, ART = null, SB = null, BASE = null, ME = null;
 const ui = { view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:null, csel:null, busy:false, warnedRing:false, sel:null, move:false, nextRole:'start', zoom:1, sheet:null, confirm:null, imgUrl:null, ready:false, publishing:false, saveWarned:false, scan:null, nextHand:'', crop:null };
 try{ const f = JSON.parse(localStorage.getItem('circ-filters') || '{}'); ui.fAngle = f.a || ''; ui.fGrade = f.g || ''; }catch(e){}
 
@@ -125,6 +125,7 @@ async function loadDraft(){
     if(d && Array.isArray(d.walls) && (d.rev || 0) > S.rev){
       S.walls = d.walls; S.active = d.active; S.rev = d.rev;
       S.prefs = Object.assign(S.prefs, d.prefs || {});
+      if(Array.isArray(d.base)) BASE = d.base;
     }
   }catch(e){}
   /* il catalogo pubblicato più di recente vince sempre, anche se la bozza locale è più "nuova" di orario */
@@ -138,7 +139,7 @@ async function saveNow(){
     const db = await openDB();
     await new Promise((res,rej) => {
       const tx = db.transaction('kv','readwrite');
-      tx.objectStore('kv').put(snapshot(), 'draft');
+      tx.objectStore('kv').put(Object.assign(snapshot(), { base: BASE }), 'draft');
       tx.oncomplete = res; tx.onerror = () => rej(tx.error);
     });
   }catch(e){
@@ -147,7 +148,7 @@ async function saveNow(){
 }
 let saveTimer;
 function save(){ if(!EDIT) return; clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 300); }
-function touch(){ S.rev = Math.max(Date.now(), S.rev + 1); save(); }
+function touch(){ S.rev = Math.max(Date.now(), S.rev + 1); save(); try{ renderPub(); }catch(e){} }
 
 /* ---------- installazione come app ---------- */
 let installEvt = null;
@@ -1348,12 +1349,13 @@ function renderSheet(){
       h += (w ? `<label class="field">Nome del muro<input id="wname" value="${esc(w.name)}" maxlength="40"></label>` : '') +
         `<div class="row">${PICK_BTNS}</div>`+
         `<div class="row" style="margin-top:10px">` +
-        (w ? `<button class="btn danger" data-act="delw">${ui.confirm === 'delw' ? 'Tocca ancora per eliminare' : 'Elimina muro'}</button>` : '') +
+        (w && (!ME || ME.role === 'gestore') ? `<button class="btn danger" data-act="delw">${ui.confirm === 'delw' ? 'Tocca ancora per eliminare' : 'Elimina muro'}</button>` : '') +
         `<button class="btn primary" data-act="close">Fatto</button></div>`+
-        `<p class="note">Le modifiche restano su questo dispositivo finché non premi Pubblica. Dopo la pubblicazione, chi apre il link vede i circuiti aggiornati, in sola lettura.</p>`+
-        (SB ? `<div class="row" style="margin-top:10px"><button class="btn" data-act="setpass">Imposta password</button><button class="btn" data-act="logout">Esci</button></div>` : '');
+        `<p class="note">Le modifiche restano su questo dispositivo finché non premi Pubblica. Se nel frattempo un altro tracciatore ha pubblicato, i suoi circuiti vengono tenuti e si aggiungono i tuoi.</p>`+
+        (ME ? `<p class="note">Sei dentro come <b>${esc(ME.email)}</b> (${ME.role === 'gestore' ? 'gestore' : 'tracciatore'}).</p>` : '')+
+        (SB ? `<div class="row" style="margin-top:10px">${ME && ME.role === 'gestore' ? `<button class="btn" data-act="staff">Staff</button>` : ''}<button class="btn" data-act="setpass">Imposta password</button><button class="btn" data-act="logout">Esci</button></div>` : '');
     } else {
-      h += `<div class="row">${canInstall() ? `<button class="btn" data-act="install">Installa l'app</button>` : ''}${SB ? `<button class="btn" data-act="login">Accedi come gestore</button>` : ''}<button class="btn primary" data-act="close">Chiudi</button></div>`;
+      h += `<div class="row">${canInstall() ? `<button class="btn" data-act="install">Installa l'app</button>` : ''}${SB ? `<button class="btn" data-act="login">Accedi (staff)</button>` : ''}<button class="btn primary" data-act="close">Chiudi</button></div>`;
     }
   } else if(ui.sheet === 'install'){
     h = `<h2>Installa l'app</h2>`+
@@ -1361,11 +1363,19 @@ function renderSheet(){
                : `<p>Apri il menu del browser (⋮ in alto a destra) e scegli <b>Installa app</b> oppure <b>Aggiungi a schermata Home</b>.</p>`)+
       `<div class="row"><button class="btn primary" data-act="close">Ok</button></div>`;
   } else if(ui.sheet === 'login'){
-    h = `<h2>Accesso gestore</h2>`+
+    h = `<h2>Accesso staff</h2>`+
       (ui.loginSent ? `<p>Ti ho mandato un'email con un link. Aprila da questo telefono e tocca il link: tornerai qui già dentro.</p>` :
       `<label class="field">La tua email<input id="lemail" type="email" autocomplete="email" inputmode="email" value="${esc(ui.loginEmail || '')}"></label>`+
       `<label class="field">Password<input id="lpass" type="password" autocomplete="current-password"></label>`)+
       `<div class="row">${ui.loginSent ? '' : `<button class="btn primary" data-act="passlogin">Entra</button><button class="btn" data-act="sendlink">Non ho la password: mandami un link</button>`}<button class="btn" data-act="close">Chiudi</button></div>`;
+  } else if(ui.sheet === 'staff'){
+    const list = ui.staff;
+    h = `<h2>Staff</h2><p class="note" style="margin:0 0 12px">Chi è in questo elenco può creare e modificare muri e circuiti e pubblicarli. Solo il gestore gestisce l'elenco.</p>`+
+      (list === null ? `<p>Carico…</p>` : list === 'err' ? `<p>Non riesco a leggere l'elenco. Hai eseguito l'ultimo aggiornamento del database?</p>` :
+       `<div class="list">${list.map(p => `<div class="wrow"><span>${esc(p.email)}<br><small>${p.role === 'gestore' ? 'gestore' : 'tracciatore'}</small></span>${ME && p.email.toLowerCase() === ME.email.toLowerCase() ? '<small>tu</small>' : `<button class="btn danger" data-act="staffdel" data-email="${esc(p.email)}">${ui.confirm === 'staffdel:' + p.email ? 'Conferma' : 'Togli'}</button>`}</div>`).join('')}</div>`)+
+      `<label class="field">Aggiungi tracciatore (email)<input id="semail" type="email" inputmode="email" autocomplete="off"></label>`+
+      `<div class="row"><button class="btn primary" data-act="staffadd">Aggiungi</button><button class="btn" data-act="close">Chiudi</button></div>`+
+      `<p class="note">Poi manda il link dell'app alla persona: tocca il nome del muro → <b>Accedi (staff)</b> → <b>Non ho la password: mandami un link</b>; una volta dentro, <b>Imposta password</b>.</p>`;
   } else if(ui.sheet === 'setpass'){
     h = `<h2>Imposta una password</h2><p class="note" style="margin:0 0 12px">Così la prossima volta entri con email e password, senza aspettare l'email.</p>`+
       `<label class="field">Nuova password (almeno 8 caratteri)<input id="npass" type="password" autocomplete="new-password"></label>`+
@@ -1427,6 +1437,26 @@ async function makeImage(){
 }
 
 /* ---------- pubblicazione ---------- */
+async function loadStaff(){
+  ui.staff = null; renderSheet();
+  const { data, error } = await SB.from('editors').select('email,role').order('email');
+  ui.staff = error ? 'err' : (data || []);
+  if(ui.sheet === 'staff') renderSheet();
+}
+async function staffAdd(){
+  const inp = document.getElementById('semail'), email = ((inp && inp.value) || '').trim().toLowerCase();
+  if(!/^\S+@\S+\.\S+$/.test(email)){ toast('Scrivi un\'email valida.'); return; }
+  const { error } = await SB.from('editors').insert({ email, role: 'tracciatore' });
+  if(error){ toast(/duplicate/i.test(error.message || '') ? 'È già nello staff.' : 'Non riuscito: ' + error.message); return; }
+  toast(email + ' aggiunto allo staff.'); loadStaff();
+}
+async function staffDel(email){
+  if(ui.confirm !== 'staffdel:' + email){ ui.confirm = 'staffdel:' + email; renderSheet(); return; }
+  ui.confirm = null;
+  const { error } = await SB.from('editors').delete().eq('email', email);
+  if(error){ toast('Non riuscito: ' + error.message); return; }
+  toast(email + ' tolto dallo staff.'); loadStaff();
+}
 async function passLogin(){
   const em = document.getElementById('lemail'), pw = document.getElementById('lpass');
   const email = ((em && em.value) || '').trim(), password = (pw && pw.value) || '';
@@ -1453,8 +1483,48 @@ async function sendLoginLink(){
   ui.loginSent = true; renderSheet();
 }
 /* carica le foto nuove nell'archivio e salva lo stato nel database; poi ricarica la pagina pubblicata */
+
+/* ---------- unione con le pubblicazioni degli altri ----------
+   base = versione online da cui è partita la mia bozza; local = la mia bozza; remote = versione online adesso.
+   Per ogni muro e ogni circuito: se l'ho cambiato io vince la mia versione, altrimenti quella online. */
+const J = x => JSON.stringify(x === undefined ? null : x);
+function mergeList(base, local, remote, mergeItem){
+  const B = new Map((base || []).map(x => [x.id, x])), L = new Map((local || []).map(x => [x.id, x])), R = new Map((remote || []).map(x => [x.id, x]));
+  const ids = [...(remote || []).map(x => x.id), ...(local || []).map(x => x.id).filter(id => !R.has(id))];
+  const out = [];
+  for(const id of ids){
+    const b = B.get(id), l = L.get(id), r = R.get(id);
+    if(!l){ if(b) continue; out.push(r); continue; }              /* tolto da me: resta tolto; nuovo di altri: entra */
+    if(!r){ if(b && J(l) === J(b)) continue; out.push(l); continue; } /* tolto da altri e non toccato da me: resta tolto */
+    if(!b){ out.push(l); continue; }
+    if(J(l) === J(b)){ out.push(r); continue; }
+    if(J(r) === J(b)){ out.push(l); continue; }
+    out.push(mergeItem ? mergeItem(b, l, r) : l);
+  }
+  return out;
+}
+function mergeWall(b, l, r){
+  const m = {};
+  const keys = new Set([...Object.keys(b), ...Object.keys(l), ...Object.keys(r)]);
+  keys.delete('circuits');
+  for(const k of keys){
+    const v = J(l[k]) === J(b[k]) ? r[k] : l[k];
+    if(v !== undefined) m[k] = v;
+  }
+  m.circuits = mergeList(b.circuits, l.circuits, r.circuits, null);
+  if(l.activeCircuit && m.circuits.some(c => c.id === l.activeCircuit)) m.activeCircuit = l.activeCircuit;
+  return m;
+}
+function mergeWalls(base, local, remote){ return mergeList(base, local, remote, mergeWall); }
 async function publishRemote(){
   const snap = JSON.parse(JSON.stringify(snapshot()));
+  const { data: row, error: rerr } = await SB.from('app_state').select('data,rev').eq('id', 1).maybeSingle();
+  if(rerr) throw rerr;
+  if(row && row.data && Array.isArray(row.data.walls) && (row.rev || 0) > PUBREV){
+    snap.walls = mergeWalls(BASE || [], snap.walls, row.data.walls);
+    if(!snap.walls.some(w => w.id === snap.active) && snap.walls.length) snap.active = snap.walls[0].id;
+  }
+  snap.rev = Math.max(Date.now(), ((row && row.rev) || 0) + 1);
   for(const w of snap.walls){
     if(typeof w.img === 'string' && w.img.startsWith('data:')){
       const blob = await (await fetch(w.img)).blob();
@@ -1592,6 +1662,9 @@ document.addEventListener('click', e => {
     case 'login': ui.loginSent = false; openSheet('login'); break;
     case 'sendlink': sendLoginLink(); break;
     case 'passlogin': passLogin(); break;
+    case 'staff': if(SB && ME && ME.role === 'gestore'){ ui.staff = null; ui.confirm = null; openSheet('staff'); loadStaff(); } break;
+    case 'staffadd': staffAdd(); break;
+    case 'staffdel': staffDel(b.dataset.email); break;
     case 'setpass': openSheet('setpass'); break;
     case 'savepass': savePassword(); break;
     case 'logout': if(SB){ SB.auth.signOut().finally(() => location.reload()); } break;
@@ -1675,7 +1748,7 @@ document.addEventListener('click', e => {
       ui.sheet = null; ui.confirm = null; touch(); render(); renderSheet(); break;
     case 'pickw': if(ui.scan) break; S.active = b.dataset.id; ui.sel = null; ui.zoom = 1; ui.move = false; ui.sheet = null; save(); render(); renderSheet(); break;
     case 'delw':
-      if(!w) break;
+      if(!w || (ME && ME.role !== 'gestore')) break;
       if(ui.confirm !== 'delw'){ ui.confirm = 'delw'; renderSheet(); break; }
       S.walls = S.walls.filter(x => x.id !== w.id);
       S.active = S.walls[0] ? S.walls[0].id : null;
@@ -1866,10 +1939,16 @@ render();
           render();
         }
       }catch(e){}
+      BASE = JSON.parse(JSON.stringify(S.walls));
       const { data: { session } } = await SB.auth.getSession();
       if(session){
         const { data: ok } = await SB.rpc('is_editor');
-        if(ok){ ART = { publish: publishRemote }; EDIT = true; }
+        if(ok){
+          ART = { publish: publishRemote }; EDIT = true;
+          let role = 'tracciatore';
+          try{ const r = await SB.rpc('my_role'); if(r && r.data) role = r.data; }catch(e){}
+          ME = { email: (session.user && session.user.email) || '', role };
+        }
         else toast('Questo account non ha i permessi di modifica.');
       }
     }
