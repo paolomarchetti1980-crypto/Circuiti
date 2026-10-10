@@ -199,7 +199,7 @@ const loadImg = src => new Promise((res,rej) => { const i = new Image(); if(!/^d
 function newCircuit(w){
   const used = w.circuits.map(c => c.color);
   const p = PALETTE.find(p => !used.includes(p[1])) || PALETTE[0];
-  return { id: uid(), name: p[0], color: p[1], holds: [] };
+  return { id: uid(), name: 'Nuovo circuito ' + (w.circuits.length + 1), color: p[1], holds: [] };
 }
 function roleFor(c){ return c && c.holds.length ? 'hold' : 'start'; }
 
@@ -1206,21 +1206,24 @@ function renderStage(){
 function visibleCircuits(w){
   return w.circuits.filter(c => (!ui.fAngle || String(c.angle) === String(ui.fAngle)) && (!ui.fGrade || c.grade === ui.fGrade));
 }
+const gradeIdx = g => { const i = GRADES.indexOf(g || ''); return i <= 0 ? 999 : i; };
+function circMeta(c){
+  return [c.grade || 'senza grado', c.angle != null ? c.angle + '°' : '', c.style || '', c.holds.length + (c.holds.length === 1 ? ' presa' : ' prese')].filter(Boolean).map(esc).join(' · ');
+}
 function renderChips(){
   const w = curWall(), el = $('#chips');
   if(!w || (EDIT && S.mode === 'wall')){ el.innerHTML = ''; return; }
-  const act = curCircuit();
-  const angles = [...new Set(w.circuits.map(c => c.angle).filter(a => a != null))].sort((a, b) => a - b);
-  const grades = GRADES.filter(g => g && w.circuits.some(c => c.grade === g));
-  const sel = (id, cur, all, opts) => `<select id="${id}" class="fsel" aria-label="${all}"><option value="">${all}</option>${opts.map(o => `<option value="${o[0]}" ${String(cur) === String(o[0]) ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>`;
-  const filt = (angles.length || grades.length) ?
-    (angles.length ? sel('fangle', ui.fAngle || '', 'Tutte le inclinazioni', angles.map(a => [a, a + '°'])) : '') +
-    (grades.length ? sel('fgrade', ui.fGrade || '', 'Tutti i gradi', grades.map(g => [g, g])) : '') : '';
-  const vis = visibleCircuits(w);
-  el.innerHTML = filt + vis.map(c =>
-    `<button class="chip ${act && c.id === act.id ? 'active' : ''}" data-act="circ" data-id="${c.id}">`+
-    `<i class="dot" style="background:${c.color}"></i><span class="nm">${esc(c.name)}${c.grade ? ' · '+esc(c.grade) : ''}${c.angle != null ? ' · '+c.angle+'°' : ''}</span><span class="n">${c.holds.length}</span></button>`
-  ).join('') + (!vis.length && w.circuits.length ? `<span class="chip" style="border-style:dashed;color:var(--muted)">Nessun circuito con questi filtri</span>` : '') + (EDIT ? `<button class="chip add" data-act="addc">+ Circuito</button>` : '');
+  const act = curCircuit(), n = visibleCircuits(w).length, tot = w.circuits.length;
+  const filtered = (ui.fAngle || ui.fGrade) ? ` · filtrati ${n}/${tot}` : '';
+  if(!act){
+    el.innerHTML = `<div class="curbar"><span class="cinfo"><b>Nessun circuito su questo muro</b></span>${EDIT ? `<button class="btn primary" data-act="addc">+ Nuovo circuito</button>` : ''}</div>`;
+    return;
+  }
+  el.innerHTML = `<div class="curbar">`+
+    `<button class="cinfo" data-act="clist" aria-label="Elenco circuiti"><i class="dot" style="background:${act.color}"></i>`+
+    `<span class="ctext"><b>${esc(act.name)}</b><small>${circMeta(act)}</small></span></button>`+
+    (EDIT && S.mode === 'edit' ? `<button class="btn" data-act="cedit">Modifica</button>` : '')+
+    `<button class="btn primary" data-act="clist">Circuiti (${tot})${filtered}</button></div>`;
 }
 function samStatus(w){
   const e = sam.emb[w.id];
@@ -1345,6 +1348,19 @@ function renderSheet(){
       `<label class="field">Inclinazione (gradi dalla verticale)<select id="cangle"><option value="" ${c.angle == null ? 'selected' : ''}>—</option>${ANGLES.map(a => `<option value="${a}" ${c.angle === a ? 'selected' : ''}>${a}°</option>`).join('')}</select></label>`+
       `<div class="row"><button class="btn danger" data-act="delc">${ui.confirm === 'delc' ? 'Tocca ancora per eliminare' : 'Elimina circuito'}</button>`+
       `<button class="btn primary" data-act="close">Fatto</button></div>`;
+  } else if(ui.sheet === 'clist' && w){
+    const angles = [...new Set(w.circuits.map(x => x.angle).filter(x => x != null))].sort((x, y) => x - y);
+    const grades = GRADES.filter(g => g && w.circuits.some(x => x.grade === g));
+    const sel = (id, cur, all, opts) => `<select id="${id}" class="fsel" aria-label="${all}"><option value="">${all}</option>${opts.map(o => `<option value="${o[0]}" ${String(cur) === String(o[0]) ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>`;
+    const vis = visibleCircuits(w).slice().sort((x, y) => gradeIdx(x.grade) - gradeIdx(y.grade) || String(x.name).localeCompare(String(y.name)));
+    const act = curCircuit();
+    h = `<h2>Circuiti · ${esc(w.name)}</h2>`+
+      ((angles.length || grades.length) ? `<div class="row" style="margin:0 0 12px">${angles.length ? sel('fangle', ui.fAngle || '', 'Tutte le inclinazioni', angles.map(x => [x, x + '°'])) : ''}${grades.length ? sel('fgrade', ui.fGrade || '', 'Tutti i gradi', grades.map(g => [g, g])) : ''}</div>` : '')+
+      `<div class="list">`+
+      (vis.length ? vis.map(x => `<button class="crow ${act && x.id === act.id ? 'active' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext"><b>${esc(x.name)}</b><small>${circMeta(x)}</small></span><span class="cgrade">${esc(x.grade || '–')}</span></button>`).join('')
+        : `<p class="note" style="margin:0">${w.circuits.length ? 'Nessun circuito con questi filtri.' : 'Ancora nessun circuito su questo muro.'}</p>`)+
+      `</div>`+
+      `<div class="row">${EDIT && w.locked ? `<button class="btn primary" data-act="addc">+ Nuovo circuito</button>` : ''}<button class="btn" data-act="close">Chiudi</button></div>`;
   } else if(ui.sheet === 'wall'){
     h = `<h2>Muri</h2><div class="list">`+
       S.walls.map(x => `<button class="wrow ${w && x.id === w.id ? 'active' : ''}" data-act="pickw" data-id="${x.id}"><span>${esc(x.name)}</span><small>${x.circuits.length} circuiti</small></button>`).join('') +
@@ -1696,6 +1712,12 @@ document.addEventListener('click', e => {
       if(!w) break;
       if(c && b.dataset.id === c.id){ if(EDIT) openSheet('circ'); break; }
       w.activeCircuit = b.dataset.id; ui.sel = null; ui.move = false; ui.nextRole = roleFor(curCircuit()); save(); render(); break;
+    case 'clist': ui.confirm = null; openSheet('clist'); break;
+    case 'cedit': if(c && EDIT) openSheet('circ'); break;
+    case 'pickc':
+      if(!w) break;
+      w.activeCircuit = b.dataset.id; ui.sel = null; ui.move = false; ui.nextRole = roleFor(curCircuit());
+      ui.sheet = null; save(); render(); renderSheet(); break;
     case 'addc': {
       if(!w) break;
       const n = newCircuit(w); w.circuits.push(n); w.activeCircuit = n.id;
@@ -1779,7 +1801,7 @@ document.addEventListener('input', e => {
     try{ localStorage.setItem('circ-filters', JSON.stringify({ a: ui.fAngle || '', g: ui.fGrade || '' })); }catch(err){}
     const wf = curWall(), vis = wf ? visibleCircuits(wf) : [];
     if(wf && vis.length && !vis.some(x => x.id === wf.activeCircuit)){ wf.activeCircuit = vis[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); }
-    render(); return;
+    render(); if(ui.sheet === 'clist') renderSheet(); return;
   }
   if(!EDIT) return;
   if(e.target.id === 'cname' && c){ c.name = e.target.value || 'Circuito'; renderChips(); touch(); }
