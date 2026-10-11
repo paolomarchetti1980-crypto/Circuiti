@@ -772,7 +772,7 @@ function straightPoly(pts, nPix){
   const h = hullPts(pts);
   if(h.length < 3) return null;
   let HA = 0; h.forEach((q, i) => { const n2 = h[(i+1) % h.length]; HA += q[0]*n2[1] - n2[0]*q[1]; }); HA = Math.abs(HA)/2;
-  if(!HA || nPix/HA < 0.86) return null;
+  if(!HA || nPix/HA < 0.72) return null;
   const dense = [];
   h.forEach((q, i) => { const n2 = h[(i+1) % h.length], L = Math.max(1, Math.round(Math.hypot(n2[0]-q[0], n2[1]-q[1]))); for(let t=0; t<L; t++) dense.push([q[0] + (n2[0]-q[0])*t/L, q[1] + (n2[1]-q[1])*t/L]); });
   return straightCore(dense, HA);
@@ -894,13 +894,24 @@ async function samSegment(w, x, y, ts, strict){
   ok.sort((a, b) => a.a - b.a);
   let base = ok.findIndex(c => c.k === 1); if(base < 0) base = 0;
   const step = Math.round(Math.log(ts || 1)/Math.log(1.35));
-  const pick = ok[Math.max(0, Math.min(ok.length-1, base + step))];
-  const m = new Uint8Array(N), off = pick.k*N;
-  for(let i=0; i<N; i++) m[i] = md[off+i] > 0 ? 1 : 0;
-  const tr = maskToPoly(m, E.rw, E.rh, x*E.s, y*E.s);
+  const pi = Math.max(0, Math.min(ok.length-1, base + step));
+  let pick = ok[pi];
+  const trace = c => { const m = new Uint8Array(N), off = c.k*N; for(let i=0; i<N; i++) m[i] = md[off+i] > 0 ? 1 : 0; return maskToPoly(m, E.rw, E.rh, x*E.s, y*E.s); };
+  let tr = trace(pick);
   if(!tr || tr.pts.length < 3) return null;
   if(strict && !tr.inside) return null;
-  const simp = straightPoly(tr.pts, tr.n) || rdpPts(tr.pts, 0.9);
+  let st = straightPoly(tr.pts, tr.n);
+  /* volume con due facce di luce diversa: la maschera scelta ne prende solo un pezzo frastagliato.
+     Se una maschera più grande (fino a 5 volte) contiene il tocco ed è un poligono netto, si usa quella. */
+  if(!st && !strict && (!ts || ts === 1)){
+    for(let j = pi + 1; j < ok.length; j++){
+      if(ok[j].a > pick.a*5) break;
+      const t2 = trace(ok[j]); if(!t2 || !t2.inside) continue;
+      const s2 = straightPoly(t2.pts, t2.n);
+      if(s2){ tr = t2; st = s2; pick = ok[j]; break; }
+    }
+  }
+  const simp = st || rdpPts(tr.pts, 0.9);
   if(simp.length < 3) return null;
   const k = 1/E.s, flat = [];
   simp.forEach(p => { flat.push(Math.round((p[0] + 0.5)*k), Math.round((p[1] + 0.5)*k)); });
