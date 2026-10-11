@@ -1236,14 +1236,27 @@ function renderStage(){
 function visibleCircuits(w){
   return w.circuits.filter(c => (!ui.fAngle || String(c.angle) === String(ui.fAngle)) && (!ui.fGrade || c.grade === ui.fGrade));
 }
+const gradeBand = g => { const i = GRADES.indexOf(g || ''); if(i <= 0) return '#5b6068'; if(i <= GRADES.indexOf('5c')) return '#7bd389'; if(i <= GRADES.indexOf('6b+')) return '#ffd166'; if(i <= GRADES.indexOf('7a+')) return '#ff9a3d'; return '#ef476f'; };
+const gradeBadge = g => `<span class="gb" style="background:${gradeBand(g)}">${esc(g || '–')}</span>`;
 const gradeIdx = g => { const i = GRADES.indexOf(g || ''); return i <= 0 ? 999 : i; };
 function circMeta(c){
-  return [c.grade || 'senza grado', c.angle != null ? c.angle + '°' : '', c.style || '', c.holds.length + (c.holds.length === 1 ? ' presa' : ' prese')].filter(Boolean).map(esc).join(' · ');
+  return [c.angle != null ? c.angle + '°' : '', c.style || '', c.holds.length + (c.holds.length === 1 ? ' presa' : ' prese')].filter(Boolean).map(esc).join(' · ');
 }
 function renderChips(){
   const w = curWall(), el = $('#chips');
   if(!w || (EDIT && S.mode === 'wall')){ el.innerHTML = ''; return; }
   const act = curCircuit(), n = visibleCircuits(w).length, tot = w.circuits.length;
+  if(!EDIT || S.mode === 'view'){
+    const angles = [...new Set(w.circuits.map(x => x.angle).filter(x => x != null))].sort((x, y) => x - y);
+    const grades = GRADES.filter(g => g && w.circuits.some(x => x.grade === g));
+    const vis = visibleCircuits(w).slice().sort((x, y) => gradeIdx(x.grade) - gradeIdx(y.grade) || String(x.name).localeCompare(String(y.name)));
+    const fa = v => `<button class="fchip ${String(ui.fAngle || '') === String(v) ? 'on' : ''}" data-act="fang" data-v="${v}">${v === '' ? 'Tutti' : v + '°'}</button>`;
+    el.innerHTML = (tot ? `<div class="fchips">${angles.length ? fa('') + angles.map(fa).join('') : ''}`+
+        (grades.length ? `<select id="fgrade" class="fsel" aria-label="Grado"><option value="">Tutti i gradi</option>${grades.map(g => `<option value="${g}" ${ui.fGrade === g ? 'selected' : ''}>${g}</option>`).join('')}</select>` : '')+`</div>` : '')+
+      (vis.length ? vis.map(x => `<button class="lrow ${act && x.id === act.id ? 'active' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext" style="flex:1"><b>${esc(x.name)}</b><small>${circMeta(x)}</small></span>${gradeBadge(x.grade)}</button>`).join('')
+        : `<p class="hint" style="padding:6px 2px">${tot ? 'Nessun circuito con questi filtri.' : 'Ancora nessun circuito su questo muro.'}</p>`);
+    return;
+  }
   const filtered = (ui.fAngle || ui.fGrade) ? ` · filtrati ${n}/${tot}` : '';
   if(!act){
     el.innerHTML = `<div class="curbar"><span class="cinfo"><b>Nessun circuito su questo muro</b></span>${EDIT ? `<button class="btn primary" data-act="addc">+ Nuovo circuito</button>` : ''}</div>`;
@@ -1251,7 +1264,7 @@ function renderChips(){
   }
   el.innerHTML = `<div class="curbar">`+
     `<button class="cinfo" data-act="clist" aria-label="Elenco circuiti"><i class="dot" style="background:${act.color}"></i>`+
-    `<span class="ctext"><b>${esc(act.name)}</b><small>${circMeta(act)}</small></span></button>`+
+    `<span class="ctext"><b>${esc(act.name)}</b><small>${circMeta(act)}</small></span>${gradeBadge(act.grade)}</button>`+
     (EDIT && S.mode === 'edit' ? `<button class="btn" data-act="cedit">Modifica</button>` : '')+
     `<button class="btn primary" data-act="clist">Circuiti (${tot})${filtered}</button></div>`;
 }
@@ -1321,13 +1334,12 @@ function renderTools(){
   }
   if(!EDIT || S.mode === 'view'){
     const p = S.prefs;
-    el.innerHTML =
+    el.innerHTML = c ? `<div class="mini">`+
       `<button class="btn ${p.numbers ? 'on' : ''}" data-act="pref" data-k="numbers">Numeri</button>`+
       `<button class="btn ${p.lines ? 'on' : ''}" data-act="pref" data-k="lines">Linee</button>`+
       `<button class="btn ${p.others ? 'on' : ''}" data-act="pref" data-k="others">Altri circuiti</button>`+
       `<button class="btn ${p.dim ? 'on' : ''}" data-act="pref" data-k="dim">Oscura muro</button>`+
-      `<button class="btn primary" data-act="img">Crea immagine</button>`+
-      `<p class="hint">S: partenza. T: arrivo.</p>`;
+      `<button class="btn" data-act="img">Condividi immagine</button></div>` : '';
     return;
   }
   const h = c && ui.sel != null ? c.holds[ui.sel] : null;
@@ -1388,7 +1400,7 @@ function renderSheet(){
     h = `<h2>Circuiti · ${esc(w.name)}</h2>`+
       ((angles.length || grades.length) ? `<div class="row" style="margin:0 0 12px">${angles.length ? sel('fangle', ui.fAngle || '', 'Tutte le inclinazioni', angles.map(x => [x, x + '°'])) : ''}${grades.length ? sel('fgrade', ui.fGrade || '', 'Tutti i gradi', grades.map(g => [g, g])) : ''}</div>` : '')+
       `<div class="list">`+
-      (vis.length ? vis.map(x => `<button class="crow ${act && x.id === act.id ? 'active' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext"><b>${esc(x.name)}</b><small>${circMeta(x)}</small></span><span class="cgrade">${esc(x.grade || '–')}</span></button>`).join('')
+      (vis.length ? vis.map(x => `<button class="crow ${act && x.id === act.id ? 'active' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext"><b>${esc(x.name)}</b><small>${circMeta(x)}</small></span>${gradeBadge(x.grade)}</button>`).join('')
         : `<p class="note" style="margin:0">${w.circuits.length ? 'Nessun circuito con questi filtri.' : 'Ancora nessun circuito su questo muro.'}</p>`)+
       `</div>`+
       `<div class="row">${EDIT && w.locked ? `<button class="btn primary" data-act="addc">+ Nuovo circuito</button>` : ''}<button class="btn" data-act="close">Chiudi</button></div>`;
@@ -1749,6 +1761,13 @@ document.addEventListener('click', e => {
       if(c && b.dataset.id === c.id){ if(EDIT) openSheet('circ'); break; }
       w.activeCircuit = b.dataset.id; ui.sel = null; ui.move = false; ui.nextRole = roleFor(curCircuit()); save(); render(); break;
     case 'clist': ui.confirm = null; openSheet('clist'); break;
+    case 'fang': {
+      ui.fAngle = b.dataset.v;
+      try{ localStorage.setItem('circ-filters', JSON.stringify({ a: ui.fAngle || '', g: ui.fGrade || '' })); }catch(err){}
+      const vis = w ? visibleCircuits(w) : [];
+      if(w && vis.length && !vis.some(x => x.id === w.activeCircuit)){ w.activeCircuit = vis[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); }
+      render(); break;
+    }
     case 'cedit': if(c && EDIT) openSheet('circ'); break;
     case 'pickc':
       if(!w) break;

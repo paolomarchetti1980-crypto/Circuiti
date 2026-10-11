@@ -1,22 +1,12 @@
 <!DOCTYPE html>
-<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Circuiti sul muro</title><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#15171a"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"><style id="css">
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Circuiti sul muro</title><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#121315"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"><style id="css">
 :root{
-  --bg:#eceef0; --panel:#ffffff; --ink:#15171a; --muted:#5e666f; --line:#d3d8dd;
-  --accent:#1d4ed8; --accent-ink:#ffffff; --stage:#dde0e4; --danger:#b42318;
-  color-scheme: light dark;
+  --bg:#121315; --panel:#1b1d20; --panel2:#24272b; --ink:#eef0f2; --muted:#8d939b; --line:#2c3035;
+  --accent:#ff7a1a; --accent-ink:#141414; --stage:#0b0c0d; --danger:#ff7a7a;
+  color-scheme: dark;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
-}
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
-    --bg:#121416; --panel:#1b1e22; --ink:#eceef1; --muted:#9aa3ad; --line:#2f353c;
-    --accent:#7aa2ff; --accent-ink:#0b1020; --stage:#0b0c0e; --danger:#ff8a80;
-  }
-}
-:root[data-theme="dark"]{
-  --bg:#121416; --panel:#1b1e22; --ink:#eceef1; --muted:#9aa3ad; --line:#2f353c;
-  --accent:#7aa2ff; --accent-ink:#0b1020; --stage:#0b0c0e; --danger:#ff8a80;
 }
 html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
 *,*::before,*::after{box-sizing:border-box}
@@ -39,7 +29,7 @@ button,label.btn{cursor:pointer}
 .camwrap .camBar{display:flex;gap:10px;justify-content:center;padding:14px 14px calc(14px + env(safe-area-inset-bottom,0px));background:#000}
 .camwrap .camBar .btn{color:#fff;border-color:#444}
 
-.top{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--panel);border-bottom:1px solid var(--line)}
+.top{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg)}
 .wallbtn{flex:1;min-width:0;display:flex;align-items:center;gap:6px;background:none;border:0;padding:6px 4px;text-align:left;
   font:700 18px/1.1 "Barlow Semi Condensed",Barlow,sans-serif}
 .wallbtn:disabled{opacity:1;cursor:default}
@@ -47,7 +37,7 @@ button,label.btn{cursor:pointer}
 .wallbtn svg{flex:none;opacity:.6}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;padding:2px;gap:2px;background:var(--panel)}
 .seg button{border:0;background:none;padding:7px 12px;border-radius:8px;font-weight:600;white-space:nowrap}
-.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 .seg button:disabled{opacity:.4}
 .pubbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 10px;background:var(--panel);border-bottom:1px solid var(--line);color:var(--muted);font-size:14px}
 
@@ -64,8 +54,19 @@ button,label.btn{cursor:pointer}
 .empty p{margin:0 0 18px;color:var(--muted)}
 .empty .row{justify-content:center}
 
-.dock{background:var(--panel);border-top:1px solid var(--line);padding:8px 10px 10px}
-.chips{display:flex;gap:8px;overflow-x:auto;padding:2px 0 6px}
+.dock{background:var(--panel);border-radius:20px 20px 0 0;margin-top:-16px;position:relative;z-index:2;padding:8px 12px 12px;max-height:50vh;overflow:auto;box-shadow:0 -6px 20px rgba(0,0,0,.35)}
+.dock::before{content:"";display:block;width:40px;height:5px;border-radius:3px;background:#3a3e44;margin:0 auto 8px}
+.chips{padding:0}
+.fchips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 8px;align-items:center}
+.fchip{flex:none;padding:7px 12px;border-radius:999px;background:var(--panel2);border:0;color:#d6d9dd;font:600 13px Barlow,sans-serif}
+.fchip.on{background:var(--accent);color:var(--accent-ink)}
+.lrow{display:flex;align-items:center;gap:12px;width:100%;padding:10px 6px;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;color:var(--ink)}
+.lrow:last-child{border-bottom:0}
+.lrow.active{background:var(--panel2);border-radius:12px;border-bottom-color:transparent}
+.lrow .dot{width:14px;height:14px}
+.gb{flex:none;min-width:46px;text-align:center;padding:6px 8px;border-radius:10px;font:800 18px/1 "Barlow Semi Condensed",Barlow,sans-serif;color:#141414;background:#5b6068}
+.mini{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.mini .btn{padding:6px 10px;font-size:13px;border-radius:999px}
 .curbar{display:flex;align-items:center;gap:8px;padding:2px 0 6px}
 .curbar .cinfo{flex:1;min-width:0;display:flex;align-items:center;gap:10px;background:none;border:0;padding:4px 2px;text-align:left}
 .ctext{min-width:0;display:flex;flex-direction:column}
@@ -87,7 +88,7 @@ button,label.btn{cursor:pointer}
 .tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px}
 .hint{flex-basis:100%;margin:0;color:var(--muted);font-size:14px}
 .btn{display:inline-block;padding:9px 13px;border-radius:10px;border:1px solid var(--line);background:none;font-weight:600;text-align:center}
-.btn.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn.on{background:var(--panel2);color:var(--accent);border-color:var(--accent)}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .btn.danger{color:var(--danger);border-color:var(--danger)}
 .btn:disabled{opacity:.4}
