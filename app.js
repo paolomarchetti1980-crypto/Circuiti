@@ -1131,14 +1131,14 @@ function circuitSVG(c, W, alpha, o){
     (grp[key] = grp[key] || []).push(i);
   });
   const starts = []; c.holds.forEach((h,i) => { if(h.role === 'start') starts.push(i); });
-  if(starts.length > 1){
+  if(starts.length > 1 && !o.boulder){
     const p = starts.map(i => c.holds[i].x.toFixed(1)+','+c.holds[i].y.toFixed(1)).join(' ');
     const lw = Math.max(3, W*0.0032);
     s += `<polyline points="${p}" fill="none" stroke="${ha}" stroke-opacity=".6" stroke-width="${lw*2.2}" stroke-linecap="round"/>`+
          `<polyline points="${p}" fill="none" stroke="${base}" stroke-width="${lw*0.85}" stroke-dasharray="${lw*1.4} ${lw*1.4}" stroke-linecap="round"/>`;
   }
   c.holds.forEach((h,i) => {
-    const col = h.hand === 'L' ? S.prefs.handL : h.hand === 'R' ? S.prefs.handR : base, ha = haloOf(col);
+    const col = !o.boulder && h.hand === 'L' ? S.prefs.handL : !o.boulder && h.hand === 'R' ? S.prefs.handR : base, ha = haloOf(col);
     const key = h.cid != null ? ('c'+h.cid) : ('p'+Math.round(h.x)+'_'+Math.round(h.y));
     const g = h.role === 'hold' ? grp[key] : null, gi = g ? g.indexOf(i) : 0;
     const scale = gi > 0 ? Math.max(0.58, 1 - gi*0.22) : 1;
@@ -1152,7 +1152,7 @@ function circuitSVG(c, W, alpha, o){
       s += `<circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${ha}" stroke-opacity=".55" stroke-width="${rsw+rhw*2}"/>`+
            `<circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${col}" stroke-width="${rsw}"/>`;
     }
-    let label = h.role === 'start' ? (starts.length > 1 ? 'S' + (starts.indexOf(i)+1) : 'S') : h.role === 'top' ? 'T' : '';
+    let label = h.role === 'start' ? (starts.length > 1 && !o.boulder ? 'S' + (starts.indexOf(i)+1) : 'S') : h.role === 'top' ? 'T' : '';
     if(!label && o.numbers && h.role === 'hold'){
       if(gi < g.length - 1) return; /* il numero si mette una sola volta, sull'ultimo passaggio del gruppo */
       label = g.map(j => seqOf[j]).join(',');
@@ -1183,8 +1183,10 @@ function overlay(w, o){
     return s;
   }
   const act = w.circuits.find(c => c.id === w.activeCircuit) || w.circuits[0];
+  const bo = isSec(w);
+  if(bo) o = Object.assign({}, o, { numbers: false, lines: false, boulder: true });
   let s = '';
-  if(o.others) visibleCircuits(w).forEach(c => { if(c !== act) s += circuitSVG(c, w.w, 0.28, {numbers:false, lines:false}); });
+  if(o.others) visibleCircuits(w).forEach(c => { if(c !== act) s += circuitSVG(c, w.w, 0.28, {numbers:false, lines:false, boulder:bo}); });
   if(o.dim && act && act.holds.length){
     let d = `M0,0H${w.w}V${w.h}H0Z`;
     act.holds.forEach(h => {
@@ -1393,10 +1395,10 @@ function renderTools(){
   if(!EDIT || S.mode === 'view'){
     const p = S.prefs;
     el.innerHTML = c ? `<div class="mini">`+
-      `<button class="btn ${p.numbers ? 'on' : ''}" data-act="pref" data-k="numbers">Numeri</button>`+
-      `<button class="btn ${p.lines ? 'on' : ''}" data-act="pref" data-k="lines">Linee</button>`+
+      (isSec(w) ? '' : `<button class="btn ${p.numbers ? 'on' : ''}" data-act="pref" data-k="numbers">Numeri</button>`+
+      `<button class="btn ${p.lines ? 'on' : ''}" data-act="pref" data-k="lines">Linee</button>`)+
       `<button class="btn ${p.others ? 'on' : ''}" data-act="pref" data-k="others">${isSec(w) ? 'Altri boulder' : 'Altri circuiti'}</button>`+
-      `<button class="btn ${p.dim ? 'on' : ''}" data-act="pref" data-k="dim">Oscura muro</button>`+
+      `<button class="btn ${p.dim ? 'on' : ''}" data-act="pref" data-k="dim">${isSec(w) ? 'Oscura settore' : 'Oscura muro'}</button>`+
       `<button class="btn" data-act="img">Condividi immagine</button></div>` : '';
     return;
   }
@@ -1415,11 +1417,11 @@ function renderTools(){
   el.innerHTML =
     `<p class="hint">${hint}</p>`+
     `<div class="seg">${rb('start','Partenza')}${rb('hold','Presa')}${rb('top','Arrivo')}</div>`+
-    `<div class="seg" role="group" aria-label="Mano">${hb('','Libera')}${hb('L',dot(S.prefs.handL)+'Sinistra')}${hb('R',dot(S.prefs.handR)+'Destra')}</div>`+
+    (isSec(w) ? '' : `<div class="seg" role="group" aria-label="Mano">${hb('','Libera')}${hb('L',dot(S.prefs.handL)+'Sinistra')}${hb('R',dot(S.prefs.handR)+'Destra')}</div>`)+
     `<div class="seg"><button data-act="size" data-d="-1" aria-label="${lbl} più piccolo" ${h ? '' : 'disabled'}>${lbl} &minus;</button>`+
     `<button data-act="size" data-d="1" aria-label="${lbl} più grande" ${h ? '' : 'disabled'}>${lbl} +</button></div>`+
     `<button class="btn ${ui.move ? 'on' : ''}" data-act="move" ${h ? '' : 'disabled'}>Sposta</button>`+
-    `<button class="btn" data-act="dup" ${h ? '' : 'disabled'}>Ripeti qui (2ª mano)</button>`+
+    (isSec(w) ? '' : `<button class="btn" data-act="dup" ${h ? '' : 'disabled'}>Ripeti qui (2ª mano)</button>`)+
     `<button class="btn" data-act="del" ${h ? '' : 'disabled'}>Elimina</button>`+
     `<button class="btn" data-act="undo" ${c && c.holds.length ? '' : 'disabled'}>Annulla</button>`;
 }
@@ -1803,7 +1805,7 @@ $('#stage').addEventListener('click', async e => {
   if(isSec(w)){
     ui.busy = true;
     const res = await detect(w, x, y, 1);
-    const nh = { x, y, sx: x, sy: y, r: S.prefs.r, role: ui.nextRole, ts: 1, ...(ui.nextHand ? { hand: ui.nextHand } : {}) };
+    const nh = { x, y, sx: x, sy: y, r: S.prefs.r, role: ui.nextRole, ts: 1 };
     applySeg(nh, res, x, y, w);
     if(!res) toast('Contorno non riconosciuto: ho messo un cerchio. Regolalo con Contorno +/−.');
     c.holds.push(nh);
