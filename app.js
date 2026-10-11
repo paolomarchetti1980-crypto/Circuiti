@@ -66,6 +66,20 @@ const PALETTE = [['Giallo','#f2c200'],['Arancio','#ff7a1a'],['Rosso','#e5312b'],
 const GRADES = ['','3','4','5a','5b','5c','6a','6a+','6b','6b+','6c','6c+','7a','7a+','7b','7b+','7c','7c+','8a','8a+','8b','8b+','8c'];
 const STYLES = ['','Equilibrio','Dinamico','Forza','Tecnico','Resistenza','Coordinazione','Tacche','Svasi','Volumi'];
 const ANGLES = Array.from({length:41}, (_,i) => i);
+/* boulder: difficoltà a colori della palestra, dalla più facile alla più difficile */
+const DIFFS = [['bianco','Bianco','#ffffff'],['blu','Blu','#1e6bff'],['verde','Verde','#23b45a'],['giallo','Giallo','#f2c200'],['rosso','Rosso','#e5312b'],['nero','Nero','#111111']];
+const NODIFF = '#8d939b';
+const diffOf = c => DIFFS.find(d => d[0] === (c && c.diff)) || null;
+const diffIdx = c => { const i = DIFFS.findIndex(d => d[0] === (c && c.diff)); return i < 0 ? 99 : i; };
+const bTitle = c => { const d = diffOf(c); return d ? d[1] + ' ' + (c.num || 1) : 'Nuovo boulder'; };
+const bTitleHtml = c => esc(bTitle(c)) + (c.name && diffOf(c) ? ` <span style="font-weight:600;color:var(--muted)">· ${esc(c.name)}</span>` : '');
+/* numero: il più piccolo libero tra i boulder in parete della stessa difficoltà nel settore */
+function assignNum(w, c){
+  if(!diffOf(c)) { delete c.num; return; }
+  const used = new Set(w.circuits.filter(x => x !== c && x.diff === c.diff && !isOff(x)).map(x => x.num));
+  let n = 1; while(used.has(n)) n++;
+  c.num = n;
+}
 /* boulder: move, stile e particolarità (si possono scegliere più voci) */
 const BTAGS = ['Placca','Verticale','Strapiombo','Tetto','Spigolo','Diedro','Partenza seduta','Traverso','Dinamico','Lancio','Equilibrio','Compressione','Opposizione','Tallone','Punta','Incastro','Ribaltamento','Tacche','Svasi','Pinze','Buchi','Volumi','Uscita alta','Morfologico'];
 
@@ -86,6 +100,7 @@ const ui = { view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:nul
 try{ const f = JSON.parse(localStorage.getItem('circ-filters') || '{}'); ui.fAngle = f.a || ''; ui.fGrade = f.g || ''; }catch(e){}
 ui.section = 'circ'; ui.bShow = 'on'; ui.bGrade = ''; ui.bColor = ''; ui.lastSec = {};
 try{ const f = JSON.parse(localStorage.getItem('boulder-ui') || '{}'); if(f.sec === 'boulder') ui.section = 'boulder'; ui.bShow = f.show || 'on'; ui.bGrade = f.g || ''; ui.bColor = f.c || ''; ui.lastSec = f.last || {}; }catch(e){}
+if(!DIFFS.some(d => d[0] === ui.bColor)) ui.bColor = '';
 function saveBUI(){ try{ localStorage.setItem('boulder-ui', JSON.stringify({ sec: ui.section, show: ui.bShow, g: ui.bGrade, c: ui.bColor, last: ui.lastSec })); }catch(e){} }
 
 const uid = () => Math.random().toString(36).slice(2,9);
@@ -236,8 +251,7 @@ function newCircuit(w){
   if(isSec(w)){
     let setter = ''; try{ setter = localStorage.getItem('boulder-setter') || ''; }catch(e){}
     if(!setter && ME && ME.email) setter = ME.email.split('@')[0];
-    let n = w.circuits.length + 1; while(w.circuits.some(c => c.name === 'Boulder ' + n)) n++;
-    return { id: uid(), name: 'Boulder ' + n, color: PALETTE[0][1], holds: [], dateSet: todayISO(), ...(setter ? { setter } : {}) };
+    return { id: uid(), name: '', color: NODIFF, holds: [], dateSet: todayISO(), ...(setter ? { setter } : {}) };
   }
   const used = w.circuits.map(c => c.color);
   const p = PALETTE.find(p => !used.includes(p[1])) || PALETTE[0];
@@ -1376,7 +1390,7 @@ function renderStage(){
   fit();
 }
 function visibleCircuits(w){
-  if(isSec(w)) return w.circuits.filter(c => (ui.bShow === 'all' || (ui.bShow === 'off') === isOff(c)) && (!ui.bGrade || c.grade === ui.bGrade) && (!ui.bColor || c.color === ui.bColor));
+  if(isSec(w)) return w.circuits.filter(c => (ui.bShow === 'all' || (ui.bShow === 'off') === isOff(c)) && (!ui.bColor || c.diff === ui.bColor));
   return w.circuits.filter(c => (!ui.fAngle || String(c.angle) === String(ui.fAngle)) && (!ui.fGrade || c.grade === ui.fGrade));
 }
 const gradeBand = g => { const i = GRADES.indexOf(g || ''); if(i <= 0) return '#5b6068'; if(i <= GRADES.indexOf('5c')) return '#7bd389'; if(i <= GRADES.indexOf('6b+')) return '#ffd166'; if(i <= GRADES.indexOf('7a+')) return '#ff9a3d'; return '#ef476f'; };
@@ -1384,7 +1398,9 @@ const gradeBadge = g => `<span class="gb" style="background:${gradeBand(g)}">${e
 const gradeIdx = g => { const i = GRADES.indexOf(g || ''); return i <= 0 ? 999 : i; };
 function bMeta(c){
   const t = (c.tags || []).slice(0, 3).join(', ');
-  return [c.setter || '', isOff(c) ? 'smontato ' + fmtDate(c.dateRemoved) : c.dateSet ? fmtDate(c.dateSet) : '', t].filter(Boolean).map(esc).join(' · ');
+  const hc = c.holdColor && PALETTE.find(p => p[1] === c.holdColor);
+  const PL = { Giallo:'gialle', Arancio:'arancioni', Rosso:'rosse', Rosa:'rosa', Viola:'viola', Blu:'blu', Azzurro:'azzurre', Verde:'verdi', Bianco:'bianche', Nero:'nere' };
+  return [hc ? 'prese ' + (PL[hc[0]] || hc[0].toLowerCase()) : '', c.setter || '', isOff(c) ? 'smontato ' + fmtDate(c.dateRemoved) : c.dateSet ? fmtDate(c.dateSet) : '', t].filter(Boolean).map(esc).join(' · ');
 }
 function circMeta(c){
   if(curWall() && isSec(curWall())) return bMeta(c);
@@ -1392,17 +1408,15 @@ function circMeta(c){
 }
 /* filtri dei boulder: stato (in parete / smontati / tutti), grado, colore delle prese */
 function bFilters(w){
-  const grades = GRADES.filter(g => g && w.circuits.some(x => x.grade === g));
-  const cols = PALETTE.filter(p => w.circuits.some(x => x.color === p[1]));
+  const ds = DIFFS.filter(d => w.circuits.some(x => x.diff === d[0]));
   const st = (v, l) => `<button class="fchip ${ui.bShow === v ? 'on' : ''}" data-act="bshow" data-v="${v}">${l}</button>`;
-  return `<div class="fchips">${st('on','In parete')}${st('off','Smontati')}${st('all','Tutti')}`+
-    (grades.length ? `<select id="bgradef" class="fsel" aria-label="Grado"><option value="">Tutti i gradi</option>${grades.map(g => `<option value="${g}" ${ui.bGrade === g ? 'selected' : ''}>${g}</option>`).join('')}</select>` : '')+`</div>`+
-    (cols.length > 1 ? `<div class="fchips">${cols.map(p => `<button class="fdot ${ui.bColor === p[1] ? 'on' : ''}" data-act="bcolor" data-v="${p[1]}" aria-label="Prese ${p[0].toLowerCase()}" aria-pressed="${ui.bColor === p[1]}" style="background:${p[1]}"></button>`).join('')}</div>` : '');
+  return `<div class="fchips">${st('on','In parete')}${st('off','Smontati')}${st('all','Tutti')}</div>`+
+    (ds.length > 1 ? `<div class="fchips">${ds.map(d => `<button class="fdot ${ui.bColor === d[0] ? 'on' : ''}" data-act="bcolor" data-v="${d[0]}" aria-label="${d[1]}" aria-pressed="${ui.bColor === d[0]}" style="background:${d[2]}"></button>`).join('')}</div>` : '');
 }
 function bRows(w, cls){
   const act = curCircuit(), vis = sortedVisible(w);
   if(!vis.length) return `<p class="hint" style="padding:6px 2px">${w.circuits.length ? 'Nessun boulder con questi filtri.' : 'Ancora nessun boulder su questo settore.'}</p>`;
-  return `<div class="list" style="gap:${cls === 'crow' ? 6 : 0}px;margin:0">` + vis.map(x => `<button class="${cls} ${act && x.id === act.id ? 'active' : ''} ${isOff(x) ? 'off' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext" style="flex:1"><b>${esc(x.name)}${x.style ? ` <span style="font-weight:600;color:var(--muted);font-size:14px">· ${esc(x.style)}</span>` : ''}</b><small>${bMeta(x)}</small></span>${gradeBadge(x.grade)}</button>`).join('') + `</div>`;
+  return `<div class="list" style="gap:${cls === 'crow' ? 6 : 0}px;margin:0">` + vis.map(x => `<button class="${cls} ${act && x.id === act.id ? 'active' : ''} ${isOff(x) ? 'off' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext" style="flex:1"><b>${bTitleHtml(x)}</b><small>${[x.style ? esc(x.style) : '', bMeta(x)].filter(Boolean).join(' · ')}</small></span></button>`).join('') + `</div>`;
 }
 function renderChips(){
   const w = curWall(), el = $('#chips');
@@ -1432,7 +1446,7 @@ function renderChips(){
   }
   el.innerHTML = `<div class="curbar">`+
     `<button class="cinfo" data-act="clist" aria-label="Elenco circuiti"><i class="dot" style="background:${act.color}"></i>`+
-    `<span class="ctext"><b>${esc(act.name)}</b><small>${circMeta(act)}</small></span>${gradeBadge(act.grade)}</button>`+
+    `<span class="ctext"><b>${isSec(w) ? bTitleHtml(act) : esc(act.name)}</b><small>${circMeta(act)}</small></span>${isSec(w) ? '' : gradeBadge(act.grade)}</button>`+
     (EDIT && S.mode === 'edit' ? `<button class="btn" data-act="cedit">Modifica</button>` : '')+
     `<button class="btn primary" data-act="clist">${isSec(w) ? `Boulder (${tot})` : `Circuiti (${tot})${filtered}`}</button></div>`;
 }
@@ -1544,7 +1558,7 @@ function render(){
   if(ui.full && (!viewing || !curCircuit())) ui.full = false;
   $('#app').classList.toggle('full', !!ui.full);
   renderTop(); renderPub(); renderStage(); renderChips(); renderTools(); renderFull(); }
-function sortedVisible(w){ return visibleCircuits(w).slice().sort((x, y) => gradeIdx(x.grade) - gradeIdx(y.grade) || String(x.name).localeCompare(String(y.name))); }
+function sortedVisible(w){ if(isSec(w)) return visibleCircuits(w).slice().sort((x, y) => diffIdx(x) - diffIdx(y) || (x.num || 0) - (y.num || 0) || (isOff(x) ? 1 : 0) - (isOff(y) ? 1 : 0)); return visibleCircuits(w).slice().sort((x, y) => gradeIdx(x.grade) - gradeIdx(y.grade) || String(x.name).localeCompare(String(y.name))); }
 function renderFull(){
   const el = $('#fcard'), w = curWall(), c = curCircuit();
   if(!ui.full || !w || !c){ el.hidden = true; el.innerHTML = ''; return; }
@@ -1552,7 +1566,7 @@ function renderFull(){
   el.hidden = false;
   el.innerHTML = `<div class="row" style="flex-wrap:nowrap;align-items:center;gap:12px">`+
     `<i class="dot" style="background:${c.color};width:16px;height:16px"></i>`+
-    `<span class="ctext" style="flex:1"><b>${esc(c.name)}${isSec(w) && c.style ? ` · ${esc(c.style)}` : ''}</b><small>${isSec(w) ? esc([c.setter ? 'di ' + c.setter : '', c.dateSet ? 'montato ' + fmtDate(c.dateSet) : '', c.dateRemoved ? (isOff(c) ? 'smontato ' : 'smonta ') + fmtDate(c.dateRemoved) : ''].filter(Boolean).join(' · ')) : circMeta(c)}</small></span>${gradeBadge(c.grade)}</div>`+
+    `<span class="ctext" style="flex:1"><b>${isSec(w) ? bTitleHtml(c) : esc(c.name)}${isSec(w) && c.style ? ` · ${esc(c.style)}` : ''}</b><small>${isSec(w) ? esc([c.setter ? 'di ' + c.setter : '', c.dateSet ? 'montato ' + fmtDate(c.dateSet) : '', c.dateRemoved ? (isOff(c) ? 'smontato ' : 'smonta ') + fmtDate(c.dateRemoved) : ''].filter(Boolean).join(' · ')) : circMeta(c)}</small></span>${isSec(w) ? '' : gradeBadge(c.grade)}</div>`+
     (isSec(w) && (c.tags || []).length ? `<div class="tags" style="margin:10px 0 0">${c.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : '')+
     (isSec(w) && c.notes ? `<p class="bnotes">${esc(c.notes)}</p>` : '')+
     `<div class="row" style="margin-top:10px;flex-wrap:nowrap">`+
@@ -1594,13 +1608,17 @@ function renderSheet(){
     const gradeOpt = v => `<option value="${v}" ${(c.grade || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
     const styleOpt = v => `<option value="${v}" ${(c.style || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
     const tags = c.tags || [];
-    h = `<h2>Boulder</h2>`+
-      `<label class="field">Nome<input id="cname" value="${esc(c.name)}" maxlength="40"></label>`+
+    h = `<h2>${esc(bTitle(c))}</h2>`+
+      `<p class="field" style="margin-bottom:4px">Difficoltà</p>`+
+      `<div class="sw" role="group" aria-label="Difficoltà">` +
+      DIFFS.map(d => `<button data-act="bdiff" data-v="${d[0]}" aria-label="${d[1]}" aria-pressed="${c.diff === d[0]}" class="${c.diff === d[0] ? 'sel' : ''}" style="background:${d[2]}"></button>`).join('') +
+      `</div>`+
+      (diffOf(c) ? '' : `<p class="note" style="margin:-8px 0 12px">Scegli la difficoltà: il nome (es. "Giallo 2") si assegna da solo.</p>`)+
       `<p class="field" style="margin-bottom:4px">Colore delle prese</p>`+
       `<div class="sw" role="group" aria-label="Colore delle prese">` +
-      PALETTE.map(p => `<button data-act="color" data-c="${p[1]}" aria-label="${p[0]}" class="${p[1] === c.color ? 'sel' : ''}" style="background:${p[1]}"></button>`).join('') +
+      PALETTE.map(p => `<button data-act="hcolor" data-c="${p[1]}" aria-label="${p[0]}" class="${p[1] === c.holdColor ? 'sel' : ''}" style="background:${p[1]}"></button>`).join('') +
       `</div>`+
-      `<div class="f2"><label class="field">Grado<select id="cgrade">${GRADES.map(gradeOpt).join('')}</select></label>`+
+      `<div class="f2"><label class="field">Soprannome (facoltativo)<input id="cname" value="${esc(c.name || '')}" maxlength="40"></label>`+
       `<label class="field">Stile<select id="cstyle">${STYLES.map(styleOpt).join('')}</select></label></div>`+
       `<label class="field">Tracciatore<input id="bsetter" value="${esc(c.setter || '')}" maxlength="40" autocomplete="off"></label>`+
       `<div class="f2"><label class="field">Montato il<input id="bdset" type="date" value="${esc(c.dateSet || '')}"></label>`+
@@ -1735,7 +1753,7 @@ async function makeImage(){
     g.fillStyle = c.color; g.fill(); g.lineWidth = Math.max(2, capH*0.03); g.strokeStyle = '#111111'; g.stroke();
     g.fillStyle = '#111111'; g.textBaseline = 'middle';
     g.font = `700 ${Math.round(capH*0.4)}px "Barlow Semi Condensed", Arial, sans-serif`;
-    g.fillText(isSec(w) ? `${w.name}: ${c.name}${c.grade ? ' · ' + c.grade : ''}${c.setter ? ' · ' + c.setter : ''}` : `${w.name}: ${c.name}, ${c.holds.length} prese`, capH*0.9, w.h + capH/2);
+    g.fillText(isSec(w) ? `${w.name}: ${bTitle(c)}${c.name ? ' · ' + c.name : ''}${c.setter ? ' · ' + c.setter : ''}` : `${w.name}: ${c.name}, ${c.holds.length} prese`, capH*0.9, w.h + capH/2);
     ui.imgUrl = cv.toDataURL('image/jpeg', 0.92);
   }catch(e){ ui.imgUrl = 'err'; }
   finally{ done(); }
@@ -1948,7 +1966,7 @@ $('#stage').addEventListener('click', async e => {
   toast('Qui non c\'è una presa del muro. Per aggiungerla sblocca il muro nel tab Muro.');
 });
 
-const EDIT_ONLY = ['btag','cropAll','tool','closeDraw','undoPt','cancelDraw','redraw','lock','unlock','tracing','addc','role','size','move','del','undo','color','delc','addw','delw','publish','autoall','stopauto','hand','dup','cropTap','cropUndo','cropClose','cropReset','cropCancel','cropDone','panelReset','panelDone','camlive','camCancel','camShot'];
+const EDIT_ONLY = ['bdiff','hcolor','btag','cropAll','tool','closeDraw','undoPt','cancelDraw','redraw','lock','unlock','tracing','addc','role','size','move','del','undo','color','delc','addw','delw','publish','autoall','stopauto','hand','dup','cropTap','cropUndo','cropClose','cropReset','cropCancel','cropDone','panelReset','panelDone','camlive','camCancel','camShot'];
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b || b.disabled) return;
   const a = b.dataset.act, w = curWall(), c = curCircuit();
@@ -2016,6 +2034,17 @@ document.addEventListener('click', e => {
       const vis = w ? visibleCircuits(w) : [];
       if(w && vis.length && !vis.some(x => x.id === w.activeCircuit)){ w.activeCircuit = sortedVisible(w)[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); }
       render(); if(ui.sheet === 'clist') renderSheet(); break;
+    }
+    case 'bdiff': {
+      if(!c || !w || !isSec(w)) break;
+      if(/^Boulder \d+$/.test(c.name || '')) c.name = '';
+      c.diff = b.dataset.v; c.color = diffOf(c)[2]; assignNum(w, c);
+      touch(); render(); renderSheet(); break;
+    }
+    case 'hcolor': {
+      if(!c) break;
+      if(c.holdColor === b.dataset.c) delete c.holdColor; else c.holdColor = b.dataset.c;
+      touch(); renderChips(); renderSheet(); break;
     }
     case 'btag': {
       if(!c) break;
@@ -2154,9 +2183,14 @@ document.addEventListener('input', e => {
   if(!EDIT) return;
   if(e.target.id === 'bsetter' && c){ const v = e.target.value.trim(); if(v) c.setter = v; else delete c.setter; try{ localStorage.setItem('boulder-setter', v); }catch(err){} renderChips(); touch(); }
   if(e.target.id === 'bdset' && c){ if(e.target.value) c.dateSet = e.target.value; else delete c.dateSet; renderChips(); touch(); }
-  if(e.target.id === 'bdrem' && c){ if(e.target.value) c.dateRemoved = e.target.value; else delete c.dateRemoved; renderChips(); touch(); }
+  if(e.target.id === 'bdrem' && c){
+    if(e.target.value) c.dateRemoved = e.target.value; else delete c.dateRemoved;
+    /* se torna in parete e il suo numero nel frattempo è stato preso, ne riceve uno libero */
+    if(!isOff(c) && diffOf(c) && w.circuits.some(x => x !== c && x.diff === c.diff && x.num === c.num && !isOff(x))) assignNum(w, c);
+    renderChips(); touch();
+  }
   if(e.target.id === 'bnotes' && c){ const v = e.target.value; if(v.trim()) c.notes = v; else delete c.notes; touch(); }
-  if(e.target.id === 'cname' && c){ c.name = e.target.value || (isSec(w) ? 'Boulder' : 'Circuito'); renderChips(); touch(); }
+  if(e.target.id === 'cname' && c){ if(isSec(w)) c.name = e.target.value.trim(); else c.name = e.target.value || 'Circuito'; renderChips(); touch(); }
   if(e.target.id === 'wname' && w){ w.name = e.target.value || (isSec(w) ? 'Settore' : 'Muro'); renderTop(); touch(); }
   if(e.target.id === 'cgrade' && c){ if(e.target.value) c.grade = e.target.value; else delete c.grade; renderChips(); touch(); }
   if(e.target.id === 'cstyle' && c){ if(e.target.value) c.style = e.target.value; else delete c.style; touch(); }
