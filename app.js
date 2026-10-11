@@ -1014,13 +1014,17 @@ function catSuspects(w){
   const cat = w.holds || [], W2 = w.w*w.w, out = new Set();
   const bb = cat.map(h => { let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(let i=0;i<h.poly.length;i+=2){ const x=h.poly[i], y=h.poly[i+1]; if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; } return [x0,y0,x1,y1]; });
   const ar = cat.map(h => polyArea(h.poly));
+  /* i contorni disegnati a mano (es. i volumi) sono scelti apposta: non si segnalano, e le prese montate sopra non contano come sovrapposizioni */
+  const manual = h => h.det !== 1;
   cat.forEach((h,i) => {
+    if(manual(h)) return;
     const f = ar[i]/W2, bw = bb[i][2]-bb[i][0], bh = bb[i][3]-bb[i][1];
     if(f < 1.2e-4 || f > 4.5e-3) out.add(i);
     else if(Math.max(bw,bh)/Math.max(1,Math.min(bw,bh)) > 3.6) out.add(i);
     else if(ar[i]/(hullAreaFlat(h.poly) || 1) < 0.62) out.add(i);
   });
   for(let i=0;i<cat.length;i++) for(let j=i+1;j<cat.length;j++){
+    if(manual(cat[i]) || manual(cat[j])) continue;
     if(bb[i][2] < bb[j][0] || bb[j][2] < bb[i][0] || bb[i][3] < bb[j][1] || bb[j][3] < bb[i][1]) continue;
     if(inPoly(cat[i].poly, cat[j].x, cat[j].y) || inPoly(cat[j].poly, cat[i].x, cat[i].y)){ if(ar[i] >= ar[j]) out.add(i); if(ar[j] >= ar[i]) out.add(j); }
   }
