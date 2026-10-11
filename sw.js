@@ -2,7 +2,7 @@
    - pagina, codice e dati pubblicati: prima la rete (così gli aggiornamenti arrivano subito), se manca la rete l'ultima copia salvata
    - foto dei muri: subito dalla copia salvata, aggiornata in sottofondo
    - modello di riconoscimento e librerie: scaricati una volta sola */
-const CACHE = 'circuiti-v7';
+const CACHE = 'circuiti-v8';
 const CORE = ['./', './index.html', './app.js', './config.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
@@ -33,16 +33,17 @@ async function networkFirst(req){
 async function cacheFirst(req){
   const c = await caches.open(CACHE);
   const hit = await c.match(req);
-  if(hit) return hit;
+  if(hit && hit.type !== 'opaque') return hit;
   const r = await fetch(req);
-  if(r && (r.ok || r.type === 'opaque')) c.put(req, r.clone());
+  /* solo copie "aperte": quelle opache non si possono leggere dal riconoscimento delle prese */
+  if(r && r.ok && r.type !== 'opaque') c.put(req, r.clone());
   return r;
 }
 async function staleWhileRevalidate(req){
   const c = await caches.open(CACHE);
   const hit = await c.match(req);
-  const net = fetch(req).then(r => { if(r && r.ok) c.put(req, r.clone()); return r; }).catch(() => null);
-  return hit || (await net) || Response.error();
+  const net = fetch(req).then(r => { if(r && r.ok && r.type !== 'opaque') c.put(req, r.clone()); return r; }).catch(() => null);
+  return (hit && hit.type !== 'opaque' ? hit : null) || (await net) || Response.error();
 }
 
 self.addEventListener('fetch', e => {

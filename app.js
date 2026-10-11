@@ -26,7 +26,7 @@ const BODY = `
     <div id="box">
       <div id="empty" class="empty" hidden></div>
       <div id="stage" hidden>
-        <img id="photo" alt="Foto del muro" draggable="false">
+        <img id="photo" alt="Foto del muro" draggable="false" crossorigin="anonymous">
         <svg id="ov" xmlns="http://www.w3.org/2000/svg" aria-label="Circuiti tracciati sul muro"></svg>
       </div>
     </div>
@@ -195,7 +195,9 @@ function readPhoto(file){
     fr.readAsDataURL(file);
   });
 }
-const loadImg = src => new Promise((res,rej) => { const i = new Image(); if(!/^data:/.test(src)) i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = rej; i.src = src; });
+const loadImg1 = src => new Promise((res,rej) => { const i = new Image(); if(!/^data:/.test(src)) i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = rej; i.src = src; });
+/* se una copia salvata male blocca la lettura dei pixel, riprova scavalcandola */
+const loadImg = src => loadImg1(src).catch(e => /^data:/.test(src) ? Promise.reject(e) : loadImg1(src + (src.includes('?') ? '&' : '?') + 'px=1'));
 function newCircuit(w){
   const used = w.circuits.map(c => c.color);
   const p = PALETTE.find(p => !used.includes(p[1])) || PALETTE[0];
