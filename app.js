@@ -626,6 +626,7 @@ async function samInit(){
       if(!window.ort) await loadScript(SAMCFG.ort + 'ort.min.js');
       ort.env.wasm.wasmPaths = SAMCFG.ort;
       ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
+      ort.env.wasm.proxy = true;   /* i calcoli girano in un processo separato: l'app resta toccabile mentre SAM lavora */
       const o = { executionProviders: ['wasm'], graphOptimizationLevel: 'all' };
       sam.dec = await ort.InferenceSession.create(SAMCFG.dec, o);
       sam.enc = await ort.InferenceSession.create(SAMCFG.enc, o);
@@ -654,7 +655,8 @@ async function samEmbed(w){
       t[j] = (d[i] - 123.675)/58.395; t[P+j] = (d[i+1] - 116.28)/57.12; t[2*P+j] = (d[i+2] - 103.53)/57.375;
     }
     const out = await sam.enc.run({ image: new ort.Tensor('float32', t, [1,3,1024,1024]) });
-    return { key, e: out.embeddings, s, rw, rh };
+    /* teniamo una copia: in modalità "processo separato" i dati passati al calcolo vengono ceduti e non si possono riusare */
+    return { key, e: true, ed: new Float32Array(out.embeddings.data), edims: out.embeddings.dims.slice(), s, rw, rh };
     } finally { done(); }
   })();
   sam.emb[w.id] = { key, pending };
@@ -728,7 +730,7 @@ async function samSegment(w, x, y, ts, strict){
   const E = await samEmbed(w);
   const N = E.rw*E.rh;
   const r = await sam.dec.run({
-    image_embeddings: E.e,
+    image_embeddings: new ort.Tensor('float32', E.ed.slice(), E.edims),
     point_coords: new ort.Tensor('float32', new Float32Array([x*E.s, y*E.s, 0, 0]), [1,2,2]),
     point_labels: new ort.Tensor('float32', new Float32Array([1, -1]), [1,2]),
     mask_input: new ort.Tensor('float32', new Float32Array(256*256), [1,1,256,256]),
