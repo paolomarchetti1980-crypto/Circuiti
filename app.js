@@ -42,6 +42,7 @@ const BODY = `
 </div>
 <div class="sheet" id="sheet" hidden><div class="card" id="card"></div></div>
 <div class="toast" id="toast" hidden></div>
+<div class="busy" id="busy" hidden role="status" aria-live="polite"><i class="spin" aria-hidden="true"></i><span></span></div>
 <input type="file" id="file" accept="image/*" class="vhfile" tabindex="-1">
 <input type="file" id="cam" accept="image/*" capture="environment" class="vhfile" tabindex="-1">
 <div class="camwrap" id="camWrap" hidden>
@@ -169,6 +170,21 @@ async function doInstall(){
 if('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')){
   window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
 }
+/* ---------- segnale "sto lavorando" ---------- */
+const busyStack = [];
+function renderBusy(){
+  const el = document.getElementById('busy'); if(!el) return;
+  const top = busyStack[busyStack.length - 1];
+  const label = top ? top.label : (ui.scan ? (ui.scan.prep ? 'Preparo il riconoscimento…' : `Rilevamento automatico: ${Math.round(100 * ui.scan.i / Math.max(1, ui.scan.total))}%`) : '');
+  el.hidden = !label;
+  if(label) el.querySelector('span').textContent = label;
+}
+function busy(label){
+  const t = { label }; busyStack.push(t); renderBusy();
+  return () => { const i = busyStack.indexOf(t); if(i >= 0) busyStack.splice(i, 1); renderBusy(); };
+}
+/* lascia al telefono il tempo di disegnare il segnale prima di un calcolo pesante */
+const nextPaint = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 30)));
 let toastTimer;
 function toast(msg){
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
@@ -605,6 +621,7 @@ async function samInit(){
   if(sam.loading) return sam.loading;
   sam.loading = (async () => {
     sam.state = 'loading'; renderTools();
+    const done = busy('Scarico il riconoscimento intelligente (solo la prima volta)…');
     try{
       if(!window.ort) await loadScript(SAMCFG.ort + 'ort.min.js');
       ort.env.wasm.wasmPaths = SAMCFG.ort;
@@ -614,7 +631,7 @@ async function samInit(){
       sam.enc = await ort.InferenceSession.create(SAMCFG.enc, o);
       sam.state = 'ready'; return true;
     }catch(e){ console.warn('SAM non disponibile', e); sam.state = 'failed'; return false; }
-    finally{ sam.loading = null; renderTools(); }
+    finally{ done(); sam.loading = null; renderTools(); }
   })();
   return sam.loading;
 }
@@ -623,6 +640,9 @@ async function samEmbed(w){
   const key = samKey(w), cur = sam.emb[w.id];
   if(cur && cur.key === key){ return cur.e ? cur : cur.pending; }
   const pending = (async () => {
+    const done = busy('Studio la foto del muro…');
+    try{
+    await nextPaint();
     const im = await loadImg(w.img);
     const s = 1024 / Math.max(w.w, w.h);
     const rw = Math.max(1, Math.round(w.w*s)), rh = Math.max(1, Math.round(w.h*s));
@@ -635,6 +655,7 @@ async function samEmbed(w){
     }
     const out = await sam.enc.run({ image: new ort.Tensor('float32', t, [1,3,1024,1024]) });
     return { key, e: out.embeddings, s, rw, rh };
+    } finally { done(); }
   })();
   sam.emb[w.id] = { key, pending };
   renderTools();
@@ -767,6 +788,11 @@ async function getSeg(w){
   return segCache[w.id];
 }
 async function detect(w, x, y, ts, strict){
+  if(strict) return detect0(w, x, y, ts, strict);
+  const done = busy('Rilevo la presa…');
+  try{ await nextPaint(); return await detect0(w, x, y, ts, strict); } finally { done(); }
+}
+async function detect0(w, x, y, ts, strict){
   if(sam.state !== 'failed'){
     try{
       const r = await samSegment(w, x, y, ts || 1, strict);
@@ -1236,6 +1262,7 @@ function samStatus(w){
   return 'Riconoscimento intelligente: si attiva al primo uso.';
 }
 function renderTools(){
+  renderBusy();
   const w = curWall(), c = curCircuit(), el = $('#tools');
   if(!w){ el.innerHTML = ''; return; }
   if(EDIT && S.mode === 'wall'){
@@ -1439,7 +1466,9 @@ function renderSheet(){
 async function makeImage(){
   const w = curWall(), c = curCircuit(); if(!w || !c) return;
   ui.imgUrl = null; openSheet('img');
+  const done = busy('Creo l\'immagine…');
   try{
+    await nextPaint();
     const photo = await loadImg(w.img);
     const inner = overlay(w, { numbers: S.prefs.numbers, lines: S.prefs.lines, others: S.prefs.others, edit: false, dim: S.prefs.dim });
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w.w}" height="${w.h}" viewBox="0 0 ${w.w} ${w.h}">${inner}</svg>`;
@@ -1456,6 +1485,7 @@ async function makeImage(){
     g.fillText(`${w.name}: ${c.name}, ${c.holds.length} prese`, capH*0.9, w.h + capH/2);
     ui.imgUrl = cv.toDataURL('image/jpeg', 0.92);
   }catch(e){ ui.imgUrl = 'err'; }
+  finally{ done(); }
   if(ui.sheet === 'img') renderSheet();
 }
 
@@ -1573,8 +1603,10 @@ async function publish(){
   ui.publishing = true; renderPub();
   try{
     await saveNow();
+    busy('Pubblico…'); await nextPaint();
     await ART.publish();   /* dopo il successo la vista si ricarica sulla nuova versione */
   }catch(e){
+    busyStack.length = 0; renderBusy();
     ui.publishing = false;
     const code = e && e.code;
     if(code === 'conflict'){ /* la vista si ricarica da sola sulla versione vincente */ }
@@ -1862,6 +1894,10 @@ async function onFile(e){
 }
 async function finishCrop(){
   const cr = ui.crop; if(!cr || !cr.closed || cr.pts.length < 3) return;
+  const done = busy('Preparo il muro…'); await nextPaint();
+  try{ await finishCrop0(cr); } finally { done(); }
+}
+async function finishCrop0(cr){
   const xs = cr.pts.map(p => p.x*cr.w), ys = cr.pts.map(p => p.y*cr.h);
   const x0 = Math.round(Math.min(...xs)), x1 = Math.round(Math.max(...xs));
   const y0 = Math.round(Math.min(...ys)), y1 = Math.round(Math.max(...ys));
