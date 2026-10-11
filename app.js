@@ -1298,6 +1298,27 @@ function circuitSVG(c, W, alpha, o){
   });
   return s + '</g>';
 }
+function draftSVG(w){
+  if(!ui.draft.length) return '';
+  const t = Math.max(2, w.w*0.0028), pts = ui.draft.map(q => q[0] + ',' + q[1]).join(' ');
+  let s = `<polyline points="${pts}" fill="none" stroke="#000" stroke-opacity=".7" stroke-width="${t*3}" stroke-linejoin="round" stroke-linecap="round"/>`+
+          `<polyline points="${pts}" fill="none" stroke="#ff3b7a" stroke-width="${t*1.4}" stroke-linejoin="round" stroke-linecap="round"/>`;
+  ui.draft.forEach((q,i) => { s += `<circle cx="${q[0]}" cy="${q[1]}" r="${i === 0 ? t*2.4 : t*1.3}" fill="${i === 0 ? '#ff3b7a' : '#fff'}" stroke="#000" stroke-width="${t*0.55}"/>`; });
+  return s;
+}
+/* boulder: contorno disegnato a mano (nuova presa, oppure ridisegna quella selezionata) */
+function finishBDraw(w, c){
+  const pts = ui.draft; if(!c || pts.length < 3) return;
+  const flat = []; pts.forEach(q => { flat.push(q[0], q[1]); });
+  let A = 0, cx = 0, cy = 0;
+  for(let i=0;i<pts.length;i++){ const a = pts[i], b = pts[(i+1) % pts.length], k = a[0]*b[1] - b[0]*a[1]; A += k; cx += (a[0]+b[0])*k; cy += (a[1]+b[1])*k; }
+  if(Math.abs(A) < 1){ cx = pts.reduce((t,q) => t + q[0], 0)/pts.length; cy = pts.reduce((t,q) => t + q[1], 0)/pts.length; }
+  else { A /= 2; cx /= 6*A; cy /= 6*A; }
+  const old = ui.sel != null ? c.holds[ui.sel] : null;
+  if(old){ old.poly = flat; old.x = cx; old.y = cy; old.sx = cx; old.sy = cy; old.drawn = 1; delete old.ts; }
+  else { c.holds.push({ x: cx, y: cy, sx: cx, sy: cy, r: S.prefs.r, role: ui.nextRole, poly: flat, drawn: 1 }); ui.nextRole = 'hold'; }
+  ui.draft = []; ui.bdraw = false; ui.sel = null; touch(); render();
+}
 function overlay(w, o){
   if(o.wall){
     let s = ''; const t = Math.max(2, w.w*0.0028);
@@ -1307,13 +1328,7 @@ function overlay(w, o){
       s += `<path d="${d}" fill="${col}" fill-opacity="${sel ? .32 : .10}" stroke="#000" stroke-opacity=".6" stroke-width="${tw*2.6}" stroke-linejoin="round"/>`+
            `<path d="${d}" fill="none" stroke="${col}" stroke-width="${sel ? tw*2 : tw}" stroke-linejoin="round"/>`;
     });
-    if(ui.draft.length){
-      const pts = ui.draft.map(q => q[0] + ',' + q[1]).join(' ');
-      s += `<polyline points="${pts}" fill="none" stroke="#000" stroke-opacity=".7" stroke-width="${t*3}" stroke-linejoin="round" stroke-linecap="round"/>`+
-           `<polyline points="${pts}" fill="none" stroke="#ff3b7a" stroke-width="${t*1.4}" stroke-linejoin="round" stroke-linecap="round"/>`;
-      ui.draft.forEach((q,i) => { s += `<circle cx="${q[0]}" cy="${q[1]}" r="${i === 0 ? t*2.4 : t*1.3}" fill="${i === 0 ? '#ff3b7a' : '#fff'}" stroke="#000" stroke-width="${t*0.55}"/>`; });
-    }
-    return s;
+    return s + draftSVG(w);
   }
   const act = w.circuits.find(c => c.id === w.activeCircuit) || w.circuits[0];
   const bo = isSec(w);
@@ -1329,6 +1344,7 @@ function overlay(w, o){
     s += `<path d="${d}" fill="#000" fill-opacity="${o.edit ? .5 : .62}" fill-rule="evenodd"/>`;
   }
   if(act) s += circuitSVG(act, w.w, 1, o);
+  if(o.edit) s += draftSVG(w);
   if(o.edit && act && ui.sel != null && act.holds[ui.sel]){
     const bb = holdBox(act.holds[ui.sel], w.w), pad = w.w*0.012, t = Math.max(2, w.w*0.003);
     const rect = `x="${bb.x0-pad}" y="${bb.y0-pad}" width="${bb.x1-bb.x0+pad*2}" height="${bb.y1-bb.y0+pad*2}" rx="${pad}" fill="none"`;
@@ -1547,6 +1563,14 @@ function renderTools(){
   else if(c && !c.holds.length) hint = isSec(w) ? 'Tocca la prima presa di partenza: ne rilevo il contorno.' : 'Tocca la prima presa di partenza per accenderla.';
   if(isSec(w) && !ui.move) hint += ` <span style="opacity:.8">${samStatus(w)}</span>`;
   const lbl = h && !h.poly ? 'Anello' : 'Contorno';
+  if(isSec(w) && ui.bdraw){
+    el.innerHTML = `<p class="hint">${h ? 'Ridisegna il contorno della presa selezionata' : 'Disegna il contorno della presa'}: tocca i punti attorno alla presa (puoi ingrandire), poi Chiudi o tocca di nuovo il primo punto.</p>`+
+      (h ? '' : `<div class="seg">${rb('start','Partenza')}${rb('hold','Presa')}${rb('top','Arrivo')}</div>`)+
+      `<button class="btn primary" data-act="bclose" ${ui.draft.length >= 3 ? '' : 'disabled'}>Chiudi</button>`+
+      `<button class="btn" data-act="bundo" ${ui.draft.length ? '' : 'disabled'}>Annulla punto</button>`+
+      `<button class="btn" data-act="bcancel">Annulla disegno</button>`;
+    return;
+  }
   el.innerHTML =
     `<p class="hint">${hint}</p>`+
     `<div class="seg">${rb('start','Partenza')}${rb('hold','Presa')}${rb('top','Arrivo')}</div>`+
@@ -1554,6 +1578,7 @@ function renderTools(){
     `<div class="seg"><button data-act="size" data-d="-1" aria-label="${lbl} più piccolo" ${h ? '' : 'disabled'}>${lbl} &minus;</button>`+
     `<button data-act="size" data-d="1" aria-label="${lbl} più grande" ${h ? '' : 'disabled'}>${lbl} +</button></div>`+
     `<button class="btn ${ui.move ? 'on' : ''}" data-act="move" ${h ? '' : 'disabled'}>Sposta</button>`+
+    (isSec(w) ? `<button class="btn" data-act="bdraw" ${c ? '' : 'disabled'}>${h ? 'Ridisegna' : 'Disegna'}</button>` : '')+
     (isSec(w) ? '' : `<button class="btn" data-act="dup" ${h ? '' : 'disabled'}>Ripeti qui (2ª mano)</button>`)+
     `<button class="btn" data-act="del" ${h ? '' : 'disabled'}>Elimina</button>`+
     `<button class="btn" data-act="undo" ${c && c.holds.length ? '' : 'disabled'}>Annulla</button>`;
@@ -1947,6 +1972,10 @@ $('#stage').addEventListener('click', async e => {
     else { ch = { id: uid(), poly: circlePoly(x, y, S.prefs.r*w.w), x, y, sx: x, sy: y }; toast('Presa non riconosciuta: ho messo un cerchio. Regolalo, oppure usa Disegna.'); }
     (w.holds = w.holds || []).push(ch); ui.csel = w.holds.length - 1; ui.busy = false; touch(); render(); return;
   }
+  if(isSec(w) && ui.bdraw){
+    if(ui.draft.length >= 3 && Math.hypot(x - ui.draft[0][0], y - ui.draft[0][1]) <= Math.min(10*k, 28)){ finishBDraw(w, c); return; }
+    ui.draft.push([Math.round(x), Math.round(y)]); render(); return;
+  }
   if(ui.move && ui.sel != null && c.holds[ui.sel]){
     ui.busy = true;
     const h = c.holds[ui.sel];
@@ -1977,14 +2006,14 @@ $('#stage').addEventListener('click', async e => {
   toast('Qui non c\'è una presa del muro. Per aggiungerla sblocca il muro nel tab Muro.');
 });
 
-const EDIT_ONLY = ['bdiff','hcolor','btag','cropAll','tool','closeDraw','undoPt','cancelDraw','redraw','lock','unlock','tracing','addc','role','size','move','del','undo','color','delc','addw','delw','publish','autoall','stopauto','hand','dup','cropTap','cropUndo','cropClose','cropReset','cropCancel','cropDone','panelReset','panelDone','camlive','camCancel','camShot'];
+const EDIT_ONLY = ['bdraw','bclose','bundo','bcancel','bdiff','hcolor','btag','cropAll','tool','closeDraw','undoPt','cancelDraw','redraw','lock','unlock','tracing','addc','role','size','move','del','undo','color','delc','addw','delw','publish','autoall','stopauto','hand','dup','cropTap','cropUndo','cropClose','cropReset','cropCancel','cropDone','panelReset','panelDone','camlive','camCancel','camShot'];
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b || b.disabled) return;
   const a = b.dataset.act, w = curWall(), c = curCircuit();
   if(EDIT_ONLY.includes(a) && !EDIT) return;
   if(!isMgr() && ['lock','unlock','autoall','stopauto','delw','addw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','camlive','camShot','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext'].includes(a)) return;
   switch(a){
-    case 'mode': if(EDIT && !ui.scan && !(b.dataset.v === 'wall' && !isMgr())){ S.mode = b.dataset.v; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.redraw = null; ui.tool = 'detect'; render(); } break;
+    case 'mode': if(EDIT && !ui.scan && !(b.dataset.v === 'wall' && !isMgr())){ S.mode = b.dataset.v; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.redraw = null; ui.tool = 'detect'; render(); } break;
     case 'tool': ui.tool = b.dataset.v; ui.draft = []; ui.redraw = null; render(); break;
     case 'undel': if(w && ui.trash.length){ const ch = ui.trash.pop(); (w.holds = w.holds || []).push(ch); ui.csel = w.holds.length - 1; touch(); render(); } break;
     case 'susnext': {
@@ -2035,7 +2064,7 @@ document.addEventListener('click', e => {
       ui.section = v;
       const l = secWalls(), keep = l.find(x => x.id === ui.lastSec[v]) || l[0];
       if(keep) S.active = keep.id;
-      ui.full = false; ui.sel = null; ui.csel = null; ui.move = false; ui.zoom = 1; ui.draft = []; ui.redraw = null; ui.tool = 'detect';
+      ui.full = false; ui.sel = null; ui.csel = null; ui.move = false; ui.zoom = 1; ui.draft = []; ui.bdraw = false; ui.redraw = null; ui.tool = 'detect';
       if(EDIT && S.mode === 'wall' && v === 'boulder') S.mode = 'edit';
       ui.nextRole = roleFor(curCircuit()); saveBUI(); render(); break;
     }
@@ -2046,6 +2075,10 @@ document.addEventListener('click', e => {
       if(w && vis.length && !vis.some(x => x.id === w.activeCircuit)){ w.activeCircuit = sortedVisible(w)[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); }
       render(); if(ui.sheet === 'clist') renderSheet(); break;
     }
+    case 'bdraw': if(c){ ui.bdraw = true; ui.draft = []; ui.move = false; render(); } break;
+    case 'bclose': if(w && c) finishBDraw(w, c); break;
+    case 'bundo': ui.draft.pop(); render(); break;
+    case 'bcancel': ui.bdraw = false; ui.draft = []; render(); break;
     case 'bdiff': {
       if(!c || !w || !isSec(w)) break;
       if(/^Boulder \d+$/.test(c.name || '')) c.name = '';
@@ -2088,7 +2121,7 @@ document.addEventListener('click', e => {
     case 'pickc': {
       if(!w) break;
       const again = w.activeCircuit === b.dataset.id && b.classList.contains('lrow');
-      w.activeCircuit = b.dataset.id; ui.sel = null; ui.move = false; ui.nextRole = roleFor(curCircuit());
+      w.activeCircuit = b.dataset.id; ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.nextRole = roleFor(curCircuit());
       ui.sheet = null; save(); renderSheet();
       if(again && (!EDIT || S.mode === 'view')) setFull(true); else render();
       break;
@@ -2103,7 +2136,7 @@ document.addEventListener('click', e => {
     case 'addc': {
       if(!w) break;
       const n = newCircuit(w); w.circuits.push(n); w.activeCircuit = n.id;
-      ui.sel = null; ui.move = false; ui.nextRole = 'start'; S.mode = 'edit'; touch(); render(); openSheet('circ'); break;
+      ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.nextRole = 'start'; S.mode = 'edit'; touch(); render(); openSheet('circ'); break;
     }
     case 'hand': {
       const h = c && ui.sel != null ? c.holds[ui.sel] : null, v = b.dataset.v;
@@ -2139,6 +2172,11 @@ document.addEventListener('click', e => {
       const h = c && ui.sel != null ? c.holds[ui.sel] : null;
       if(!h || ui.busy) break;
       const up = b.dataset.d === '1';
+      if(h.poly && h.drawn){
+        const f = up ? 1.12 : 1/1.12;
+        h.poly = h.poly.map((v, i) => Math.round(i % 2 === 0 ? h.x + (v - h.x)*f : h.y + (v - h.y)*f));
+        touch(); render(); break;
+      }
       if(h.poly){
         ui.busy = true;
         const ts = clamp((h.ts || 1) * (up ? 1.35 : 1/1.35), 0.4, 3);
