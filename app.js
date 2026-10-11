@@ -1301,7 +1301,7 @@ function overlay(w, o){
       if(h.poly) d += polyPath(h.poly);
       else { const r = h.r*w.w; d += `M${h.x-r},${h.y}a${r},${r} 0 1,0 ${2*r},0a${r},${r} 0 1,0 ${-2*r},0Z`; }
     });
-    s += `<path d="${d}" fill="#000" fill-opacity=".58" fill-rule="evenodd"/>`;
+    s += `<path d="${d}" fill="#000" fill-opacity="${o.edit ? .5 : .62}" fill-rule="evenodd"/>`;
   }
   if(act) s += circuitSVG(act, w.w, 1, o);
   if(o.edit && act && ui.sel != null && act.holds[ui.sel]){
@@ -1372,7 +1372,7 @@ function renderStage(){
   const sv = $('#ov');
   sv.setAttribute('viewBox', `0 0 ${w.w} ${w.h}`);
   const editing = EDIT && S.mode === 'edit';
-  sv.innerHTML = overlay(w, { numbers: editing || S.prefs.numbers, lines: S.prefs.lines, others: S.prefs.others, edit: editing, dim: !editing && S.prefs.dim, wall: EDIT && S.mode === 'wall' });
+  sv.innerHTML = overlay(w, { numbers: editing || S.prefs.numbers, lines: S.prefs.lines, others: S.prefs.others, edit: editing, dim: S.prefs.dim, wall: EDIT && S.mode === 'wall' });
   fit();
 }
 function visibleCircuits(w){
