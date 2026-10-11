@@ -6,6 +6,10 @@
 const HEAD = '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Circuiti sul muro</title><link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">';
 const BODY = `
 <div id="app">
+  <nav class="secbar" id="secbar" aria-label="Sezione">
+    <button data-act="sec" data-v="circ">Circuiti</button>
+    <button data-act="sec" data-v="boulder">Boulder</button>
+  </nav>
   <header class="top">
     <button class="wallbtn" id="wallBtn" data-act="wall" aria-label="Scegli un muro">
       <span id="wallName">Nessun muro</span>
@@ -62,6 +66,8 @@ const PALETTE = [['Giallo','#f2c200'],['Arancio','#ff7a1a'],['Rosso','#e5312b'],
 const GRADES = ['','3','4','5a','5b','5c','6a','6a+','6b','6b+','6c','6c+','7a','7a+','7b','7b+','7c','7c+','8a','8a+','8b','8b+','8c'];
 const STYLES = ['','Equilibrio','Dinamico','Forza','Tecnico','Resistenza','Coordinazione','Tacche','Svasi','Volumi'];
 const ANGLES = Array.from({length:41}, (_,i) => i);
+/* boulder: move, stile e particolarità (si possono scegliere più voci) */
+const BTAGS = ['Placca','Verticale','Strapiombo','Tetto','Spigolo','Diedro','Partenza seduta','Traverso','Dinamico','Lancio','Equilibrio','Compressione','Opposizione','Tallone','Punta','Incastro','Ribaltamento','Tacche','Svasi','Pinze','Buchi','Volumi','Uscita alta','Morfologico'];
 
 let seed = {};
 try{ seed = JSON.parse(document.getElementById('seed').textContent) || {}; }catch(e){}
@@ -78,6 +84,9 @@ let EDIT = false, ART = null, SB = null, BASE = null, ME = null;
 const isMgr = () => !ME || ME.role === 'gestore';
 const ui = { view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:null, csel:null, busy:false, warnedRing:false, sel:null, move:false, nextRole:'start', zoom:1, sheet:null, confirm:null, imgUrl:null, ready:false, publishing:false, saveWarned:false, scan:null, nextHand:'', crop:null };
 try{ const f = JSON.parse(localStorage.getItem('circ-filters') || '{}'); ui.fAngle = f.a || ''; ui.fGrade = f.g || ''; }catch(e){}
+ui.section = 'circ'; ui.bShow = 'on'; ui.bGrade = ''; ui.bColor = ''; ui.lastSec = {};
+try{ const f = JSON.parse(localStorage.getItem('boulder-ui') || '{}'); if(f.sec === 'boulder') ui.section = 'boulder'; ui.bShow = f.show || 'on'; ui.bGrade = f.g || ''; ui.bColor = f.c || ''; ui.lastSec = f.last || {}; }catch(e){}
+function saveBUI(){ try{ localStorage.setItem('boulder-ui', JSON.stringify({ sec: ui.section, show: ui.bShow, g: ui.bGrade, c: ui.bColor, last: ui.lastSec })); }catch(e){} }
 
 const uid = () => Math.random().toString(36).slice(2,9);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -85,7 +94,15 @@ const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
 const lum = h => { const n = parseInt(h.slice(1),16); return (0.2126*(n>>16&255)+0.7152*(n>>8&255)+0.0722*(n&255))/255; };
 const haloOf = c => lum(c) < 0.3 ? '#ffffff' : '#000000';
 const inkOn = c => lum(c) > 0.6 ? '#111111' : '#ffffff';
-const curWall = () => S.walls.find(w => w.id === S.active) || S.walls[0] || null;
+/* due sezioni: "circ" (muri con circuiti) e "boulder" (settori con linee boulder); i settori sono muri con kind:'sector' */
+const isSec = w => !!w && w.kind === 'sector';
+const secOf = w => isSec(w) ? 'boulder' : 'circ';
+const secWalls = () => S.walls.filter(w => secOf(w) === ui.section);
+const curWall = () => { const l = secWalls(); return l.find(w => w.id === S.active) || l[0] || null; };
+const BO = () => ui.section === 'boulder';
+const todayISO = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); };
+const isOff = c => !!(c && c.dateRemoved && c.dateRemoved <= todayISO());
+const fmtDate = d => { if(!d) return ''; const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d); return m ? (+m[3]) + '/' + (+m[2]) + '/' + m[1].slice(2) : d; };
 const curCircuit = () => { const w = curWall(); return w ? (w.circuits.find(c => c.id === w.activeCircuit) || w.circuits[0] || null) : null; };
 const dirty = () => EDIT && S.rev > PUBREV;
 
@@ -216,6 +233,12 @@ const loadImg1 = src => new Promise((res,rej) => { const i = new Image(); if(!/^
 /* se una copia salvata male blocca la lettura dei pixel, riprova scavalcandola */
 const loadImg = src => loadImg1(src).catch(e => /^data:/.test(src) ? Promise.reject(e) : loadImg1(src + (src.includes('?') ? '&' : '?') + 'px=1'));
 function newCircuit(w){
+  if(isSec(w)){
+    let setter = ''; try{ setter = localStorage.getItem('boulder-setter') || ''; }catch(e){}
+    if(!setter && ME && ME.email) setter = ME.email.split('@')[0];
+    let n = w.circuits.length + 1; while(w.circuits.some(c => c.name === 'Boulder ' + n)) n++;
+    return { id: uid(), name: 'Boulder ' + n, color: PALETTE[0][1], holds: [], dateSet: todayISO(), ...(setter ? { setter } : {}) };
+  }
   const used = w.circuits.map(c => c.color);
   const p = PALETTE.find(p => !used.includes(p[1])) || PALETTE[0];
   return { id: uid(), name: 'Nuovo circuito ' + (w.circuits.length + 1), color: p[1], holds: [] };
@@ -1200,8 +1223,10 @@ const PICK_BTNS = `<span class="btn primary big pick">Scegli dalla galleria<inpu
   <span class="btn big pick">Scatta una foto<input type="file" accept="image/*" capture="environment" data-pick="1" aria-label="Scatta una foto"></span>`;
 function renderTop(){
   const w = curWall();
-  $('#wallName').textContent = w ? w.name : 'Nessun muro';
-  const multi = S.walls.length > 1;
+  document.querySelectorAll('#secbar button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === ui.section)));
+  $('#wallName').textContent = w ? w.name : (BO() ? 'Nessun settore' : 'Nessun muro');
+  $('#wallBtn').setAttribute('aria-label', BO() ? 'Scegli un settore' : 'Scegli un muro');
+  const multi = secWalls().length > 1;
   $('#wallBtn').disabled = !EDIT && !multi && !SB;
   $('#chev').hidden = !EDIT && !multi && !SB;
   $('#modes').hidden = !EDIT;
@@ -1209,7 +1234,7 @@ function renderTop(){
   document.querySelectorAll('#modes button').forEach(b => {
     b.setAttribute('aria-pressed', String(b.dataset.v === S.mode));
     b.disabled = !w || (b.dataset.v === 'edit' && !w.locked);
-    b.hidden = b.dataset.v === 'wall' && !isMgr();
+    b.hidden = b.dataset.v === 'wall' && (!isMgr() || BO());
   });
 }
 function renderPub(){
@@ -1224,7 +1249,9 @@ function renderStage(){
   if(!w){
     st.hidden = true; z.hidden = true; em.hidden = false;
     if(!ui.ready) em.innerHTML = `<p>Carico…</p>`;
-    else if(EDIT) em.innerHTML = `<h1>Traccia i circuiti sulla foto del muro</h1><p>Carica una foto, tocca le prese per segnarle e dai un colore a ogni circuito.</p><div class="row">${PICK_BTNS}</div>`;
+    else if(BO() && EDIT && isMgr()) em.innerHTML = `<h1>Segna i boulder sulla foto del settore</h1><p>Carica la foto di un settore: poi tocca le prese di ogni boulder per contornarle, con partenza e arrivo.</p><div class="row">${PICK_BTNS}</div>`;
+    else if(BO()) em.innerHTML = `<h1>Nessun settore pubblicato</h1><p>I boulder compariranno qui quando il gestore carica i settori.</p>`;
+    else if(EDIT && isMgr()) em.innerHTML = `<h1>Traccia i circuiti sulla foto del muro</h1><p>Carica una foto, tocca le prese per segnarle e dai un colore a ogni circuito.</p><div class="row">${PICK_BTNS}</div>`;
     else em.innerHTML = `<h1>Nessun muro pubblicato</h1><p>I circuiti compariranno qui quando il gestore li pubblica.</p>`;
     return;
   }
@@ -1239,18 +1266,43 @@ function renderStage(){
   fit();
 }
 function visibleCircuits(w){
+  if(isSec(w)) return w.circuits.filter(c => (ui.bShow === 'all' || (ui.bShow === 'off') === isOff(c)) && (!ui.bGrade || c.grade === ui.bGrade) && (!ui.bColor || c.color === ui.bColor));
   return w.circuits.filter(c => (!ui.fAngle || String(c.angle) === String(ui.fAngle)) && (!ui.fGrade || c.grade === ui.fGrade));
 }
 const gradeBand = g => { const i = GRADES.indexOf(g || ''); if(i <= 0) return '#5b6068'; if(i <= GRADES.indexOf('5c')) return '#7bd389'; if(i <= GRADES.indexOf('6b+')) return '#ffd166'; if(i <= GRADES.indexOf('7a+')) return '#ff9a3d'; return '#ef476f'; };
 const gradeBadge = g => `<span class="gb" style="background:${gradeBand(g)}">${esc(g || '–')}</span>`;
 const gradeIdx = g => { const i = GRADES.indexOf(g || ''); return i <= 0 ? 999 : i; };
+function bMeta(c){
+  const t = (c.tags || []).slice(0, 3).join(', ');
+  return [c.setter || '', isOff(c) ? 'smontato ' + fmtDate(c.dateRemoved) : c.dateSet ? fmtDate(c.dateSet) : '', t].filter(Boolean).map(esc).join(' · ');
+}
 function circMeta(c){
+  if(curWall() && isSec(curWall())) return bMeta(c);
   return [c.angle != null ? c.angle + '°' : '', c.style || '', c.holds.length + (c.holds.length === 1 ? ' presa' : ' prese')].filter(Boolean).map(esc).join(' · ');
+}
+/* filtri dei boulder: stato (in parete / smontati / tutti), grado, colore delle prese */
+function bFilters(w){
+  const grades = GRADES.filter(g => g && w.circuits.some(x => x.grade === g));
+  const cols = PALETTE.filter(p => w.circuits.some(x => x.color === p[1]));
+  const st = (v, l) => `<button class="fchip ${ui.bShow === v ? 'on' : ''}" data-act="bshow" data-v="${v}">${l}</button>`;
+  return `<div class="fchips">${st('on','In parete')}${st('off','Smontati')}${st('all','Tutti')}`+
+    (grades.length ? `<select id="bgradef" class="fsel" aria-label="Grado"><option value="">Tutti i gradi</option>${grades.map(g => `<option value="${g}" ${ui.bGrade === g ? 'selected' : ''}>${g}</option>`).join('')}</select>` : '')+`</div>`+
+    (cols.length > 1 ? `<div class="fchips">${cols.map(p => `<button class="fdot ${ui.bColor === p[1] ? 'on' : ''}" data-act="bcolor" data-v="${p[1]}" aria-label="Prese ${p[0].toLowerCase()}" aria-pressed="${ui.bColor === p[1]}" style="background:${p[1]}"></button>`).join('')}</div>` : '');
+}
+function bRows(w, cls){
+  const act = curCircuit(), vis = sortedVisible(w);
+  if(!vis.length) return `<p class="hint" style="padding:6px 2px">${w.circuits.length ? 'Nessun boulder con questi filtri.' : 'Ancora nessun boulder su questo settore.'}</p>`;
+  return `<div class="list" style="gap:${cls === 'crow' ? 6 : 0}px;margin:0">` + vis.map(x => `<button class="${cls} ${act && x.id === act.id ? 'active' : ''} ${isOff(x) ? 'off' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext" style="flex:1"><b>${esc(x.name)}${x.style ? ` <span style="font-weight:600;color:var(--muted);font-size:14px">· ${esc(x.style)}</span>` : ''}</b><small>${bMeta(x)}</small></span>${gradeBadge(x.grade)}</button>`).join('') + `</div>`;
 }
 function renderChips(){
   const w = curWall(), el = $('#chips');
   if(!w || (EDIT && S.mode === 'wall')){ el.innerHTML = ''; return; }
   const act = curCircuit(), n = visibleCircuits(w).length, tot = w.circuits.length;
+  if(isSec(w) && (!EDIT || S.mode === 'view')){
+    el.innerHTML = (tot ? bFilters(w) : '') + bRows(w, 'lrow') +
+      (n ? `<p class="hint" style="text-align:center;margin:8px 0 0;font-size:13px">Tocca un boulder per vederlo sul settore, tocca di nuovo per aprirlo a schermo intero.</p>` : '');
+    return;
+  }
   if(!EDIT || S.mode === 'view'){
     const angles = [...new Set(w.circuits.map(x => x.angle).filter(x => x != null))].sort((x, y) => x - y);
     const grades = GRADES.filter(g => g && w.circuits.some(x => x.grade === g));
@@ -1263,16 +1315,16 @@ function renderChips(){
       (vis.length ? `<p class="hint" style="text-align:center;margin:8px 0 0;font-size:13px">Tocca un circuito per vederlo sul muro, tocca di nuovo per aprirlo a schermo intero.</p>` : '');
     return;
   }
-  const filtered = (ui.fAngle || ui.fGrade) ? ` · filtrati ${n}/${tot}` : '';
+  const filtered = !isSec(w) && (ui.fAngle || ui.fGrade) ? ` · filtrati ${n}/${tot}` : '';
   if(!act){
-    el.innerHTML = `<div class="curbar"><span class="cinfo"><b>Nessun circuito su questo muro</b></span>${EDIT ? `<button class="btn primary" data-act="addc">+ Nuovo circuito</button>` : ''}</div>`;
+    el.innerHTML = `<div class="curbar"><span class="cinfo"><b>${isSec(w) ? 'Nessun boulder su questo settore' : 'Nessun circuito su questo muro'}</b></span>${EDIT ? `<button class="btn primary" data-act="addc">${isSec(w) ? '+ Nuovo boulder' : '+ Nuovo circuito'}</button>` : ''}</div>`;
     return;
   }
   el.innerHTML = `<div class="curbar">`+
     `<button class="cinfo" data-act="clist" aria-label="Elenco circuiti"><i class="dot" style="background:${act.color}"></i>`+
     `<span class="ctext"><b>${esc(act.name)}</b><small>${circMeta(act)}</small></span>${gradeBadge(act.grade)}</button>`+
     (EDIT && S.mode === 'edit' ? `<button class="btn" data-act="cedit">Modifica</button>` : '')+
-    `<button class="btn primary" data-act="clist">Circuiti (${tot})${filtered}</button></div>`;
+    `<button class="btn primary" data-act="clist">${isSec(w) ? `Boulder (${tot})` : `Circuiti (${tot})${filtered}`}</button></div>`;
 }
 function samStatus(w){
   const e = sam.emb[w.id];
@@ -1343,7 +1395,7 @@ function renderTools(){
     el.innerHTML = c ? `<div class="mini">`+
       `<button class="btn ${p.numbers ? 'on' : ''}" data-act="pref" data-k="numbers">Numeri</button>`+
       `<button class="btn ${p.lines ? 'on' : ''}" data-act="pref" data-k="lines">Linee</button>`+
-      `<button class="btn ${p.others ? 'on' : ''}" data-act="pref" data-k="others">Altri circuiti</button>`+
+      `<button class="btn ${p.others ? 'on' : ''}" data-act="pref" data-k="others">${isSec(w) ? 'Altri boulder' : 'Altri circuiti'}</button>`+
       `<button class="btn ${p.dim ? 'on' : ''}" data-act="pref" data-k="dim">Oscura muro</button>`+
       `<button class="btn" data-act="img">Condividi immagine</button></div>` : '';
     return;
@@ -1354,10 +1406,11 @@ function renderTools(){
   const hand = h ? (h.hand || '') : ui.nextHand;
   const dot = col => `<span style="display:inline-block;width:.7em;height:.7em;border-radius:50%;background:${col};border:1px solid #888;margin-right:6px;vertical-align:-1px"></span>`;
   const hb = (v,l) => `<button data-act="hand" data-v="${v}" aria-pressed="${hand === v}">${l}</button>`;
-  let hint = 'Tocca una presa per accenderla. Tocca una presa accesa per selezionarla.';
+  let hint = isSec(w) ? 'Tocca una presa: ne rilevo il contorno e la aggiungo al boulder. Tocca una presa già segnata per selezionarla.' : 'Tocca una presa per accenderla. Tocca una presa accesa per selezionarla.';
   if(ui.move && h) hint = 'Tocca la presa dove spostarla.';
   else if(h) hint = 'Presa selezionata: cambia tipo o contorno, sposta o elimina.';
-  else if(c && !c.holds.length) hint = 'Tocca la prima presa di partenza per accenderla.';
+  else if(c && !c.holds.length) hint = isSec(w) ? 'Tocca la prima presa di partenza: ne rilevo il contorno.' : 'Tocca la prima presa di partenza per accenderla.';
+  if(isSec(w) && !ui.move) hint += ` <span style="opacity:.8">${samStatus(w)}</span>`;
   const lbl = h && !h.poly ? 'Anello' : 'Contorno';
   el.innerHTML =
     `<p class="hint">${hint}</p>`+
@@ -1372,10 +1425,12 @@ function renderTools(){
 }
 function render(){
   { const w0 = curWall();
+    if(isSec(w0) && S.mode === 'wall') S.mode = 'edit';
     if(EDIT && !isMgr()){ if(S.mode === 'wall' || (w0 && !w0.locked && S.mode === 'edit')) S.mode = 'view'; }
     else if(EDIT && w0 && !w0.locked && S.mode === 'edit') S.mode = 'wall'; }
-  { const w1 = curWall(); if(EDIT && w1 && !w1.locked && S.mode === 'wall' && sam.state !== 'failed' && !(sam.emb[w1.id] && sam.emb[w1.id].key === samKey(w1))) samWarm(w1); }
+  { const w1 = curWall(); if(EDIT && w1 && ((!w1.locked && S.mode === 'wall') || (isSec(w1) && S.mode === 'edit')) && sam.state !== 'failed' && !(sam.emb[w1.id] && sam.emb[w1.id].key === samKey(w1))) samWarm(w1); }
   const viewing = !EDIT || S.mode === 'view';
+  { const w2 = curWall(); if(viewing && isSec(w2)){ const v = sortedVisible(w2); if(v.length && !v.some(x => x.id === w2.activeCircuit)) w2.activeCircuit = v[0].id; } }
   if(ui.full && (!viewing || !curCircuit())) ui.full = false;
   $('#app').classList.toggle('full', !!ui.full);
   renderTop(); renderPub(); renderStage(); renderChips(); renderTools(); renderFull(); }
@@ -1387,11 +1442,13 @@ function renderFull(){
   el.hidden = false;
   el.innerHTML = `<div class="row" style="flex-wrap:nowrap;align-items:center;gap:12px">`+
     `<i class="dot" style="background:${c.color};width:16px;height:16px"></i>`+
-    `<span class="ctext" style="flex:1"><b>${esc(c.name)}</b><small>${circMeta(c)}</small></span>${gradeBadge(c.grade)}</div>`+
+    `<span class="ctext" style="flex:1"><b>${esc(c.name)}${isSec(w) && c.style ? ` · ${esc(c.style)}` : ''}</b><small>${isSec(w) ? esc([c.setter ? 'di ' + c.setter : '', c.dateSet ? 'montato ' + fmtDate(c.dateSet) : '', c.dateRemoved ? (isOff(c) ? 'smontato ' : 'smonta ') + fmtDate(c.dateRemoved) : ''].filter(Boolean).join(' · ')) : circMeta(c)}</small></span>${gradeBadge(c.grade)}</div>`+
+    (isSec(w) && (c.tags || []).length ? `<div class="tags" style="margin:10px 0 0">${c.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : '')+
+    (isSec(w) && c.notes ? `<p class="bnotes">${esc(c.notes)}</p>` : '')+
     `<div class="row" style="margin-top:10px;flex-wrap:nowrap">`+
-    `<button class="btn" data-act="fnav" data-d="-1" ${i > 0 ? '' : 'disabled'} aria-label="Circuito precedente">‹</button>`+
-    `<button class="btn primary" data-act="fexit" style="flex:1">Elenco circuiti</button>`+
-    `<button class="btn" data-act="fnav" data-d="1" ${i >= 0 && i < list.length - 1 ? '' : 'disabled'} aria-label="Circuito successivo">›</button></div>`;
+    `<button class="btn" data-act="fnav" data-d="-1" ${i > 0 ? '' : 'disabled'} aria-label="Precedente">‹</button>`+
+    `<button class="btn primary" data-act="fexit" style="flex:1">${isSec(w) ? 'Elenco boulder' : 'Elenco circuiti'}</button>`+
+    `<button class="btn" data-act="fnav" data-d="1" ${i >= 0 && i < list.length - 1 ? '' : 'disabled'} aria-label="Successivo">›</button></div>`;
 }
 function setFull(on){
   if(on && !ui.full){ ui.full = true; try{ history.pushState({ full: 1 }, ''); }catch(e){} }
@@ -1407,7 +1464,31 @@ function renderSheet(){
   if(!ui.sheet){ el.hidden = true; card.innerHTML = ''; return; }
   const w = curWall(), c = curCircuit();
   let h = '';
-  if(ui.sheet === 'circ' && c && EDIT){
+  if(ui.sheet === 'circ' && c && EDIT && isSec(w)){
+    const gradeOpt = v => `<option value="${v}" ${(c.grade || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
+    const styleOpt = v => `<option value="${v}" ${(c.style || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
+    const tags = c.tags || [];
+    h = `<h2>Boulder</h2>`+
+      `<label class="field">Nome<input id="cname" value="${esc(c.name)}" maxlength="40"></label>`+
+      `<p class="field" style="margin-bottom:4px">Colore delle prese</p>`+
+      `<div class="sw" role="group" aria-label="Colore delle prese">` +
+      PALETTE.map(p => `<button data-act="color" data-c="${p[1]}" aria-label="${p[0]}" class="${p[1] === c.color ? 'sel' : ''}" style="background:${p[1]}"></button>`).join('') +
+      `</div>`+
+      `<div class="f2"><label class="field">Grado<select id="cgrade">${GRADES.map(gradeOpt).join('')}</select></label>`+
+      `<label class="field">Stile<select id="cstyle">${STYLES.map(styleOpt).join('')}</select></label></div>`+
+      `<label class="field">Tracciatore<input id="bsetter" value="${esc(c.setter || '')}" maxlength="40" autocomplete="off"></label>`+
+      `<div class="f2"><label class="field">Montato il<input id="bdset" type="date" value="${esc(c.dateSet || '')}"></label>`+
+      `<label class="field">Smontato il<input id="bdrem" type="date" value="${esc(c.dateRemoved || '')}"></label></div>`+
+      `<p class="field" style="margin-bottom:0">Move, stile e particolarità</p>`+
+      `<div class="tags">${BTAGS.map(t => `<button class="tag ${tags.includes(t) ? 'on' : ''}" data-act="btag" data-v="${esc(t)}" aria-pressed="${tags.includes(t)}">${esc(t)}</button>`).join('')}</div>`+
+      `<label class="field">Note<textarea id="bnotes" maxlength="600" placeholder="Es. partenza con mani sulla tacca bassa, spigolo escluso…">${esc(c.notes || '')}</textarea></label>`+
+      `<div class="row"><button class="btn danger" data-act="delc">${ui.confirm === 'delc' ? 'Tocca ancora per eliminare' : 'Elimina boulder'}</button>`+
+      `<button class="btn primary" data-act="close">Fatto</button></div>`+
+      `<p class="note">Con una data di smontaggio passata il boulder finisce tra gli "Smontati": resta consultabile ma non compare più tra quelli in parete.</p>`;
+  } else if(ui.sheet === 'clist' && w && isSec(w)){
+    h = `<h2>Boulder · ${esc(w.name)}</h2>` + bFilters(w) + bRows(w, 'crow') +
+      `<div class="row" style="margin-top:14px">${EDIT ? `<button class="btn primary" data-act="addc">+ Nuovo boulder</button>` : ''}<button class="btn" data-act="close">Chiudi</button></div>`;
+  } else if(ui.sheet === 'circ' && c && EDIT){
     const gradeOpt = v => `<option value="${v}" ${(c.grade || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
     const styleOpt = v => `<option value="${v}" ${(c.style || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
     h = `<h2>Circuito</h2>`+
@@ -1434,15 +1515,17 @@ function renderSheet(){
       `</div>`+
       `<div class="row">${EDIT && w.locked ? `<button class="btn primary" data-act="addc">+ Nuovo circuito</button>` : ''}<button class="btn" data-act="close">Chiudi</button></div>`;
   } else if(ui.sheet === 'wall'){
-    h = `<h2>Muri</h2><div class="list">`+
-      S.walls.map(x => `<button class="wrow ${w && x.id === w.id ? 'active' : ''}" data-act="pickw" data-id="${x.id}"><span>${esc(x.name)}</span><small>${x.circuits.length} circuiti</small></button>`).join('') +
+    const bo = BO();
+    h = `<h2>${bo ? 'Settori' : 'Muri'}</h2><div class="list">`+
+      secWalls().map(x => `<button class="wrow ${w && x.id === w.id ? 'active' : ''}" data-act="pickw" data-id="${x.id}"><span>${esc(x.name)}</span><small>${bo ? x.circuits.filter(c => !isOff(c)).length + ' boulder' : x.circuits.length + ' circuiti'}</small></button>`).join('') +
+      (secWalls().length ? '' : `<p class="note" style="margin:0">${bo ? 'Nessun settore ancora.' : 'Nessun muro ancora.'}</p>`) +
       `</div>`;
     if(EDIT){
-      h += (w && isMgr() ? `<label class="field">Nome del muro<input id="wname" value="${esc(w.name)}" maxlength="40"></label>` : '') +
+      h += (w && isMgr() ? `<label class="field">${bo ? 'Nome del settore' : 'Nome del muro'}<input id="wname" value="${esc(w.name)}" maxlength="40"></label>` : '') +
         (w && !isMgr() && !w.locked ? `<p class="note" style="margin:0 0 12px">Questo muro è ancora in preparazione: potrai tracciarci quando il gestore lo blocca.</p>` : '') +
-        (isMgr() ? `<div class="row">${PICK_BTNS}</div>` : '')+
+        (isMgr() ? `${bo ? `<p class="note" style="margin:0 0 8px">Aggiungi un settore:</p>` : ''}<div class="row">${PICK_BTNS}</div>` : '')+
         `<div class="row" style="margin-top:10px">` +
-        (w && isMgr() ? `<button class="btn danger" data-act="delw">${ui.confirm === 'delw' ? 'Tocca ancora per eliminare' : 'Elimina muro'}</button>` : '') +
+        (w && isMgr() ? `<button class="btn danger" data-act="delw">${ui.confirm === 'delw' ? 'Tocca ancora per eliminare' : bo ? 'Elimina settore' : 'Elimina muro'}</button>` : '') +
         `<button class="btn primary" data-act="close">Fatto</button></div>`+
         `<p class="note">Le modifiche restano su questo dispositivo finché non premi Pubblica. Se nel frattempo un altro tracciatore ha pubblicato, i suoi circuiti vengono tenuti e si aggiungono i tuoi.</p>`+
         (ME ? `<p class="note">Sei dentro come <b>${esc(ME.email)}</b> (${ME.role === 'gestore' ? 'gestore' : 'tracciatore'}).</p>` : '')+
@@ -1488,9 +1571,9 @@ function renderSheet(){
         : `<polyline points="${ptsAttr}" fill="none" stroke="#ffd400" stroke-width=".6" vector-effect="non-scaling-stroke"/>`;
     const dots = cr.pts.map(p => `<circle cx="${p.x*100}" cy="${p.y*100}" r="1.2" fill="#ffd400" stroke="#000" stroke-width=".3"/>`).join('');
     const step = cr.closed ? `Forma chiusa con ${cr.pts.length} punti. Puoi confermare o rifare.` :
-      cr.pts.length === 0 ? 'Tocca i punti lungo il vero bordo del pannello (anche se è storto/in prospettiva), poi "Chiudi forma".' :
+      cr.pts.length === 0 ? (BO() ? 'Puoi usare tutta la foto del settore, oppure toccare i punti attorno alla zona da tenere e poi "Chiudi forma".' : 'Tocca i punti lungo il vero bordo del pannello (anche se è storto/in prospettiva), poi "Chiudi forma".') :
       `Punti toccati: ${cr.pts.length}. Continua lungo il bordo, poi "Chiudi forma" (minimo 3 punti).`;
-    h = `<h2>Ritaglia il pannello</h2><p class="hint">${step}</p>`+
+    h = `<h2>${BO() ? 'Foto del settore' : 'Ritaglia il pannello'}</h2><p class="hint">${step}</p>`+
       `<div style="position:relative;overflow:hidden;line-height:0;border-radius:8px">`+
       `<img data-act="cropTap" src="${cr.img}" style="width:100%;height:auto;display:block;touch-action:none">`+
       `<svg viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none">${shape}${dots}</svg>`+
@@ -1501,6 +1584,7 @@ function renderSheet(){
       `<button class="btn" data-act="cropClose" ${cr.pts.length >= 3 && !cr.closed ? '' : 'disabled'}>Chiudi forma</button>`+
       `<button class="btn" data-act="cropCancel">Annulla</button>`+
       `<button class="btn primary" data-act="cropDone" ${cr.closed ? '' : 'disabled'}>Usa questo ritaglio</button>`+
+      (cr.pts.length ? '' : `<button class="btn primary" data-act="cropAll">Usa tutta la foto</button>`)+
       `</div>`;
   } else { ui.sheet = null; el.hidden = true; return; }
   card.innerHTML = h;
@@ -1525,7 +1609,7 @@ async function makeImage(){
     g.fillStyle = c.color; g.fill(); g.lineWidth = Math.max(2, capH*0.03); g.strokeStyle = '#111111'; g.stroke();
     g.fillStyle = '#111111'; g.textBaseline = 'middle';
     g.font = `700 ${Math.round(capH*0.4)}px "Barlow Semi Condensed", Arial, sans-serif`;
-    g.fillText(`${w.name}: ${c.name}, ${c.holds.length} prese`, capH*0.9, w.h + capH/2);
+    g.fillText(isSec(w) ? `${w.name}: ${c.name}${c.grade ? ' · ' + c.grade : ''}${c.setter ? ' · ' + c.setter : ''}` : `${w.name}: ${c.name}, ${c.holds.length} prese`, capH*0.9, w.h + capH/2);
     ui.imgUrl = cv.toDataURL('image/jpeg', 0.92);
   }catch(e){ ui.imgUrl = 'err'; }
   finally{ done(); }
@@ -1716,6 +1800,17 @@ $('#stage').addEventListener('click', async e => {
   }
   const hit = hitIndex(c, w.w, x, y, ctol);
   if(hit >= 0){ ui.sel = ui.sel === hit ? null : hit; ui.move = false; render(); return; }
+  if(isSec(w)){
+    ui.busy = true;
+    const res = await detect(w, x, y, 1);
+    const nh = { x, y, sx: x, sy: y, r: S.prefs.r, role: ui.nextRole, ts: 1, ...(ui.nextHand ? { hand: ui.nextHand } : {}) };
+    applySeg(nh, res, x, y, w);
+    if(!res) toast('Contorno non riconosciuto: ho messo un cerchio. Regolalo con Contorno +/−.');
+    c.holds.push(nh);
+    ui.nextRole = 'hold';
+    if(ui.nextHand === 'L') ui.nextHand = 'R'; else if(ui.nextHand === 'R') ui.nextHand = 'L';
+    ui.sel = null; ui.busy = false; touch(); render(); return;
+  }
   const ci2 = catHit(w, x, y, ctol);
   if(ci2 >= 0){
     const ch = w.holds[ci2];
@@ -1727,12 +1822,12 @@ $('#stage').addEventListener('click', async e => {
   toast('Qui non c\'è una presa del muro. Per aggiungerla sblocca il muro nel tab Muro.');
 });
 
-const EDIT_ONLY = ['tool','closeDraw','undoPt','cancelDraw','redraw','lock','unlock','tracing','addc','role','size','move','del','undo','color','delc','addw','delw','publish','autoall','stopauto','hand','dup','cropTap','cropUndo','cropClose','cropReset','cropCancel','cropDone','panelReset','panelDone','camlive','camCancel','camShot'];
+const EDIT_ONLY = ['btag','cropAll','tool','closeDraw','undoPt','cancelDraw','redraw','lock','unlock','tracing','addc','role','size','move','del','undo','color','delc','addw','delw','publish','autoall','stopauto','hand','dup','cropTap','cropUndo','cropClose','cropReset','cropCancel','cropDone','panelReset','panelDone','camlive','camCancel','camShot'];
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b || b.disabled) return;
   const a = b.dataset.act, w = curWall(), c = curCircuit();
   if(EDIT_ONLY.includes(a) && !EDIT) return;
-  if(!isMgr() && ['lock','unlock','autoall','stopauto','delw','addw','cropTap','cropUndo','cropClose','cropReset','cropDone','camlive','camShot','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext'].includes(a)) return;
+  if(!isMgr() && ['lock','unlock','autoall','stopauto','delw','addw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','camlive','camShot','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext'].includes(a)) return;
   switch(a){
     case 'mode': if(EDIT && !ui.scan && !(b.dataset.v === 'wall' && !isMgr())){ S.mode = b.dataset.v; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.redraw = null; ui.tool = 'detect'; render(); } break;
     case 'tool': ui.tool = b.dataset.v; ui.draft = []; ui.redraw = null; render(); break;
@@ -1777,6 +1872,32 @@ document.addEventListener('click', e => {
     case 'camCancel': closeCamera(); break;
     case 'camShot': shootCamera(); break;
     case 'cropDone': finishCrop(); break;
+    case 'cropAll': finishCrop(true); break;
+    case 'sec': {
+      const v = b.dataset.v === 'boulder' ? 'boulder' : 'circ';
+      if(v === ui.section || ui.scan) break;
+      const prev = curWall(); if(prev) ui.lastSec[ui.section] = prev.id;
+      ui.section = v;
+      const l = secWalls(), keep = l.find(x => x.id === ui.lastSec[v]) || l[0];
+      if(keep) S.active = keep.id;
+      ui.full = false; ui.sel = null; ui.csel = null; ui.move = false; ui.zoom = 1; ui.draft = []; ui.redraw = null; ui.tool = 'detect';
+      if(EDIT && S.mode === 'wall' && v === 'boulder') S.mode = 'edit';
+      ui.nextRole = roleFor(curCircuit()); saveBUI(); render(); break;
+    }
+    case 'bshow': case 'bcolor': {
+      if(a === 'bshow') ui.bShow = b.dataset.v; else ui.bColor = ui.bColor === b.dataset.v ? '' : b.dataset.v;
+      saveBUI();
+      const vis = w ? visibleCircuits(w) : [];
+      if(w && vis.length && !vis.some(x => x.id === w.activeCircuit)){ w.activeCircuit = sortedVisible(w)[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); }
+      render(); if(ui.sheet === 'clist') renderSheet(); break;
+    }
+    case 'btag': {
+      if(!c) break;
+      const t = b.dataset.v, l = c.tags || [];
+      c.tags = l.includes(t) ? l.filter(x => x !== t) : l.concat(t);
+      if(!c.tags.length) delete c.tags;
+      touch(); renderSheet(); renderChips(); break;
+    }
     case 'autoall': if(w) autoDetectAll(w); break;
     case 'stopauto': if(ui.scan) ui.scan.stop = true; break;
     case 'tracing': if(w && w.locked){ S.mode = 'edit'; render(); } break;
@@ -1873,15 +1994,15 @@ document.addEventListener('click', e => {
       if(!w || !c) break;
       if(ui.confirm !== 'delc'){ ui.confirm = 'delc'; renderSheet(); break; }
       w.circuits = w.circuits.filter(x => x.id !== c.id);
-      if(!w.circuits.length) w.circuits.push(newCircuit(w));
-      w.activeCircuit = w.circuits[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit());
+      if(!w.circuits.length && !isSec(w)) w.circuits.push(newCircuit(w));
+      w.activeCircuit = w.circuits.length ? w.circuits[0].id : null; ui.sel = null; ui.nextRole = roleFor(curCircuit());
       ui.sheet = null; ui.confirm = null; touch(); render(); renderSheet(); break;
-    case 'pickw': if(ui.scan) break; S.active = b.dataset.id; ui.sel = null; ui.zoom = 1; ui.move = false; ui.sheet = null; save(); render(); renderSheet(); break;
+    case 'pickw': if(ui.scan) break; S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.full = false; ui.sel = null; ui.zoom = 1; ui.move = false; ui.sheet = null; save(); render(); renderSheet(); break;
     case 'delw':
       if(!w || !isMgr()) break;
       if(ui.confirm !== 'delw'){ ui.confirm = 'delw'; renderSheet(); break; }
       S.walls = S.walls.filter(x => x.id !== w.id);
-      S.active = S.walls[0] ? S.walls[0].id : null;
+      { const l = secWalls(); S.active = l[0] ? l[0].id : (S.walls[0] ? S.walls[0].id : null); }
       ui.sel = null; ui.sheet = null; ui.confirm = null; touch(); render(); renderSheet(); break;
     case 'close': ui.sheet = null; ui.confirm = null; renderSheet(); break;
     case 'install': ui.sheet = null; renderSheet(); doInstall(); break;
@@ -1898,9 +2019,19 @@ document.addEventListener('input', e => {
     if(wf && vis.length && !vis.some(x => x.id === wf.activeCircuit)){ wf.activeCircuit = vis[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); }
     render(); if(ui.sheet === 'clist') renderSheet(); return;
   }
+  if(e.target.id === 'bgradef'){
+    ui.bGrade = e.target.value; saveBUI();
+    const wf = curWall(), vis = wf ? visibleCircuits(wf) : [];
+    if(wf && vis.length && !vis.some(x => x.id === wf.activeCircuit)){ wf.activeCircuit = sortedVisible(wf)[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); }
+    render(); if(ui.sheet === 'clist') renderSheet(); return;
+  }
   if(!EDIT) return;
-  if(e.target.id === 'cname' && c){ c.name = e.target.value || 'Circuito'; renderChips(); touch(); }
-  if(e.target.id === 'wname' && w){ w.name = e.target.value || 'Muro'; renderTop(); touch(); }
+  if(e.target.id === 'bsetter' && c){ const v = e.target.value.trim(); if(v) c.setter = v; else delete c.setter; try{ localStorage.setItem('boulder-setter', v); }catch(err){} renderChips(); touch(); }
+  if(e.target.id === 'bdset' && c){ if(e.target.value) c.dateSet = e.target.value; else delete c.dateSet; renderChips(); touch(); }
+  if(e.target.id === 'bdrem' && c){ if(e.target.value) c.dateRemoved = e.target.value; else delete c.dateRemoved; renderChips(); touch(); }
+  if(e.target.id === 'bnotes' && c){ const v = e.target.value; if(v.trim()) c.notes = v; else delete c.notes; touch(); }
+  if(e.target.id === 'cname' && c){ c.name = e.target.value || (isSec(w) ? 'Boulder' : 'Circuito'); renderChips(); touch(); }
+  if(e.target.id === 'wname' && w){ w.name = e.target.value || (isSec(w) ? 'Settore' : 'Muro'); renderTop(); touch(); }
   if(e.target.id === 'cgrade' && c){ if(e.target.value) c.grade = e.target.value; else delete c.grade; renderChips(); touch(); }
   if(e.target.id === 'cstyle' && c){ if(e.target.value) c.style = e.target.value; else delete c.style; touch(); }
   if(e.target.id === 'cangle' && c){ if(e.target.value !== '') c.angle = +e.target.value; else delete c.angle; renderChips(); touch(); }
@@ -1953,8 +2084,10 @@ async function onFile(e){
     openSheet('crop');
   }catch(err){ toast('Non riesco a leggere questa foto. Prova con un altro file.'); }
 }
-async function finishCrop(){
-  const cr = ui.crop; if(!cr || !cr.closed || cr.pts.length < 3) return;
+async function finishCrop(all){
+  const cr = ui.crop; if(!cr) return;
+  if(all){ cr.pts = [{x:0,y:0},{x:1,y:0},{x:1,y:1},{x:0,y:1}]; cr.closed = true; }
+  if(!cr.closed || cr.pts.length < 3) return;
   const done = busy('Preparo il muro…'); await nextPaint();
   try{ await finishCrop0(cr); } finally { done(); }
 }
@@ -1976,8 +2109,10 @@ async function finishCrop0(cr){
   g.fillStyle = '#c9c9c2'; g.fillRect(0, 0, cw, ch);
   g.drawImage(tmp, 0, 0);
   const img = c.toDataURL('image/jpeg', 0.86);
-  let wn = S.walls.length + 1; while(S.walls.some(x => x.name === 'Muro ' + wn)) wn++;
-  const w = { id: uid(), name: 'Muro ' + wn, w: cw, h: ch, img, circuits: [], activeCircuit: null };
+  const bo = BO(), pre = bo ? 'Settore ' : 'Muro ';
+  let wn = secWalls().length + 1; while(S.walls.some(x => x.name === pre + wn)) wn++;
+  const w = { id: uid(), name: pre + wn, w: cw, h: ch, img, circuits: [], activeCircuit: null };
+  if(bo){ w.kind = 'sector'; w.locked = true; w.holds = []; }
   const circ = newCircuit(w); w.circuits.push(circ); w.activeCircuit = circ.id;
   S.walls.push(w); S.active = w.id; S.mode = 'edit';
   ui.sel = null; ui.move = false; ui.zoom = 1; ui.nextRole = 'start'; ui.crop = null; ui.sheet = null;
