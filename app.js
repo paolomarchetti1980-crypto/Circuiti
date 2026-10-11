@@ -749,6 +749,114 @@ function rdpPts(p, eps){
   }
   return p.filter((_, i) => keep[i]);
 }
+/* volumi e prese spigolose: se il contorno si descrive bene con pochi lati dritti (scarto massimo ~3,5% della misura),
+   lo si sostituisce con un poligono a lati netti; gli angoli nascono dall'incrocio delle rette che seguono ogni lato */
+function straightPoly(pts, nPix){
+  const r = straightCore(pts, nPix);
+  if(r) return r;
+  /* volumi con prese montate sul bordo: si prova sull'involucro convesso, se la forma è quasi convessa */
+  const h = hullPts(pts);
+  if(h.length < 3) return null;
+  let HA = 0; h.forEach((q, i) => { const n2 = h[(i+1) % h.length]; HA += q[0]*n2[1] - n2[0]*q[1]; }); HA = Math.abs(HA)/2;
+  if(!HA || nPix/HA < 0.86) return null;
+  const dense = [];
+  h.forEach((q, i) => { const n2 = h[(i+1) % h.length], L = Math.max(1, Math.round(Math.hypot(n2[0]-q[0], n2[1]-q[1]))); for(let t=0; t<L; t++) dense.push([q[0] + (n2[0]-q[0])*t/L, q[1] + (n2[1]-q[1])*t/L]); });
+  return straightCore(dense, HA);
+}
+function hullPts(pts){
+  const q = pts.slice().sort((a,b) => a[0]-b[0] || a[1]-b[1]);
+  const cr = (o,a,b) => (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0]);
+  const lo = []; for(const t of q){ while(lo.length >= 2 && cr(lo[lo.length-2], lo[lo.length-1], t) <= 0) lo.pop(); lo.push(t); }
+  const up = []; for(let i=q.length-1;i>=0;i--){ const t = q[i]; while(up.length >= 2 && cr(up[up.length-2], up[up.length-1], t) <= 0) up.pop(); up.push(t); }
+  return lo.slice(0,-1).concat(up.slice(0,-1));
+}
+function straightCore(pts, nPix){
+  const D = Math.sqrt(nPix);
+  if(D < 20 || pts.length < 12) return null;
+  for(const f of [0.018, 0.025, 0.035]){
+    const idx = rdpIdx(pts, f*D), V = idx.length - 1;
+    if(V < 3 || V > 12) continue;
+    const r = polyFromIdx(pts, idx, D);
+    if(!r || r.length < 3 || r.length > 8) continue;
+    /* il poligono deve coprire quasi la stessa superficie della presa: altrimenti era una forma tondeggiante */
+    let A2 = 0; r.forEach((q, i) => { const n2 = r[(i+1) % r.length]; A2 += q[0]*n2[1] - n2[0]*q[1]; });
+    if(Math.abs(Math.abs(A2/2)/nPix - 1) < 0.07) return r;
+  }
+  return null;
+}
+function polyFromIdx(pts, idx, D){
+  const N = pts.length, P = i => pts[i % N], V = idx.length - 1;
+  /* una retta per lato (tolto il 20% alle estremità, dove l'angolo è arrotondato) */
+  const fit = (a, b) => {
+    const len = b - a, s0 = a + Math.floor(len*0.2), s1 = b - Math.floor(len*0.2);
+    let mx = 0, my = 0, n = 0;
+    for(let i=s0; i<=s1; i++){ const q = P(i); mx += q[0]; my += q[1]; n++; }
+    mx /= n; my /= n;
+    let sxx = 0, syy = 0, sxy = 0;
+    for(let i=s0; i<=s1; i++){ const q = P(i), dx = q[0]-mx, dy = q[1]-my; sxx += dx*dx; syy += dy*dy; sxy += dx*dy; }
+    const th = 0.5*Math.atan2(2*sxy, sxx - syy), A = P(a), B = P(b);
+    return { mx, my, dx: Math.cos(th), dy: Math.sin(th), a, b, L: Math.hypot(B[0]-A[0], B[1]-A[1]) };
+  };
+  let edges = [];
+  for(let e=0; e<V; e++) edges.push(fit(idx[e], idx[e+1]));
+  /* i lati cortissimi sono angoli smussati: si tolgono e l'angolo nasce dall'incrocio dei vicini */
+  while(edges.length > 3){
+    let mi = -1, ml = 0.16*D;
+    edges.forEach((e, i) => { if(e.L < ml){ ml = e.L; mi = i; } });
+    if(mi < 0) break;
+    edges.splice(mi, 1);
+  }
+  /* due lati quasi in linea sono lo stesso lato spezzato dal rumore: si tiene il più lungo */
+  for(let guard=0; guard<20 && edges.length > 3; guard++){
+    let hit = -1;
+    for(let k=0; k<edges.length; k++){
+      const A = edges[k], B = edges[(k+1) % edges.length];
+      if(Math.abs(A.dx*B.dy - A.dy*B.dx) < 0.2){ hit = k; break; }
+    }
+    if(hit < 0) break;
+    /* si uniscono in un solo lato, con la retta ricalcolata su tutti i punti dei due */
+    const k2 = (hit + 1) % edges.length, A = edges[hit], B = edges[k2];
+    const merged = fit(A.a, B.b < A.a ? B.b + N : B.b);
+    if(k2 === 0){ edges[hit] = merged; edges.splice(0, 1); } else edges.splice(hit, 2, merged);
+  }
+  const out = [], E = edges.length;
+  for(let k=0; k<E; k++){
+    const L1 = edges[(k + E - 1) % E], L2 = edges[k];
+    const f1 = P(L1.b), f2 = P(L2.a), fx = (f1[0] + f2[0])/2, fy = (f1[1] + f2[1])/2;
+    let px = fx, py = fy;
+    const den = L1.dx*L2.dy - L1.dy*L2.dx;
+    if(Math.abs(den) > 0.2){
+      const t = ((L2.mx - L1.mx)*L2.dy - (L2.my - L1.my)*L2.dx)/den;
+      const ix = L1.mx + t*L1.dx, iy = L1.my + t*L1.dy;
+      if(Math.hypot(ix - fx, iy - fy) < 0.3*D){ px = ix; py = iy; }
+      else return null;
+    } else return null;
+    out.push([px, py]);
+  }
+  return out;
+}
+function rdpIdx(pts, eps){
+  const p = pts.concat([pts[0]]);
+  /* si parte dal punto più lontano dal primo, così la chiusura non crea un vertice finto */
+  let far = 0, fd = -1;
+  for(let i=1; i<pts.length; i++){ const d = (pts[i][0]-pts[0][0])**2 + (pts[i][1]-pts[0][1])**2; if(d > fd){ fd = d; far = i; } }
+  const keep = new Uint8Array(p.length); keep[0] = 1; keep[far] = 1; keep[p.length-1] = 1;
+  const st = [[0, far], [far, p.length-1]];
+  while(st.length){
+    const [a, b] = st.pop(); let md = 0, mi = -1;
+    const ax = p[a][0], ay = p[a][1], dx = p[b][0]-ax, dy = p[b][1]-ay, L = Math.hypot(dx, dy) || 1;
+    for(let i=a+1; i<b; i++){ const dd = Math.abs(dy*(p[i][0]-ax) - dx*(p[i][1]-ay))/L; if(dd > md){ md = dd; mi = i; } }
+    if(md > eps && mi > 0){ keep[mi] = 1; st.push([a, mi], [mi, b]); }
+  }
+  const r = []; keep.forEach((k, i) => { if(k) r.push(i); });
+  /* il primo punto è un vertice solo se lì il contorno piega davvero */
+  if(r.length > 4){
+    const a = p[r[r.length-2]], b = p[0], c = p[r[1]];
+    const L = Math.hypot(c[0]-a[0], c[1]-a[1]) || 1, d = Math.abs((c[1]-a[1])*(b[0]-a[0]) - (c[0]-a[0])*(b[1]-a[1]))/L;
+    if(d <= eps){ const q = r.slice(1, -1); return q.concat([q[0] + pts.length]); }
+  }
+  return r;
+}
 async function samSegment(w, x, y, ts, strict){
   if(!(await samInit())) return undefined;
   const E = await samEmbed(w);
@@ -778,7 +886,7 @@ async function samSegment(w, x, y, ts, strict){
   const tr = maskToPoly(m, E.rw, E.rh, x*E.s, y*E.s);
   if(!tr || tr.pts.length < 3) return null;
   if(strict && !tr.inside) return null;
-  const simp = rdpPts(tr.pts, 0.9);
+  const simp = straightPoly(tr.pts, tr.n) || rdpPts(tr.pts, 0.9);
   if(simp.length < 3) return null;
   const k = 1/E.s, flat = [];
   simp.forEach(p => { flat.push(Math.round((p[0] + 0.5)*k), Math.round((p[1] + 0.5)*k)); });
