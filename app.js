@@ -3,7 +3,7 @@
 'use strict';
 
 /* ---- Documento: la pagina rigenera se stessa a partire dallo stato (mai dal DOM) ---- */
-const HEAD = '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Circuiti sul muro</title><link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">';
+const HEAD = '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Monkey Roads</title><link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">';
 const BODY = `
 <div id="app">
   <nav class="secbar" id="secbar" aria-label="Sezione">

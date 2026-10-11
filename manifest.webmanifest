@@ -1,6 +1,6 @@
 {
- "name": "Circuiti Monkey Island",
- "short_name": "Circuiti",
+ "name": "Monkey Roads",
+ "short_name": "Monkey Roads",
  "start_url": "./",
  "scope": "./",
  "display": "standalone",
@@ -27,7 +27,7 @@
   }
  ],
  "id": "./",
- "description": "I circuiti boulder di Monkey Island Roma, muro per muro.",
+ "description": "Circuiti e boulder di Monkey Island Roma, muro per muro e settore per settore.",
  "lang": "it",
  "orientation": "portrait"
 }
