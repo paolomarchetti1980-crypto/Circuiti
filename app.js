@@ -1372,7 +1372,7 @@ function renderStage(){
   const sv = $('#ov');
   sv.setAttribute('viewBox', `0 0 ${w.w} ${w.h}`);
   const editing = EDIT && S.mode === 'edit';
-  sv.innerHTML = overlay(w, { numbers: editing || S.prefs.numbers, lines: S.prefs.lines, others: S.prefs.others, edit: editing, dim: S.prefs.dim, wall: EDIT && S.mode === 'wall' });
+  sv.innerHTML = overlay(w, { numbers: editing || S.prefs.numbers, lines: S.prefs.lines, others: S.prefs.others, edit: editing, dim: S.prefs.dim || !!ui.full, wall: EDIT && S.mode === 'wall' });
   fit();
 }
 function visibleCircuits(w){
@@ -1564,6 +1564,22 @@ function setFull(on){
   if(on && !ui.full){ ui.full = true; try{ history.pushState({ full: 1 }, ''); }catch(e){} }
   else if(!on && ui.full){ ui.full = false; }
   ui.zoom = 1; render();
+  if(ui.full) focusCircuit();
+}
+/* a schermo intero si ingrandisce sul blocco: tutte le sue prese dentro lo schermo, con un po' di margine */
+function focusCircuit(){
+  const w = curWall(), c = curCircuit(); if(!w || !c || !c.holds.length) return;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    c.holds.forEach(h => { const b = holdBox(h, w.w); x0 = Math.min(x0, b.x0); y0 = Math.min(y0, b.y0); x1 = Math.max(x1, b.x1); y1 = Math.max(y1, b.y1); });
+    const pad = Math.max(w.w, w.h)*0.06; x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
+    const box = $('#box'), k0 = Math.min(box.clientWidth / w.w, box.clientHeight / w.h);
+    ui.zoom = clamp(Math.min(box.clientWidth / ((x1 - x0)*k0), box.clientHeight / ((y1 - y0)*k0)), 1, 5);
+    fit();
+    const st = $('#stage'), k = st.clientWidth / w.w;
+    box.scrollLeft = st.offsetLeft + (x0 + x1)/2*k - box.clientWidth/2;
+    box.scrollTop = st.offsetTop + (y0 + y1)/2*k - box.clientHeight/2;
+  }));
 }
 window.addEventListener('popstate', () => { if(ui.full){ ui.full = false; ui.zoom = 1; render(); } });
 
@@ -2041,7 +2057,7 @@ document.addEventListener('click', e => {
     case 'fnav': {
       if(!w) break;
       const list = sortedVisible(w), i = list.findIndex(x => x.id === w.activeCircuit), n = list[i + (+b.dataset.d)];
-      if(n){ w.activeCircuit = n.id; ui.sel = null; save(); render(); }
+      if(n){ w.activeCircuit = n.id; ui.sel = null; save(); render(); if(ui.full) focusCircuit(); }
       break;
     }
     case 'addc': {
