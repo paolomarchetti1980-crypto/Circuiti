@@ -35,6 +35,7 @@ const BODY = `
       <button data-act="zoom" data-d="-1" aria-label="Riduci">&minus;</button>
     </div>
   </div>
+  <div class="fcard" id="fcard" hidden></div>
   <footer class="dock">
     <div class="chips" id="chips"></div>
     <div class="tools" id="tools"></div>
@@ -1254,7 +1255,8 @@ function renderChips(){
     el.innerHTML = (tot ? `<div class="fchips">${angles.length ? fa('') + angles.map(fa).join('') : ''}`+
         (grades.length ? `<select id="fgrade" class="fsel" aria-label="Grado"><option value="">Tutti i gradi</option>${grades.map(g => `<option value="${g}" ${ui.fGrade === g ? 'selected' : ''}>${g}</option>`).join('')}</select>` : '')+`</div>` : '')+
       (vis.length ? vis.map(x => `<button class="lrow ${act && x.id === act.id ? 'active' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext" style="flex:1"><b>${esc(x.name)}</b><small>${circMeta(x)}</small></span>${gradeBadge(x.grade)}</button>`).join('')
-        : `<p class="hint" style="padding:6px 2px">${tot ? 'Nessun circuito con questi filtri.' : 'Ancora nessun circuito su questo muro.'}</p>`);
+        : `<p class="hint" style="padding:6px 2px">${tot ? 'Nessun circuito con questi filtri.' : 'Ancora nessun circuito su questo muro.'}</p>`)+
+      (vis.length ? `<p class="hint" style="text-align:center;margin:8px 0 0;font-size:13px">Tocca un circuito per vederlo sul muro, tocca di nuovo per aprirlo a schermo intero.</p>` : '');
     return;
   }
   const filtered = (ui.fAngle || ui.fGrade) ? ` · filtrati ${n}/${tot}` : '';
@@ -1369,7 +1371,30 @@ function render(){
     if(EDIT && !isMgr()){ if(S.mode === 'wall' || (w0 && !w0.locked && S.mode === 'edit')) S.mode = 'view'; }
     else if(EDIT && w0 && !w0.locked && S.mode === 'edit') S.mode = 'wall'; }
   { const w1 = curWall(); if(EDIT && w1 && !w1.locked && S.mode === 'wall' && sam.state !== 'failed' && !(sam.emb[w1.id] && sam.emb[w1.id].key === samKey(w1))) samWarm(w1); }
-  renderTop(); renderPub(); renderStage(); renderChips(); renderTools(); }
+  const viewing = !EDIT || S.mode === 'view';
+  if(ui.full && (!viewing || !curCircuit())) ui.full = false;
+  $('#app').classList.toggle('full', !!ui.full);
+  renderTop(); renderPub(); renderStage(); renderChips(); renderTools(); renderFull(); }
+function sortedVisible(w){ return visibleCircuits(w).slice().sort((x, y) => gradeIdx(x.grade) - gradeIdx(y.grade) || String(x.name).localeCompare(String(y.name))); }
+function renderFull(){
+  const el = $('#fcard'), w = curWall(), c = curCircuit();
+  if(!ui.full || !w || !c){ el.hidden = true; el.innerHTML = ''; return; }
+  const list = sortedVisible(w), i = list.findIndex(x => x.id === c.id);
+  el.hidden = false;
+  el.innerHTML = `<div class="row" style="flex-wrap:nowrap;align-items:center;gap:12px">`+
+    `<i class="dot" style="background:${c.color};width:16px;height:16px"></i>`+
+    `<span class="ctext" style="flex:1"><b>${esc(c.name)}</b><small>${circMeta(c)}</small></span>${gradeBadge(c.grade)}</div>`+
+    `<div class="row" style="margin-top:10px;flex-wrap:nowrap">`+
+    `<button class="btn" data-act="fnav" data-d="-1" ${i > 0 ? '' : 'disabled'} aria-label="Circuito precedente">‹</button>`+
+    `<button class="btn primary" data-act="fexit" style="flex:1">Elenco circuiti</button>`+
+    `<button class="btn" data-act="fnav" data-d="1" ${i >= 0 && i < list.length - 1 ? '' : 'disabled'} aria-label="Circuito successivo">›</button></div>`;
+}
+function setFull(on){
+  if(on && !ui.full){ ui.full = true; try{ history.pushState({ full: 1 }, ''); }catch(e){} }
+  else if(!on && ui.full){ ui.full = false; }
+  ui.zoom = 1; render();
+}
+window.addEventListener('popstate', () => { if(ui.full){ ui.full = false; ui.zoom = 1; render(); } });
 
 /* ---------- pannelli ---------- */
 function openSheet(name){ ui.sheet = name; ui.confirm = null; renderSheet(); }
@@ -1769,10 +1794,21 @@ document.addEventListener('click', e => {
       render(); break;
     }
     case 'cedit': if(c && EDIT) openSheet('circ'); break;
-    case 'pickc':
+    case 'pickc': {
       if(!w) break;
+      const again = w.activeCircuit === b.dataset.id && b.classList.contains('lrow');
       w.activeCircuit = b.dataset.id; ui.sel = null; ui.move = false; ui.nextRole = roleFor(curCircuit());
-      ui.sheet = null; save(); render(); renderSheet(); break;
+      ui.sheet = null; save(); renderSheet();
+      if(again && (!EDIT || S.mode === 'view')) setFull(true); else render();
+      break;
+    }
+    case 'fexit': if(ui.full){ try{ history.back(); }catch(e){} ui.full = false; ui.zoom = 1; render(); } break;
+    case 'fnav': {
+      if(!w) break;
+      const list = sortedVisible(w), i = list.findIndex(x => x.id === w.activeCircuit), n = list[i + (+b.dataset.d)];
+      if(n){ w.activeCircuit = n.id; ui.sel = null; save(); render(); }
+      break;
+    }
     case 'addc': {
       if(!w) break;
       const n = newCircuit(w); w.circuits.push(n); w.activeCircuit = n.id;
