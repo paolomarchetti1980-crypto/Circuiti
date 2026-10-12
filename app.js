@@ -1445,16 +1445,15 @@ function circuitSVG(c, W, alpha, o){
     const env = { W, H: o.H || 1e9, segs, badges: [], shapes: [], busy: o.busy || null };
     labels.forEach((L, li) => {
       env.shapes = shapes.filter(q => q.h !== L.h && !(q.cid != null && q.cid === L.h.cid));
-      const segW = br*1.6, wd = L.segs ? L.segs.length*segW : 0;
-      const ext = L.segs ? Math.max(0, wd/2 - br) : 0;
+      /* più passaggi: bolle fuse, una per passaggio, ognuna nel colore della sua mano */
+      const step = br*1.45, ext = L.segs ? (L.segs.length - 1)*step/2 : 0;
       const pos = placeBadge(L.h, W, br, gap, env, ext);
       env.badges.push([pos.x, pos.y, ext]);
       if(L.segs){
-        const x0 = pos.x - wd/2, y0 = pos.y - br, id = 'bc' + String(c.id).replace(/[^\w-]/g, '') + '_' + li;
-        s += `<defs><clipPath id="${id}"><rect x="${x0}" y="${y0}" width="${wd}" height="${br*2}" rx="${br}"/></clipPath></defs><g clip-path="url(#${id})">`+
-             L.segs.map((g2, k) => `<rect x="${x0 + k*segW}" y="${y0}" width="${segW + 0.5}" height="${br*2}" fill="${g2.col}"/>`).join('')+`</g>`+
-             `<rect x="${x0}" y="${y0}" width="${wd}" height="${br*2}" rx="${br}" fill="none" stroke="${L.ha}" stroke-opacity=".7" stroke-width="${br*0.22}"/>`+
-             L.segs.map((g2, k) => `<text x="${x0 + (k + 0.5)*segW}" y="${pos.y}" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed, Arial, sans-serif" font-weight="700" font-size="${br*(String(g2.n).length > 1 ? 0.95 : 1.15)}" fill="${inkOn(g2.col)}">${g2.n}</text>`).join('');
+        const xs = L.segs.map((_, k) => pos.x - ext + k*step), hw = br*0.22;
+        s += xs.map(x => `<circle cx="${x}" cy="${pos.y}" r="${br + hw/2}" fill="#ffffff" fill-opacity=".8"/>`).join('')+
+             L.segs.map((g2, k) => `<circle cx="${xs[k]}" cy="${pos.y}" r="${br - hw/2}" fill="${g2.col}"/>`).join('')+
+             L.segs.map((g2, k) => `<text x="${xs[k] + (k === L.segs.length - 1 ? 0 : -br*0.12)}" y="${pos.y}" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed, Arial, sans-serif" font-weight="700" font-size="${br*(String(g2.n).length > 1 ? 0.95 : 1.15)}" fill="${inkOn(g2.col)}">${g2.n}</text>`).join('');
         return;
       }
       const bx = pos.x.toFixed(1), by = pos.y.toFixed(1);
