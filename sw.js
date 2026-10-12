@@ -2,8 +2,8 @@
    - pagina, codice e dati pubblicati: prima la rete (così gli aggiornamenti arrivano subito), se manca la rete l'ultima copia salvata
    - foto dei muri: subito dalla copia salvata, aggiornata in sottofondo
    - modello di riconoscimento e librerie: scaricati una volta sola */
-const CACHE = 'circuiti-v23';
-const CORE = ['./', './index.html', './app.js', './config.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png'];
+const CACHE = 'circuiti-v24';
+const CORE = ['./', './index.html', './app.js', './config.js', './manifest.webmanifest', './icon-192-m.png', './icon-512-m.png', './icon-maskable-512-m.png', './apple-touch-icon-m.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).catch(() => {}));
