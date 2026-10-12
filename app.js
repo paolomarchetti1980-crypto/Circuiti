@@ -10,6 +10,7 @@ const BODY = `
     <button data-act="sec" data-v="boulder">Boulder</button>
   </nav>
   <header class="top">
+    <button class="backbtn" id="backBtn" data-act="bback" aria-label="Torna ai settori" hidden><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M11 3L5 9l6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     <button class="wallbtn" id="wallBtn" data-act="wall" aria-label="Scegli un muro">
       <span id="wallName">Nessun muro</span>
       <svg id="chev" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 5l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -110,9 +111,9 @@ let EDIT = false, SB = null, BASE = null, ME = null;
    ui.viewAs permette allo staff di vedere l'app come la vede un ruolo con meno permessi. */
 let REAL_EDIT = false;
 const isMgr = () => !ME || (ME.role === 'gestore' && ui.viewAs !== 'tracciatore' && ui.viewAs !== 'cliente');
-const ui = { view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:null, csel:null, busy:false, sel:null, move:false, nextRole:'start', zoom:1, sheet:null, confirm:null, imgUrl:null, ready:false, publishing:false, saveWarned:false, scan:null, nextHand:'L', crop:null };
+const ui = { bline:false, lineDraft:[], view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:null, csel:null, busy:false, sel:null, move:false, nextRole:'start', zoom:1, sheet:null, confirm:null, imgUrl:null, ready:false, publishing:false, saveWarned:false, scan:null, nextHand:'L', crop:null };
 try{ const f = JSON.parse(localStorage.getItem('circ-filters') || '{}'); ui.fAngle = f.a || ''; ui.fGrade = f.g || ''; ui.fFeet = f.f || ''; }catch(e){}
-ui.section = 'circ'; ui.bShow = 'on'; ui.bColor = ''; ui.lastSec = {};
+ui.section = 'circ'; ui.bLevel = 'sectors'; ui.bShow = 'on'; ui.bColor = ''; ui.lastSec = {};
 try{ const f = JSON.parse(localStorage.getItem('boulder-ui') || '{}'); if(f.sec === 'boulder') ui.section = 'boulder'; ui.bShow = f.show || 'on'; ui.bColor = f.c || ''; ui.lastSec = f.last || {}; }catch(e){}
 if(!DIFFS.some(d => d[0] === ui.bColor)) ui.bColor = '';
 function saveBUI(){ try{ localStorage.setItem('boulder-ui', JSON.stringify({ sec: ui.section, show: ui.bShow, c: ui.bColor, last: ui.lastSec })); }catch(e){} }
@@ -137,6 +138,11 @@ const secOf = w => isSec(w) ? 'boulder' : 'circ';
 const secWalls = () => S.walls.filter(w => secOf(w) === ui.section);
 const curWall = () => { const l = secWalls(); return l.find(w => w.id === S.active) || l[0] || null; };
 const BO = () => ui.section === 'boulder';
+/* boulder, per chi guarda: tre livelli. 1) griglia dei settori, 2) settore con tutte le linee, 3) blocco a schermo intero */
+const bView = () => BO() && (!EDIT || S.mode === 'view');
+const bLv = () => BO() && !ui.full && !(EDIT && S.mode === 'wall');
+const bGrid = () => bLv() && ui.bLevel === 'sectors' && (secWalls().length > 1 || (EDIT && isMgr() && secWalls().length > 0));
+const bOver = () => bView() && !ui.full && !bGrid();
 const todayISO = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); };
 const isOff = c => !!(c && c.dateRemoved && c.dateRemoved <= todayISO());
 const fmtDate = d => { if(!d) return ''; const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d); return m ? (+m[3]) + '/' + (+m[2]) + '/' + m[1].slice(2) : d; };
@@ -1515,6 +1521,111 @@ function finishBDraw(w, c){
   else { c.holds.push({ x: cx, y: cy, sx: cx, sy: cy, r: S.prefs.r, role: ui.nextRole, poly: flat, drawn: 1 }); ui.nextRole = 'hold'; }
   ui.draft = []; ui.bdraw = false; ui.sel = null; touch(); render();
 }
+/* boulder: linea indicativa disegnata a mano dal tracciatore (direzione generale, non le prese) */
+/* linea automatica: dal centro delle partenze al Top, piegando verso il punto medio delle prese in 3 fasce.
+   Non dipende dall'ordine in cui le prese sono state segnate. */
+function autoLine(c, W){
+  const H = c.holds; if(H.length < 2) return null;
+  const avg = l => [l.reduce((t,h) => t + h.x, 0)/l.length, l.reduce((t,h) => t + h.y, 0)/l.length];
+  const st = H.filter(h => h.role === 'start'), tops = H.filter(h => h.role === 'top');
+  const S = avg(st.length ? st : [H[0]]);
+  let T = tops.length ? avg(tops) : null;
+  if(!T){ let far = H[0]; H.forEach(h => { if(Math.hypot(h.x-S[0], h.y-S[1]) > Math.hypot(far.x-S[0], far.y-S[1])) far = h; }); T = [far.x, far.y]; }
+  const ax = T[0]-S[0], ay = T[1]-S[1], L2 = ax*ax + ay*ay; if(L2 < 1) return null;
+  const mid = H.filter(h => h.role === 'hold'), K = 3, bins = Array.from({length:K}, () => []);
+  mid.forEach(h => { const t = ((h.x-S[0])*ax + (h.y-S[1])*ay)/L2; if(t > 0.02 && t < 0.98) bins[Math.min(K-1, Math.floor(t*K))].push(h); });
+  const pts = [S]; bins.forEach(b => { if(b.length) pts.push(avg(b)); }); pts.push(T);
+  /* le estremità si fermano poco prima delle prese di partenza e di arrivo */
+  const cut = (a, b, d) => { const l = Math.hypot(b[0]-a[0], b[1]-a[1]) || 1, k = Math.min(0.45, d/l); return [a[0] + (b[0]-a[0])*k, a[1] + (b[1]-a[1])*k]; };
+  const gap = W*0.035;
+  pts[0] = cut(pts[0], pts[1], gap); pts[pts.length-1] = cut(pts[pts.length-1], pts[pts.length-2], gap);
+  return pts.flatMap(q => [Math.round(q[0]), Math.round(q[1])]);
+}
+/* linea spezzata con gli angoli smussati */
+function roundedPath(p, r){
+  let d = 'M' + p[0][0].toFixed(1) + ',' + p[0][1].toFixed(1);
+  for(let i=1;i<p.length-1;i++){
+    const a = p[i-1], b = p[i], c = p[i+1];
+    const l1 = Math.hypot(b[0]-a[0], b[1]-a[1]) || 1, l2 = Math.hypot(c[0]-b[0], c[1]-b[1]) || 1, rr = Math.min(r, l1/2, l2/2);
+    const p1 = [b[0] - (b[0]-a[0])/l1*rr, b[1] - (b[1]-a[1])/l1*rr], p2 = [b[0] + (c[0]-b[0])/l2*rr, b[1] + (c[1]-b[1])/l2*rr];
+    d += 'L' + p1[0].toFixed(1) + ',' + p1[1].toFixed(1) + 'Q' + b[0].toFixed(1) + ',' + b[1].toFixed(1) + ' ' + p2[0].toFixed(1) + ',' + p2[1].toFixed(1);
+  }
+  const z = p[p.length-1]; return d + 'L' + z[0].toFixed(1) + ',' + z[1].toFixed(1);
+}
+/* boulder: linea indicativa (disegnata a mano dal tracciatore, oppure automatica). Non copre le prese del blocco. */
+function lineSVG(pts, W, col, c, k){
+  if(!pts || pts.length < 4) return '';
+  const p = []; for(let i=0;i<pts.length;i+=2) p.push([pts[i], pts[i+1]]);
+  let d;
+  if(c && !c.line) d = roundedPath(p, W*0.06);
+  else {
+    d = 'M' + p[0][0].toFixed(1) + ',' + p[0][1].toFixed(1);
+    for(let i=0;i<p.length-1;i++){
+      const p0 = p[Math.max(0, i-1)], p1 = p[i], p2 = p[i+1], p3 = p[Math.min(p.length-1, i+2)];
+      d += 'C' + (p1[0] + (p2[0]-p0[0])/6).toFixed(1) + ',' + (p1[1] + (p2[1]-p0[1])/6).toFixed(1) + ' ' + (p2[0] - (p3[0]-p1[0])/6).toFixed(1) + ',' + (p2[1] - (p3[1]-p1[1])/6).toFixed(1) + ' ' + p2[0].toFixed(1) + ',' + p2[1].toFixed(1);
+    }
+  }
+  const lw = Math.max(2, W*0.008*(k || 1));
+  let mask = '', mattr = '';
+  if(c){
+    const id = 'lm' + String(c.id).replace(/[^\w-]/g, '');
+    const holes = c.holds.map(h => h.poly ? `<path d="${polyPath(h.poly)}" fill="#000" stroke="#000" stroke-width="${lw*2.2}" stroke-linejoin="round"/>` : `<circle cx="${h.x}" cy="${h.y}" r="${h.r*W*1.2}" fill="#000"/>`).join('');
+    mask = `<defs><mask id="${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="100000" height="100000"><rect x="0" y="0" width="100000" height="100000" fill="#fff"/>${holes}</mask></defs>`;
+    mattr = ` mask="url(#${id})"`;
+  }
+  const light = lum(col) > 0.85;
+  return mask + `<g${mattr}><path d="${d}" fill="none" stroke="${haloOf(col)}" stroke-opacity="${light ? .85 : .45}" stroke-width="${lw*(light ? 2.3 : 1.9)}" stroke-linecap="round" stroke-linejoin="round"/>`+
+         `<path d="${d}" fill="none" stroke="${col}" stroke-opacity=".95" stroke-width="${lw}" stroke-linecap="round" stroke-linejoin="round"/></g>`;
+}
+/* dal tratto del dito a pochi punti puliti: si tengono quelli distanti almeno 2,5% della foto e poi si semplifica */
+function cleanLine(raw, W){
+  const out = []; const minD = W*0.025;
+  raw.forEach(q => { const l = out[out.length-1]; if(!l || Math.hypot(q[0]-l[0], q[1]-l[1]) >= minD) out.push(q); });
+  const last = raw[raw.length-1]; if(out.length && last !== out[out.length-1]) out.push(last);
+  const simp = rdpPts(out, W*0.006);
+  return simp.flatMap(q => [Math.round(q[0]), Math.round(q[1])]);
+}
+/* livello 2: tutte le linee del settore, ognuna col numero del blocco in cima */
+function bPts(c, W){ return c.line || autoLine(c, W); }
+function overviewSVG(w){
+  const W = w.w, list = sortedVisible(w).slice().reverse();
+  let s = '', tags = '';
+  list.forEach(c => {
+    const pts = bPts(c, W), col = colOf(c);
+    if(pts && pts.length >= 4) s += lineSVG(pts, W, col, c, 1.1);
+    const at = pts && pts.length >= 4 ? [pts[pts.length-2], pts[pts.length-1]] : c.holds.length ? [c.holds[0].x, c.holds[0].y] : null;
+    if(!at) return;
+    const r = W*0.028;
+    tags += `<g><circle cx="${at[0]}" cy="${at[1]}" r="${r}" fill="${col}" stroke="${haloOf(col)}" stroke-opacity=".7" stroke-width="${r*0.16}"/>`+
+      `<text x="${at[0]}" y="${at[1]}" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed,Barlow,sans-serif" font-weight="700" font-size="${r*1.25}" fill="${inkOn(col)}">${c.num || '?'}</text></g>`;
+  });
+  return s + tags;
+}
+function overviewHit(w, x, y, tol){
+  let best = null, bd = tol;
+  sortedVisible(w).forEach(c => {
+    const p = bPts(c, w.w); if(!p || p.length < 4) return;
+    let d = Math.hypot(x - p[p.length-2], y - p[p.length-1]) - w.w*0.028;
+    for(let i=0;i<p.length-2;i+=2) d = Math.min(d, segDist(x, y, p[i], p[i+1], p[i+2], p[i+3]));
+    if(d < bd){ bd = d; best = c; }
+  });
+  return best;
+}
+function sectorGrid(){
+  return `<div class="sgrid">` + secWalls().map(w => {
+    const on = w.circuits.filter(c => !isOff(c));
+    const dots = DIFFS.map(d => { const n = on.filter(c => c.diff === d[0]).length; return n ? `<span class="sdot"><i style="background:${d[2]}"></i>${n}</span>` : ''; }).join('');
+    let staff = '';
+    if(EDIT){
+      const last = on.map(c => c.dateSet || '').sort().pop();
+      const t = todayISO(), lim = new Date(Date.now() + 7*864e5).toISOString().slice(0,10);
+      const due = on.filter(c => c.dateRemoved && c.dateRemoved >= t && c.dateRemoved <= lim).length;
+      staff = `<span class="sinfo">${last ? 'ultimo montaggio ' + fmtDate(last) : 'nessun montaggio'}${due ? `<br><b>${due} da smontare entro 7 giorni</b>` : ''}</span>`;
+    }
+    return `<button class="scard" data-act="opensec" data-id="${w.id}"><span class="sph"><img src="${esc(w.img)}" alt="" loading="lazy"></span>`+
+      `<span class="sname">${esc(w.name)}</span><span class="sdots">${dots || '<small>nessun boulder</small>'}</span>${staff}</button>`;
+  }).join('') + (EDIT && isMgr() ? `<div class="scard sadd"><span class="sname">+ Nuovo settore</span><span class="sinfo">Carica la foto del settore</span><div class="sbtns">${PICK_BTNS}</div></div>` : '') + `</div>`;
+}
 function overlay(w, o){
   if(o.wall){
     let s = ''; const t = Math.max(2, w.w*0.0028);
@@ -1526,6 +1637,7 @@ function overlay(w, o){
     });
     return s + draftSVG(w);
   }
+  if(isSec(w) && o.over) return overviewSVG(w);
   const act = w.circuits.find(c => c.id === w.activeCircuit) || w.circuits[0];
   const bo = isSec(w);
   if(bo) o = Object.assign({}, o, { numbers: false, lines: false, boulder: true });
@@ -1539,6 +1651,8 @@ function overlay(w, o){
     });
     s += `<path d="${d}" fill="#000" fill-opacity="${o.edit ? .5 : .62}" fill-rule="evenodd"/>`;
   }
+  if(act && bo) s += lineSVG(act.line || autoLine(act, w.w), w.w, colOf(act), act);
+  if(bo && ui.bline && ui.lineDraft.length > 1) s += lineSVG(ui.lineDraft, w.w, '#ff3b7a');
   if(act) s += circuitSVG(act, w.w, 1, Object.assign({}, o, { H: w.h, obst: w.holds || [], busy: busyMap(w) }));
   if(o.edit) s += draftSVG(w);
   if(o.edit && act && ui.sel != null && act.holds[ui.sel]){
@@ -1571,11 +1685,13 @@ const PICK_BTNS = `<span class="btn primary big pick">Scegli dalla galleria<inpu
 function renderTop(){
   const w = curWall();
   document.querySelectorAll('#secbar button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === ui.section)));
-  $('#wallName').textContent = w ? w.name : (BO() ? 'Nessun settore' : 'Nessun muro');
+  $('#wallName').textContent = bGrid() ? 'Settori' : w ? w.name : (BO() ? 'Nessun settore' : 'Nessun muro');
   $('#wallBtn').setAttribute('aria-label', BO() ? 'Scegli un settore' : 'Scegli un muro');
   const multi = secWalls().length > 1;
   $('#wallBtn').disabled = !EDIT && !multi && !SB;
-  $('#chev').hidden = !EDIT && !multi && !SB;
+  if((bView() && !EDIT) || bGrid()) $('#wallBtn').disabled = true;
+  $('#chev').toggleAttribute('hidden', $('#wallBtn').disabled);
+  $('#backBtn').hidden = !(bLv() && !bGrid() && (multi || (EDIT && isMgr())));
   $('#modes').hidden = !EDIT;
   $('#instBtn').hidden = EDIT || !canInstall();
   document.querySelectorAll('#modes button').forEach(b => {
@@ -1611,6 +1727,7 @@ function renderStage(){
     else em.innerHTML = `<h1>Nessun muro pubblicato</h1><p>I circuiti compariranno qui quando il gestore li pubblica.</p>`;
     return;
   }
+  if(bGrid()){ st.hidden = true; z.hidden = true; em.hidden = false; em.innerHTML = sectorGrid(); return; }
   st.hidden = false; em.hidden = true; z.hidden = false;
   st.classList.toggle('edit', EDIT && S.mode !== 'view');
   const im = $('#photo');
@@ -1618,7 +1735,7 @@ function renderStage(){
   const sv = $('#ov');
   sv.setAttribute('viewBox', `0 0 ${w.w} ${w.h}`);
   const editing = EDIT && S.mode === 'edit';
-  sv.innerHTML = overlay(w, { numbers: editing || S.prefs.numbers, lines: S.prefs.lines, others: S.prefs.others, edit: editing, dim: dimOn(editing), wall: EDIT && S.mode === 'wall' });
+  sv.innerHTML = overlay(w, { over: bOver(), numbers: editing || S.prefs.numbers, lines: S.prefs.lines, others: S.prefs.others, edit: editing, dim: dimOn(editing), wall: EDIT && S.mode === 'wall' });
   fit();
 }
 function visibleCircuits(w){
@@ -1650,7 +1767,7 @@ function bFilters(w){
     (ds.length > 1 ? `<div class="fchips">${ds.map(d => `<button class="fdot ${ui.bColor === d[0] ? 'on' : ''}" data-act="bcolor" data-v="${d[0]}" aria-label="${d[1]}" aria-pressed="${ui.bColor === d[0]}" style="background:${d[2]}"></button>`).join('')}</div>` : '');
 }
 function bRows(w, cls){
-  const act = curCircuit(), vis = sortedVisible(w);
+  const act = bOver() ? null : curCircuit(), vis = sortedVisible(w);
   if(!vis.length) return `<p class="hint" style="padding:6px 2px">${w.circuits.length ? 'Nessun boulder con questi filtri.' : 'Ancora nessun boulder su questo settore.'}</p>`;
   return `<div class="list" style="gap:${cls === 'crow' ? 6 : 0}px;margin:0">` + vis.map(x => `<button class="${cls} ${act && x.id === act.id ? 'active' : ''} ${isOff(x) ? 'off' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext" style="flex:1"><b>${bTitleHtml(x)}</b><small>${[x.style ? esc(x.style) : '', bMeta(x)].filter(Boolean).join(' · ')}</small></span></button>`).join('') + `</div>`;
 }
@@ -1678,7 +1795,7 @@ function renderChips(){
   const act = curCircuit(), n = visibleCircuits(w).length, tot = w.circuits.length;
   if(isSec(w) && (!EDIT || S.mode === 'view')){
     el.innerHTML = (tot ? bFilters(w) : '') + bRows(w, 'lrow') +
-      (n ? `<p class="hint" style="text-align:center;margin:8px 0 0;font-size:13px">Tocca un boulder per vederlo sul settore, tocca di nuovo per aprirlo a schermo intero.</p>` : '');
+      (n ? `<p class="hint" style="text-align:center;margin:8px 0 0;font-size:13px">Tocca una linea sulla foto, o un boulder qui, per aprirlo.</p>` : '');
     return;
   }
   if(!EDIT || S.mode === 'view'){
@@ -1778,6 +1895,13 @@ function renderTools(){
   const dot = col => `<span style="display:inline-block;width:.7em;height:.7em;border-radius:50%;background:${col};border:1px solid #888;margin-right:6px;vertical-align:-1px"></span>`;
   const hb = (v,l) => `<button data-act="hand" data-v="${v}" aria-pressed="${hand === v}">${l}</button>`;
   const sec = isSec(w), lbl = h && !h.poly ? 'Anello' : 'Contorno';
+  if(sec && ui.bline){
+    el.innerHTML = `<p class="hint">Passa il dito sulla foto dalla partenza all'arrivo, lungo la direzione del blocco. Puoi rifarla quante volte vuoi.</p>`+
+      `<div class="trow"><button class="btn primary" data-act="lineok">Fatto</button>`+
+      (c && c.line ? `<button class="btn danger" data-act="linedel">Togli la linea</button>` : '')+
+      `<button class="btn" data-act="lineesc">Annulla</button></div>`;
+    return;
+  }
   if(sec && ui.bdraw){
     el.innerHTML = `<p class="hint">${h ? 'Ridisegna il contorno' : 'Disegna il contorno della presa'}: tocca i punti tutto intorno (puoi ingrandire), poi Chiudi o tocca di nuovo il primo punto.</p>`+
       (h ? '' : `<div class="trow"><div class="seg">${rb('start','Partenza')}${rb('hold','Presa')}${rb('top','Arrivo')}</div></div>`)+
@@ -1810,6 +1934,7 @@ function renderTools(){
     `<div class="trow">${roles}${hands}</div>`+
     `<div class="trow">`+
     (sec ? `<button class="btn" data-act="bdraw" ${c ? '' : 'disabled'}>Disegna a mano</button>` : '')+
+    (sec ? `<button class="btn" data-act="bline" ${c ? '' : 'disabled'}>${c && c.line ? 'Rifai linea' : 'Linea'}</button>` : '')+
     (first ? '' : `<button class="btn" data-act="undo">Annulla ultima</button>`)+
     dimBtn+`</div>`;
 }
@@ -1832,6 +1957,8 @@ function render(){
   if(viewing && w && isSec(w)){ const v = sortedVisible(w); if(v.length && !v.some(x => x.id === w.activeCircuit)) w.activeCircuit = v[0].id; }
   if(ui.full && (!viewing || !curCircuit())) ui.full = false;
   $('#app').classList.toggle('full', !!ui.full);
+  $('#app').classList.toggle('grid', bGrid());
+  $('#app').classList.toggle('over', bOver());
   renderTop(); renderViewbar(); renderPub(); renderStage(); renderChips(); renderTools(); renderFull(); }
 /* ordine degli elenchi: circuiti per grado e nome, boulder per difficoltà e numero */
 const circCmp = (x, y) => gradeIdx(x.grade) - gradeIdx(y.grade) || String(x.name).localeCompare(String(y.name));
@@ -1873,7 +2000,7 @@ function focusCircuit(){
     box.scrollTop = st.offsetTop + (y0 + y1)/2*k - box.clientHeight/2;
   }));
 }
-window.addEventListener('popstate', () => { if(ui.full){ ui.full = false; ui.zoom = 1; render(); } });
+window.addEventListener('popstate', () => { if(ui.full){ ui.full = false; ui.zoom = 1; render(); } else if(bLv() && ui.bLevel === 'sector' && !(history.state && history.state.sec)){ ui.bLevel = 'sectors'; ui.zoom = 1; render(); } });
 
 /* ---------- pannelli ---------- */
 function openSheet(name){ ui.sheet = name; ui.confirm = null; renderSheet(); }
@@ -1927,14 +2054,14 @@ function renderSheet(){
       `<div class="row" style="margin-top:14px">${EDIT && w.locked ? `<button class="btn primary" data-act="addc">+ Nuovo circuito</button>` : ''}<button class="btn" data-act="close">Chiudi</button></div>`;
   } else if(ui.sheet === 'wall'){
     const bo = BO();
-    h = `<h2>${bo ? 'Settori' : 'Muri'}</h2><div class="list">`+
+    h = bo && EDIT ? `<h2>${w ? esc(w.name) : 'Settore'}</h2>` : `<h2>${bo ? 'Settori' : 'Muri'}</h2><div class="list">`+
       secWalls().map(x => `<button class="wrow ${w && x.id === w.id ? 'active' : ''}" data-act="pickw" data-id="${x.id}"><span>${esc(x.name)}</span><small>${bo ? x.circuits.filter(c => !isOff(c)).length + ' boulder' : x.circuits.length + ' circuiti'}</small></button>`).join('') +
       (secWalls().length ? '' : `<p class="note" style="margin:0">${bo ? 'Nessun settore ancora.' : 'Nessun muro ancora.'}</p>`) +
       `</div>`;
     if(EDIT){
       h += (w && isMgr() ? `<label class="field">${bo ? 'Nome del settore' : 'Nome del muro'}<input id="wname" value="${esc(w.name)}" maxlength="40"></label>` : '') +
         (w && !isMgr() && !w.locked ? `<p class="note" style="margin:0 0 12px">Questo muro è ancora in preparazione: potrai tracciarci quando il gestore lo blocca.</p>` : '') +
-        (isMgr() ? `${bo ? `<p class="note" style="margin:0 0 8px">Aggiungi un settore:</p>` : ''}<div class="row">${PICK_BTNS}</div>` : '')+
+        (isMgr() && !bo ? `<div class="row">${PICK_BTNS}</div>` : '')+
         `<div class="row" style="margin-top:10px">` +
         (w && isMgr() ? `<button class="btn danger" data-act="delw">${ui.confirm === 'delw' ? 'Tocca ancora per eliminare' : bo ? 'Elimina settore' : 'Elimina muro'}</button>` : '') +
         `<button class="btn primary" data-act="close">Fatto</button></div>`+
@@ -1945,7 +2072,7 @@ function renderSheet(){
       h += `<div class="row">${canInstall() ? `<button class="btn" data-act="install">Installa l'app</button>` : ''}${SB && !REAL_EDIT ? `<button class="btn" data-act="login">Accedi (staff)</button>` : ''}<button class="btn primary" data-act="close">Chiudi</button></div>`;
     }
   } else if(ui.sheet === 'menu'){
-    const bo = w && isSec(w), n = w ? sortedVisible(w).length : 0, one = bo ? 'questo boulder' : 'questo circuito';
+    const bo = w ? isSec(w) : BO(), n = w ? sortedVisible(w).length : 0, one = bo ? 'questo boulder' : 'questo circuito';
     const row = (act, label, sub, dis) => `<button class="wrow" data-act="${act}" ${dis ? 'disabled' : ''}><span>${label}</span><small>${sub || ''}</small></button>`;
     h = `<h2>Altro</h2><div class="list">`+
       row('printone', 'Stampa ' + one, c ? esc(blockTitle(w, c)) : '', !c)+
@@ -2221,7 +2348,13 @@ async function publish(){
 /* ---------- interazione ---------- */
 $('#stage').addEventListener('click', async e => {
   const w = curWall(), c = curCircuit();
-  if(!EDIT || !w || S.mode === 'view' || ui.busy || ui.scan || Date.now() - ui.pinchAt < 350) return;
+  if(w && bOver() && Date.now() - ui.pinchAt > 350){
+    const r = e.currentTarget.getBoundingClientRect(), k = w.w / r.width;
+    const hit = overviewHit(w, (e.clientX - r.left)*k, (e.clientY - r.top)*k, Math.min(22*k, w.w*0.06));
+    if(hit){ w.activeCircuit = hit.id; save(); setFull(true); }
+    return;
+  }
+  if(!EDIT || !w || S.mode === 'view' || ui.busy || ui.scan || ui.bline || Date.now() - ui.pinchAt < 350) return;
   if(S.mode !== 'wall' && !c) return;
   const r = e.currentTarget.getBoundingClientRect();
   const k = w.w / r.width;
@@ -2298,7 +2431,7 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
+const PUBLIC_ACTS = ['opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
 const MGR_ACTS = ['lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
@@ -2307,7 +2440,7 @@ document.addEventListener('click', e => {
   if(!EDIT && !PUBLIC_ACTS.includes(a)) return;
   if(!isMgr() && MGR_ACTS.includes(a)) return;
   switch(a){
-    case 'mode': if(EDIT && !ui.scan && !(b.dataset.v === 'wall' && !isMgr())){ S.mode = b.dataset.v; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.redraw = null; ui.tool = 'detect'; render(); } break;
+    case 'mode': if(EDIT && !ui.scan && !(b.dataset.v === 'wall' && !isMgr())){ S.mode = b.dataset.v; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; $('#stage').classList.remove('linedraw'); ui.redraw = null; ui.tool = 'detect'; render(); } break;
     case 'tool': ui.tool = b.dataset.v; ui.draft = []; ui.redraw = null; render(); break;
     case 'undel': if(w && ui.trash.length){ const ch = ui.trash.pop(); (w.holds = w.holds || []).push(ch); ui.csel = w.holds.length - 1; touch(); render(); } break;
     case 'susnext': {
@@ -2352,7 +2485,7 @@ document.addEventListener('click', e => {
       const v = b.dataset.v === 'boulder' ? 'boulder' : 'circ';
       if(v === ui.section || ui.scan) break;
       const prev = curWall(); if(prev) ui.lastSec[ui.section] = prev.id;
-      ui.section = v;
+      ui.section = v; ui.bLevel = 'sectors';
       const l = secWalls(), keep = l.find(x => x.id === ui.lastSec[v]) || l[0];
       if(keep) S.active = keep.id;
       ui.full = false; ui.sel = null; ui.csel = null; ui.move = false; ui.zoom = 1; ui.draft = []; ui.bdraw = false; ui.redraw = null; ui.tool = 'detect';
@@ -2371,6 +2504,10 @@ document.addEventListener('click', e => {
     case 'editdim': ui.editDim = !ui.editDim; render(); break;
     case 'desel': ui.sel = null; ui.move = false; render(); break;
     case 'cfeet': if(c){ if(b.dataset.v) c.feet = b.dataset.v; else delete c.feet; touch(); renderChips(); renderSheet(); } break;
+    case 'bline': if(c){ ui.bline = true; ui.lineDraft = []; ui.lineBackup = c.line ? c.line.slice() : null; ui.sel = null; ui.move = false; $('#stage').classList.add('linedraw'); render(); } break;
+    case 'lineok': ui.bline = false; ui.lineDraft = []; $('#stage').classList.remove('linedraw'); render(); break;
+    case 'lineesc': if(c){ if(ui.lineBackup) c.line = ui.lineBackup; else delete c.line; touch(); } ui.bline = false; ui.lineDraft = []; $('#stage').classList.remove('linedraw'); render(); break;
+    case 'linedel': if(c){ delete c.line; touch(); } ui.bline = false; ui.lineDraft = []; $('#stage').classList.remove('linedraw'); render(); break;
     case 'bdraw': if(c){ ui.bdraw = true; ui.draft = []; ui.move = false; render(); } break;
     case 'bclose': if(w && c) finishBDraw(w, c); break;
     case 'bundo': ui.draft.pop(); render(); break;
@@ -2397,6 +2534,8 @@ document.addEventListener('click', e => {
     case 'stopauto': if(ui.scan) ui.scan.stop = true; break;
     case 'tracing': if(w && w.locked){ S.mode = 'edit'; render(); } break;
     case 'wall': openSheet('wall'); break;
+    case 'opensec': S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.bLevel = 'sector'; ui.zoom = 1; ui.sel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save(); try{ history.pushState({ sec: 1 }, ''); }catch(e){} render(); $('#box').scrollTop = 0; break;
+    case 'bback': if(history.state && history.state.sec){ try{ history.back(); }catch(e){} } ui.bLevel = 'sectors'; ui.zoom = 1; render(); break;
     case 'img': makeImage(); break;
     case 'menu': openSheet('menu'); break;
     case 'viewas': setViewAs(b.dataset.v); break;
@@ -2411,9 +2550,9 @@ document.addEventListener('click', e => {
     case 'pickc': {
       if(!w) break;
       const again = w.activeCircuit === b.dataset.id && b.classList.contains('lrow');
-      w.activeCircuit = b.dataset.id; ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
+      w.activeCircuit = b.dataset.id; ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.bline = false; $('#stage').classList.remove('linedraw'); ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
       ui.sheet = null; save(); renderSheet();
-      if(again && (!EDIT || S.mode === 'view')) setFull(true); else render();
+      if((again || bOver()) && (!EDIT || S.mode === 'view')) setFull(true); else render();
       break;
     }
     case 'fexit': if(ui.full){ try{ history.back(); }catch(e){} ui.full = false; ui.zoom = 1; render(); } break;
@@ -2570,7 +2709,7 @@ async function finishCrop0(cr){
   const w = { id: uid(), name: pre + wn, w: cw, h: ch, img, circuits: [], activeCircuit: null };
   if(bo){ w.kind = 'sector'; w.locked = true; w.holds = []; }
   const circ = newCircuit(w); w.circuits.push(circ); w.activeCircuit = circ.id;
-  S.walls.push(w); S.active = w.id; S.mode = 'edit';
+  S.walls.push(w); S.active = w.id; S.mode = 'edit'; if(bo) ui.bLevel = 'sector';
   ui.sel = null; ui.move = false; ui.zoom = 1; ui.nextRole = 'start'; ui.crop = null; ui.sheet = null;
   touch(); render(); renderSheet();
 }
@@ -2612,6 +2751,21 @@ function applyZoom(nz, fx, fy){
     if(e.ctrlKey){ e.preventDefault(); applyZoom(ui.zoom * Math.exp(-e.deltaY*0.01), e.clientX, e.clientY); }
   }, { passive: false });
   document.addEventListener('gesturestart', e => e.preventDefault());
+})();
+/* disegno della linea del boulder: si segue il dito sulla foto */
+(function(){
+  const st = $('#stage');
+  const pt = e => { const w = curWall(), r = st.getBoundingClientRect(), k = w.w / r.width; return [clamp((e.clientX - r.left)*k, 0, w.w), clamp((e.clientY - r.top)*k, 0, w.h)]; };
+  let drawing = false;
+  st.addEventListener('pointerdown', e => { if(!ui.bline || !EDIT) return; drawing = true; ui.lineDraft = [pt(e)]; try{ st.setPointerCapture(e.pointerId); }catch(err){} e.preventDefault(); });
+  st.addEventListener('pointermove', e => { if(!drawing) return; ui.lineDraft.push(pt(e)); renderStage(); e.preventDefault(); });
+  const end = () => {
+    if(!drawing) return; drawing = false;
+    const w = curWall(), c = curCircuit();
+    if(c && w && ui.lineDraft.length > 3){ c.line = cleanLine(ui.lineDraft, w.w); touch(); }
+    ui.lineDraft = []; ui.pinchAt = Date.now(); render();
+  };
+  st.addEventListener('pointerup', end); st.addEventListener('pointercancel', end);
 })();
 $('#box').addEventListener('scroll', () => {
   const b = $('#box'), st = $('#stage');

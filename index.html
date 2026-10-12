@@ -38,6 +38,7 @@ button,label.btn{cursor:pointer}
 #box{position:absolute;inset:0;overflow:auto;display:flex;touch-action:pan-x pan-y;overscroll-behavior:contain}
 #stage{position:relative;margin:auto;flex:none;user-select:none;-webkit-user-select:none}
 #stage.edit{cursor:crosshair}
+#stage.linedraw{touch-action:none}
 #photo{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;-webkit-user-drag:none}
 #ov{position:absolute;inset:0;width:100%;height:100%;display:block}
 .zoom{position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;gap:6px}
@@ -99,6 +100,23 @@ button,label.btn{cursor:pointer}
 .secbar button{flex:1;border:0;background:none;padding:8px 0;border-radius:9px;font:700 15px "Barlow Semi Condensed",Barlow,sans-serif;letter-spacing:.02em;color:var(--muted)}
 .secbar button[aria-pressed="true"]{background:var(--panel2);color:var(--ink);box-shadow:inset 0 -2px 0 var(--accent)}
 #app.full .secbar{display:none}
+#app.grid .dock{display:none}
+#app.over .dock{max-height:34vh}
+.sinfo{padding:0 10px;font-size:12.5px;color:var(--muted);line-height:1.3}
+.sinfo b{color:#ffb070;font-weight:600}
+.sadd{padding:14px 0;justify-content:center;border-style:dashed;cursor:default}
+.sbtns{display:flex;flex-direction:column;gap:6px;padding:4px 10px 0}
+.sbtns .btn{width:100%;font-size:14px;padding:9px 8px}
+.backbtn{flex:none;width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:10px;background:var(--panel);margin-right:-4px}
+#empty:has(.sgrid){margin:0;max-width:none;width:100%;padding:12px;text-align:left;align-self:flex-start}
+.sgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.scard{display:flex;flex-direction:column;gap:6px;padding:0 0 10px;border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden;text-align:left}
+.sph{display:block;aspect-ratio:4/3;background:#000}
+.sph img{width:100%;height:100%;object-fit:cover;display:block}
+.sname{padding:0 10px;font:700 17px/1.1 "Barlow Semi Condensed",Barlow,sans-serif}
+.sdots{display:flex;flex-wrap:wrap;gap:4px 10px;padding:0 10px;font-size:13px;color:var(--muted)}
+.sdot{display:inline-flex;align-items:center;gap:4px;color:var(--ink);font-weight:600}
+.sdot i{width:11px;height:11px;border-radius:50%;box-shadow:0 0 0 1px rgba(255,255,255,.35)}
 .fdot{flex:none;width:26px;height:26px;border-radius:50%;border:2px solid rgba(128,128,128,.6);padding:0}
 .fdot.on{outline:2px solid var(--accent);outline-offset:2px}
 .bnotes{margin:10px 0 0;color:#cfd3d8;font-size:14px;white-space:pre-wrap}
