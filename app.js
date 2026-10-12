@@ -1464,7 +1464,7 @@ function renderStage(){
   const sv = $('#ov');
   sv.setAttribute('viewBox', `0 0 ${w.w} ${w.h}`);
   const editing = EDIT && S.mode === 'edit';
-  sv.innerHTML = overlay(w, { numbers: editing || S.prefs.numbers, lines: S.prefs.lines, others: S.prefs.others, edit: editing, dim: S.prefs.dim || !!ui.full, wall: EDIT && S.mode === 'wall' });
+  sv.innerHTML = overlay(w, { numbers: editing || S.prefs.numbers, lines: S.prefs.lines, others: S.prefs.others, edit: editing, dim: editing ? !!ui.editDim : (S.prefs.dim || !!ui.full), wall: EDIT && S.mode === 'wall' });
   fit();
 }
 function visibleCircuits(w){
@@ -1636,7 +1636,8 @@ function renderTools(){
     (isSec(w) ? `<button class="btn" data-act="bdraw" ${c ? '' : 'disabled'}>${h ? 'Ridisegna' : 'Disegna'}</button>` : '')+
     (isSec(w) ? '' : `<button class="btn" data-act="dup" ${h ? '' : 'disabled'}>Ripeti qui (2ª mano)</button>`)+
     `<button class="btn" data-act="del" ${h ? '' : 'disabled'}>Elimina</button>`+
-    `<button class="btn" data-act="undo" ${c && c.holds.length ? '' : 'disabled'}>Annulla</button>`;
+    `<button class="btn" data-act="undo" ${c && c.holds.length ? '' : 'disabled'}>Annulla</button>`+
+    `<button class="btn ${ui.editDim ? 'on' : ''}" data-act="editdim" aria-pressed="${!!ui.editDim}">Oscura il resto</button>`;
 }
 function render(){
   { const w0 = curWall();
@@ -2135,6 +2136,7 @@ document.addEventListener('click', e => {
       const inp = document.getElementById('cname'); if(inp) inp.value = c.name;
       touch(); renderChips(); break;
     }
+    case 'editdim': ui.editDim = !ui.editDim; render(); break;
     case 'cfeet': if(c){ if(b.dataset.v) c.feet = b.dataset.v; else delete c.feet; touch(); renderChips(); renderSheet(); } break;
     case 'bdraw': if(c){ ui.bdraw = true; ui.draft = []; ui.move = false; render(); } break;
     case 'bclose': if(w && c) finishBDraw(w, c); break;
