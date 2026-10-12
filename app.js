@@ -1372,11 +1372,42 @@ function placeBubbles(h, W, br, gap, env, n){
   }
   return best ? best.chain : [T[0]];
 }
+/* boulder: fascia morbida e semitrasparente che indica l'andamento della linea (non una sequenza).
+   Se il tracciatore l'ha disegnata a mano (c.band) si usa quella, altrimenti si passa dalle partenze all'arrivo per le prese segnate. */
+function bandPoints(c){
+  if(Array.isArray(c.band) && c.band.length >= 4){ const p = []; for(let i=0;i<c.band.length;i+=2) p.push([c.band[i], c.band[i+1]]); return p; }
+  const st = c.holds.filter(h => h.role === 'start'), rest = c.holds.filter(h => h.role !== 'start');
+  const p = [];
+  if(st.length) p.push([st.reduce((t,h) => t + h.x, 0)/st.length, st.reduce((t,h) => t + h.y, 0)/st.length]);
+  rest.filter(h => h.role !== 'top').forEach(h => p.push([h.x, h.y]));
+  rest.filter(h => h.role === 'top').forEach(h => p.push([h.x, h.y]));
+  return p;
+}
+function smoothPath(p){
+  if(p.length < 2) return '';
+  let d = 'M' + p[0][0].toFixed(1) + ',' + p[0][1].toFixed(1);
+  for(let i=0;i<p.length-1;i++){
+    const p0 = p[Math.max(0, i-1)], p1 = p[i], p2 = p[i+1], p3 = p[Math.min(p.length-1, i+2)];
+    const c1 = [p1[0] + (p2[0]-p0[0])/6, p1[1] + (p2[1]-p0[1])/6], c2 = [p2[0] - (p3[0]-p1[0])/6, p2[1] - (p3[1]-p1[1])/6];
+    d += 'C' + c1.map(v => v.toFixed(1)).join(',') + ' ' + c2.map(v => v.toFixed(1)).join(',') + ' ' + p2[0].toFixed(1) + ',' + p2[1].toFixed(1);
+  }
+  return d;
+}
+function bandSVG(c, W, col){
+  const d = smoothPath(bandPoints(c)); if(!d) return '';
+  const bw = Math.max(10, W*0.04), id = 'bm' + String(c.id).replace(/[^\w-]/g, '');
+  /* la fascia non passa sopra le prese: si vede il loro colore vero */
+  const holes = c.holds.map(h => h.poly ? `<path d="${polyPath(h.poly)}" fill="#000" stroke="#000" stroke-width="${Math.max(2, W*0.004)}"/>` : `<circle cx="${h.x}" cy="${h.y}" r="${h.r*W*1.1}" fill="#000"/>`).join('');
+  return `<defs><mask id="${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="100000" height="100000"><rect x="0" y="0" width="100000" height="100000" fill="#fff"/>${holes}</mask></defs>`+
+         `<g mask="url(#${id})"><path d="${d}" fill="none" stroke="${haloOf(col)}" stroke-opacity=".16" stroke-width="${bw*1.3}" stroke-linecap="round" stroke-linejoin="round"/>`+
+         `<path d="${d}" fill="none" stroke="${col}" stroke-opacity=".34" stroke-width="${bw}" stroke-linecap="round" stroke-linejoin="round"/></g>`;
+}
 function circuitSVG(c, W, alpha, o){
   const segs = [], labels = [];
   const sw = Math.max(2, W*0.0028), hw = sw*0.5;
   const col = colOf(c), ha = haloOf(col);
   let s = `<g opacity="${alpha}">`;
+  if(o.band && c.holds.length > 1) s += bandSVG(c, W, col);
   if(o.lines && c.holds.length > 1){
     const lw = Math.max(3, W*0.0032), P = q => q[0].toFixed(1)+','+q[1].toFixed(1);
     const st = c.holds.filter(h => h.role === 'start'), rest = c.holds.filter(h => h.role !== 'start');
@@ -1528,7 +1559,7 @@ function overlay(w, o){
   }
   const act = w.circuits.find(c => c.id === w.activeCircuit) || w.circuits[0];
   const bo = isSec(w);
-  if(bo) o = Object.assign({}, o, { numbers: false, lines: false, boulder: true });
+  if(bo) o = Object.assign({}, o, { numbers: false, band: !!o.lines, lines: false, boulder: true });
   let s = '';
   if(o.others) visibleCircuits(w).forEach(c => { if(c !== act) s += circuitSVG(c, w.w, 0.28, {numbers:false, lines:false, boulder:bo, H: w.h}); });
   if(o.dim && act && act.holds.length){
