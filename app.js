@@ -1372,28 +1372,11 @@ function placeBubbles(h, W, br, gap, env, n){
   }
   return best ? best.chain : [T[0]];
 }
-/* boulder: zona del settore occupata dal blocco. È l'involucro di tutte le sue prese, allargato e arrotondato:
-   una macchia leggera con un bordo sottile, che non copre le prese (si vede il loro colore vero). */
-function bandSVG(c, W, col){
-  const pts = [];
-  c.holds.forEach(h => { const p = holdPts(h, W); for(let i=0;i<p.length;i+=2) pts.push([p[i], p[i+1]]); });
-  if(pts.length < 3) return '';
-  const hull = hullPts(pts), d = polyPath(hull.flat()), m = Math.max(12, W*0.035), t = Math.max(1.5, W*0.0022);
-  const id = 'zn' + String(c.id).replace(/[^\w-]/g, '');
-  const holes = c.holds.map(h => h.poly ? `<path d="${polyPath(h.poly)}" fill="#000" stroke="#000" stroke-width="${Math.max(2, W*0.004)}"/>` : `<circle cx="${h.x}" cy="${h.y}" r="${h.r*W*1.1}" fill="#000"/>`).join('');
-  const big = 'x="0" y="0" width="100000" height="100000"';
-  return `<defs>`+
-    `<mask id="${id}f" maskUnits="userSpaceOnUse" ${big}><path d="${d}" fill="#fff" stroke="#fff" stroke-width="${m*2}" stroke-linejoin="round"/>${holes}</mask>`+
-    `<mask id="${id}r" maskUnits="userSpaceOnUse" ${big}><path d="${d}" fill="#fff" stroke="#fff" stroke-width="${m*2 + t*2}" stroke-linejoin="round"/><path d="${d}" fill="#000" stroke="#000" stroke-width="${m*2}" stroke-linejoin="round"/></mask></defs>`+
-    `<rect ${big} fill="${col}" fill-opacity=".13" mask="url(#${id}f)"/>`+
-    `<rect ${big} fill="${col}" fill-opacity=".85" mask="url(#${id}r)"/>`;
-}
 function circuitSVG(c, W, alpha, o){
   const segs = [], labels = [];
   const sw = Math.max(2, W*0.0028), hw = sw*0.5;
   const col = colOf(c), ha = haloOf(col);
   let s = `<g opacity="${alpha}">`;
-  if(o.band && c.holds.length > 1) s += bandSVG(c, W, col);
   if(o.lines && c.holds.length > 1){
     const lw = Math.max(3, W*0.0032), P = q => q[0].toFixed(1)+','+q[1].toFixed(1);
     const st = c.holds.filter(h => h.role === 'start'), rest = c.holds.filter(h => h.role !== 'start');
@@ -1545,7 +1528,7 @@ function overlay(w, o){
   }
   const act = w.circuits.find(c => c.id === w.activeCircuit) || w.circuits[0];
   const bo = isSec(w);
-  if(bo) o = Object.assign({}, o, { numbers: false, band: !!o.lines, lines: false, boulder: true });
+  if(bo) o = Object.assign({}, o, { numbers: false, lines: false, boulder: true });
   let s = '';
   if(o.others) visibleCircuits(w).forEach(c => { if(c !== act) s += circuitSVG(c, w.w, 0.28, {numbers:false, lines:false, boulder:bo, H: w.h}); });
   if(o.dim && act && act.holds.length){
@@ -1781,8 +1764,8 @@ function renderTools(){
   if(!EDIT || S.mode === 'view'){
     const p = S.prefs;
     el.innerHTML = c ? `<div class="mini">`+
-      (isSec(w) ? '' : `<button class="btn ${p.numbers ? 'on' : ''}" data-act="pref" data-k="numbers">Numeri</button>`)+
-      `<button class="btn ${p.lines ? 'on' : ''}" data-act="pref" data-k="lines">${isSec(w) ? 'Linea' : 'Linee'}</button>`+
+      (isSec(w) ? '' : `<button class="btn ${p.numbers ? 'on' : ''}" data-act="pref" data-k="numbers">Numeri</button>`+
+      `<button class="btn ${p.lines ? 'on' : ''}" data-act="pref" data-k="lines">Linee</button>`)+
       `<button class="btn ${p.others ? 'on' : ''}" data-act="pref" data-k="others">${isSec(w) ? 'Altri boulder' : 'Altri circuiti'}</button>`+
       `<button class="btn ${p.dim ? 'on' : ''}" data-act="pref" data-k="dim">${isSec(w) ? 'Oscura settore' : 'Oscura muro'}</button>`+
       `</div>` : '';
