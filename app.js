@@ -1285,6 +1285,46 @@ function rayExit(p, cx, cy, dx, dy){
   }
   return best;
 }
+/* mappa "foto piena": dove c'è una presa o un colore che si stacca dal pannello (bassa risoluzione, calcolata una volta per foto) */
+const busyCache = {};
+function busyMap(w){
+  const key = w.id + '|' + String(w.img).length + String(w.img).slice(-24);
+  const e = busyCache[w.id];
+  if(e && e.key === key) return e.map;
+  if(e && e.key === key + ':pending') return null;
+  busyCache[w.id] = { key: key + ':pending', map: null };
+  loadImg(w.img).then(im => {
+    const s = 140 / Math.max(w.w, w.h), bw = Math.max(8, Math.round(w.w*s)), bh = Math.max(8, Math.round(w.h*s));
+    const cv = document.createElement('canvas'); cv.width = bw; cv.height = bh;
+    const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0, bw, bh);
+    const d = g.getImageData(0, 0, bw, bh).data, N = bw*bh, lum = new Float32Array(N), sat = new Float32Array(N);
+    for(let i=0;i<N;i++){ const r = d[i*4]/255, gg = d[i*4+1]/255, b = d[i*4+2]/255, mx = Math.max(r,gg,b), mn = Math.min(r,gg,b); lum[i] = 0.3*r + 0.59*gg + 0.11*b; sat[i] = mx > 0.15 ? (mx-mn)/mx : 0; }
+    /* luminosità media locale (finestra larga) con immagine integrale */
+    const I = new Float64Array((bw+1)*(bh+1));
+    for(let y=0;y<bh;y++){ let row = 0; for(let x=0;x<bw;x++){ row += lum[y*bw+x]; I[(y+1)*(bw+1)+x+1] = I[y*(bw+1)+x+1] + row; } }
+    const R = Math.max(4, Math.round(Math.max(bw, bh)*0.08)), out = new Float32Array(N);
+    for(let y=0;y<bh;y++) for(let x=0;x<bw;x++){
+      const x0 = Math.max(0, x-R), x1 = Math.min(bw, x+R+1), y0 = Math.max(0, y-R), y1 = Math.min(bh, y+R+1);
+      const m = (I[y1*(bw+1)+x1] - I[y0*(bw+1)+x1] - I[y1*(bw+1)+x0] + I[y0*(bw+1)+x0]) / ((x1-x0)*(y1-y0));
+      const i = y*bw + x, v = Math.max((sat[i] - 0.25)/0.35, (Math.abs(lum[i] - m) - 0.07)/0.18);
+      out[i] = Math.max(0, Math.min(1, v));
+    }
+    busyCache[w.id] = { key, map: { s, bw, bh, d: out } };
+    try{ renderStage(); }catch(err){}
+  }).catch(() => { busyCache[w.id] = { key, map: null }; });
+  return null;
+}
+function busyAt(m, x, y, r){
+  if(!m) return 0;
+  let t = 0, n = 0;
+  for(let k=0;k<13;k++){
+    const a = k*2.4, q = k === 0 ? 0 : Math.sqrt(k/12)*r*0.9;
+    const px = Math.round((x + Math.cos(a)*q)*m.s), py = Math.round((y + Math.sin(a)*q)*m.s);
+    if(px < 0 || py < 0 || px >= m.bw || py >= m.bh) continue;
+    t += m.d[py*m.bw + px]; n++;
+  }
+  return n ? t/n : 0;
+}
 function placeBadge(h, W, br, gap, env){
   const own = holdPts(h, W), bb = holdBox(h, W), cx = (bb.x0+bb.x1)/2, cy = (bb.y0+bb.y1)/2;
   let best = null;
@@ -1302,6 +1342,7 @@ function placeBadge(h, W, br, gap, env){
     }
     for(const sg of env.segs){ const d = segDist(x, y, sg[0], sg[1], sg[2], sg[3]); if(d < lim) cost += 2.5*(1 - d/lim); }
     for(const b of env.badges){ const d = Math.hypot(x - b[0], y - b[1]); if(d < br*2.2) cost += 5*(1 - d/(br*2.2)); }
+    cost += 3*busyAt(env.busy, x, y, br);
     if(!best || cost < best.cost) best = { x, y, cost };
   }
   return best;
@@ -1403,7 +1444,7 @@ function circuitSVG(c, W, alpha, o){
     const seen = new Set();
     c.holds.forEach(h => { const k = h.cid != null ? 'c'+h.cid : h.x+'_'+h.y; if(seen.has(k)) return; seen.add(k); const p = holdPts(h, W); shapes.push({ p, bb: holdBox(h, W), cid: h.cid, h }); });
     (o.obst || []).forEach(q => { if(q.poly && !c.holds.some(h => h.cid === q.id)) shapes.push({ p: q.poly, bb: holdBox(q, W) }); });
-    const env = { W, H: o.H || 1e9, segs, badges: [], shapes: [] };
+    const env = { W, H: o.H || 1e9, segs, badges: [], shapes: [], busy: o.busy || null };
     labels.forEach(L => {
       env.shapes = shapes.filter(q => q.h !== L.h && !(q.cid != null && q.cid === L.h.cid));
       const pos = placeBadge(L.h, W, br, gap, env);
@@ -1460,7 +1501,7 @@ function overlay(w, o){
     });
     s += `<path d="${d}" fill="#000" fill-opacity="${o.edit ? .5 : .62}" fill-rule="evenodd"/>`;
   }
-  if(act) s += circuitSVG(act, w.w, 1, Object.assign({}, o, { H: w.h, obst: w.holds || [] }));
+  if(act) s += circuitSVG(act, w.w, 1, Object.assign({}, o, { H: w.h, obst: w.holds || [], busy: busyMap(w) }));
   if(o.edit) s += draftSVG(w);
   if(o.edit && act && ui.sel != null && act.holds[ui.sel]){
     const bb = holdBox(act.holds[ui.sel], w.w), pad = w.w*0.012, t = Math.max(2, w.w*0.003);
