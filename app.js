@@ -1896,7 +1896,7 @@ function renderSheet(){
       `<div class="sw" role="group" aria-label="Colore delle prese">` +
       PALETTE.map(p => `<button data-act="hcolor" data-c="${p[1]}" aria-label="${p[0]}" class="${p[1] === c.holdColor ? 'sel' : ''}" style="background:${p[1]}"></button>`).join('') +
       `</div>`+
-      `<div class="f2"><label class="field">Soprannome (facoltativo)<input id="cname" value="${esc(c.name || '')}" maxlength="40"></label>`+
+      `<div class="f2"><label class="field">Soprannome (facoltativo)<span style="display:flex;gap:6px;margin-top:4px"><input id="cname" value="${esc(c.name || '')}" maxlength="40" style="margin-top:0;flex:1;min-width:0"><button type="button" class="btn" data-act="cgen" aria-label="Proponi un soprannome" title="Proponi un soprannome" style="flex:none;font-size:18px;padding:6px 10px">🎲</button></span></label>`+
       `<label class="field">Stile<select id="cstyle">${STYLES.map(styleOpt).join('')}</select></label></div>`+
       `<label class="field">Tracciatore<input id="bsetter" value="${esc(c.setter || '')}" maxlength="40" autocomplete="off"></label>`+
       `<div class="f2"><label class="field">Montato il<input id="bdset" type="date" value="${esc(c.dateSet || '')}"></label>`+
