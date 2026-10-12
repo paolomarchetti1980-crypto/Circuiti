@@ -1359,6 +1359,8 @@ function placeBubbles(h, W, br, gap, env, n){
     let t = t0 + gap, x = cx + dx*t, y = cy + dy*t;
     /* si parte appoggiati al bordo e ci si allontana a piccoli passi finché la bolla è fuori: così resta tangente */
     for(let g=0; g<80 && polyDist(x, y, own) < br + gap; g++){ t += br*0.12; x = cx + dx*t; y = cy + dy*t; }
+    /* poi la bolla rientra un po' dentro il contorno della presa (circa un terzo del raggio) */
+    t -= br*0.32 + gap; x = cx + dx*t; y = cy + dy*t;
     T.push({ x, y, k, c: bubbleCost(x, y, br, gap, env) + (t - t0)/br*0.15 + Math.min(k, N-k)*0.007 });
   }
   if(n <= 1){ let best = T[0]; for(const p of T) if(p.c < best.c) best = p; return [best]; }
