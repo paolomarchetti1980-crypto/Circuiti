@@ -22,6 +22,7 @@ const BODY = `
     </div>
     <button class="menubtn" id="menuBtn" data-act="menu" aria-label="Altro: stampa, condividi, installa">&#8942;</button>
   </header>
+  <div class="viewbar" id="viewbar" hidden></div>
   <div class="pubbar" id="pubbar" hidden>
     <span>Modifiche non pubblicate</span>
     <button class="btn primary" id="pubBtn" data-act="publish">Pubblica</button>
@@ -96,7 +97,10 @@ const S = {
 let PUBREV = S.rev;
 let PUBWALLS = [];   /* muri come sono pubblicati adesso */
 let EDIT = false, SB = null, BASE = null, ME = null;
-const isMgr = () => !ME || ME.role === 'gestore';
+/* REAL_EDIT: l'account è dello staff. EDIT: in questo momento si modifica (falso se il gestore guarda "come cliente").
+   ui.viewAs permette allo staff di vedere l'app come la vede un ruolo con meno permessi. */
+let REAL_EDIT = false;
+const isMgr = () => !ME || (ME.role === 'gestore' && ui.viewAs !== 'tracciatore' && ui.viewAs !== 'cliente');
 const ui = { view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:null, csel:null, busy:false, sel:null, move:false, nextRole:'start', zoom:1, sheet:null, confirm:null, imgUrl:null, ready:false, publishing:false, saveWarned:false, scan:null, nextHand:'L', crop:null };
 try{ const f = JSON.parse(localStorage.getItem('circ-filters') || '{}'); ui.fAngle = f.a || ''; ui.fGrade = f.g || ''; ui.fFeet = f.f || ''; }catch(e){}
 ui.section = 'circ'; ui.bShow = 'on'; ui.bColor = ''; ui.lastSec = {};
@@ -1571,6 +1575,13 @@ function renderTop(){
     b.hidden = b.dataset.v === 'wall' && (!isMgr() || BO());
   });
 }
+function renderViewbar(){
+  const el = $('#viewbar'); if(!el) return;
+  if(!REAL_EDIT || !ui.viewAs){ el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = `<span>Stai vedendo come <b>${ui.viewAs}</b>${ui.viewAs === 'cliente' && dirtyReal() ? ' (con le tue modifiche non pubblicate)' : ''}</span><button class="btn" data-act="viewas" data-v="${ME.role}">Torna ${ME.role}</button>`;
+}
+const dirtyReal = () => REAL_EDIT && S.rev > PUBREV;
 function renderPub(){
   const d = dirty();
   $('#pubbar').hidden = !d;
@@ -1812,7 +1823,7 @@ function render(){
   if(viewing && w && isSec(w)){ const v = sortedVisible(w); if(v.length && !v.some(x => x.id === w.activeCircuit)) w.activeCircuit = v[0].id; }
   if(ui.full && (!viewing || !curCircuit())) ui.full = false;
   $('#app').classList.toggle('full', !!ui.full);
-  renderTop(); renderPub(); renderStage(); renderChips(); renderTools(); renderFull(); }
+  renderTop(); renderViewbar(); renderPub(); renderStage(); renderChips(); renderTools(); renderFull(); }
 /* ordine degli elenchi: circuiti per grado e nome, boulder per difficoltà e numero */
 const circCmp = (x, y) => gradeIdx(x.grade) - gradeIdx(y.grade) || String(x.name).localeCompare(String(y.name));
 const bouldCmp = (x, y) => diffIdx(x) - diffIdx(y) || (x.num || 0) - (y.num || 0) || (isOff(x) ? 1 : 0) - (isOff(y) ? 1 : 0);
@@ -1922,7 +1933,7 @@ function renderSheet(){
         (ME ? `<p class="note">Sei dentro come <b>${esc(ME.email)}</b> (${ME.role === 'gestore' ? 'gestore' : 'tracciatore'}).</p>` : '')+
         (SB ? `<div class="row" style="margin-top:10px">${ME && ME.role === 'gestore' ? `<button class="btn" data-act="staff">Staff</button>` : ''}<button class="btn" data-act="setpass">Imposta password</button><button class="btn" data-act="logout">Esci</button></div>` : '');
     } else {
-      h += `<div class="row">${canInstall() ? `<button class="btn" data-act="install">Installa l'app</button>` : ''}${SB ? `<button class="btn" data-act="login">Accedi (staff)</button>` : ''}<button class="btn primary" data-act="close">Chiudi</button></div>`;
+      h += `<div class="row">${canInstall() ? `<button class="btn" data-act="install">Installa l'app</button>` : ''}${SB && !REAL_EDIT ? `<button class="btn" data-act="login">Accedi (staff)</button>` : ''}<button class="btn primary" data-act="close">Chiudi</button></div>`;
     }
   } else if(ui.sheet === 'menu'){
     const bo = w && isSec(w), n = w ? sortedVisible(w).length : 0, one = bo ? 'questo boulder' : 'questo circuito';
@@ -1932,8 +1943,11 @@ function renderSheet(){
       row('printall', bo ? 'Stampa i boulder del settore' : 'Stampa i circuiti del muro', n ? n + (n === 1 ? ' pagina' : ' pagine') + ' · filtri compresi' : '', !n)+
       row('img', 'Condividi immagine', 'da salvare o mandare', !c)+
       (canInstall() ? row('install', "Installa l'app", 'sulla schermata Home') : '')+
-      (SB && !EDIT ? row('login', 'Accesso staff', '') : '')+
-      (SB && EDIT ? row('logout', 'Esci', ME ? esc(ME.email) : '') : '')+
+      (REAL_EDIT ? `<div class="wrow" style="flex-direction:column;align-items:stretch;gap:8px"><span>Vedi l'app come</span><div class="seg" role="group" aria-label="Vedi come">`+
+        (ME.role === 'gestore' ? [['gestore','Gestore'],['tracciatore','Tracciatore'],['cliente','Cliente']] : [['tracciatore','Tracciatore'],['cliente','Cliente']])
+          .map(o => `<button data-act="viewas" data-v="${o[0]}" aria-pressed="${(ui.viewAs || ME.role) === o[0]}">${o[1]}</button>`).join('')+`</div></div>` : '')+
+      (SB && !REAL_EDIT ? row('login', 'Accesso staff', '') : '')+
+      (SB && REAL_EDIT ? row('logout', 'Esci', ME ? esc(ME.email) : '') : '')+
       `</div><p class="note" style="margin:0 0 12px">Dalla finestra di stampa puoi anche scegliere "Salva come PDF".</p>`+
       `<div class="row"><button class="btn primary" data-act="close">Chiudi</button></div>`;
   } else if(ui.sheet === 'install'){
@@ -2169,6 +2183,17 @@ async function publishRemote(){
   if(error) throw error;
   location.reload();
 }
+/* passa al volo a vedere l'app come gestore, tracciatore o cliente (solo per lo staff; non cambia i permessi veri) */
+function setViewAs(v){
+  if(!REAL_EDIT || !ME) return;
+  if(ME.role !== 'gestore' && v === 'gestore') return;
+  ui.viewAs = v === ME.role ? null : v;
+  EDIT = v !== 'cliente';
+  S.mode = EDIT ? 'edit' : 'view';
+  ui.sel = null; ui.csel = null; ui.move = false; ui.full = false; ui.draft = []; ui.bdraw = false; ui.sheet = null;
+  renderSheet(); render();
+  if(ui.viewAs) toast(v === 'cliente' ? 'Vedi l\'app come un cliente.' : 'Vedi l\'app come un tracciatore.');
+}
 async function publish(){
   if(!EDIT || !SB || ui.publishing || !dirty()) return;
   ui.publishing = true; renderPub();
@@ -2264,7 +2289,7 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
+const PUBLIC_ACTS = ['viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
 const MGR_ACTS = ['lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
@@ -2365,6 +2390,7 @@ document.addEventListener('click', e => {
     case 'wall': openSheet('wall'); break;
     case 'img': makeImage(); break;
     case 'menu': openSheet('menu'); break;
+    case 'viewas': setViewAs(b.dataset.v); break;
     case 'printone': printBlocks(false); break;
     case 'printall': printBlocks(true); break;
     case 'publish': publish(); break;
@@ -2610,7 +2636,7 @@ render();
       if(session){
         const { data: ok } = await SB.rpc('is_editor');
         if(ok){
-          EDIT = true;
+          EDIT = true; REAL_EDIT = true;
           let role = 'tracciatore';
           try{ const r = await SB.rpc('my_role'); if(r && r.data) role = r.data; }catch(e){}
           ME = { email: (session.user && session.user.email) || '', role };
