@@ -106,7 +106,7 @@ let PUBREV = S.rev;
 let SEEDWALLS = S.walls;
 let EDIT = false, ART = null, SB = null, BASE = null, ME = null;
 const isMgr = () => !ME || ME.role === 'gestore';
-const ui = { view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:null, csel:null, busy:false, warnedRing:false, sel:null, move:false, nextRole:'start', zoom:1, sheet:null, confirm:null, imgUrl:null, ready:false, publishing:false, saveWarned:false, scan:null, nextHand:'', crop:null };
+const ui = { view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:null, csel:null, busy:false, warnedRing:false, sel:null, move:false, nextRole:'start', zoom:1, sheet:null, confirm:null, imgUrl:null, ready:false, publishing:false, saveWarned:false, scan:null, nextHand:'L', crop:null };
 try{ const f = JSON.parse(localStorage.getItem('circ-filters') || '{}'); ui.fAngle = f.a || ''; ui.fGrade = f.g || ''; ui.fFeet = f.f || ''; }catch(e){}
 ui.section = 'circ'; ui.bShow = 'on'; ui.bGrade = ''; ui.bColor = ''; ui.lastSec = {};
 try{ const f = JSON.parse(localStorage.getItem('boulder-ui') || '{}'); if(f.sec === 'boulder') ui.section = 'boulder'; ui.bShow = f.show || 'on'; ui.bGrade = f.g || ''; ui.bColor = f.c || ''; ui.lastSec = f.last || {}; }catch(e){}
@@ -270,6 +270,8 @@ function newCircuit(w){
   return { id: uid(), name, color: p[1], holds: [] };
 }
 function roleFor(c){ return c && c.holds.length ? 'hold' : 'start'; }
+/* mano della prossima presa: l'opposta dell'ultima segnata (si parte con la sinistra) */
+function handFor(c){ const l = c && c.holds.length ? c.holds[c.holds.length-1].hand : null; return l === 'L' ? 'R' : 'L'; }
 
 /* SEG-START */
 function enhanceLocal(px, W, H, R, gain){
@@ -1627,7 +1629,7 @@ function renderTools(){
   el.innerHTML =
     `<p class="hint">${hint}</p>`+
     `<div class="seg">${rb('start','Partenza')}${rb('hold','Presa')}${rb('top','Arrivo')}</div>`+
-    (isSec(w) ? '' : `<div class="seg" role="group" aria-label="Mano">${hb('','Libera')}${hb('L',dot(S.prefs.handL)+'Sinistra')}${hb('R',dot(S.prefs.handR)+'Destra')}</div>`)+
+    (isSec(w) ? '' : `<div class="seg" role="group" aria-label="Mano">${hb('L',dot(S.prefs.handL)+'Sinistra')}${hb('R',dot(S.prefs.handR)+'Destra')}</div>`)+
     `<div class="seg"><button data-act="size" data-d="-1" aria-label="${lbl} più piccolo" ${h ? '' : 'disabled'}>${lbl} &minus;</button>`+
     `<button data-act="size" data-d="1" aria-label="${lbl} più grande" ${h ? '' : 'disabled'}>${lbl} +</button></div>`+
     `<button class="btn ${ui.move ? 'on' : ''}" data-act="move" ${h ? '' : 'disabled'}>Sposta</button>`+
@@ -2080,7 +2082,7 @@ document.addEventListener('click', e => {
     case 'undoPt': ui.draft.pop(); render(); break;
     case 'cancelDraw': ui.draft = []; ui.redraw = null; render(); break;
     case 'redraw': if(w && ui.csel != null && (w.holds || [])[ui.csel]){ ui.redraw = ui.csel; ui.tool = 'draw'; ui.draft = []; render(); } break;
-    case 'lock': if(w){ w.locked = true; ui.draft = []; ui.redraw = null; ui.tool = 'detect'; ui.csel = null; S.mode = 'edit'; ui.nextRole = roleFor(curCircuit()); touch(); render(); } break;
+    case 'lock': if(w){ w.locked = true; ui.draft = []; ui.redraw = null; ui.tool = 'detect'; ui.csel = null; S.mode = 'edit'; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); touch(); render(); } break;
     case 'unlock': if(w){ w.locked = false; touch(); render(); } break;
     case 'panelReset': if(w){ delete w.panelSamples; delete segCache[w.id]; touch(); render(); } break;
     case 'panelDone': ui.tool = 'detect'; render(); break;
@@ -2118,13 +2120,13 @@ document.addEventListener('click', e => {
       if(keep) S.active = keep.id;
       ui.full = false; ui.sel = null; ui.csel = null; ui.move = false; ui.zoom = 1; ui.draft = []; ui.bdraw = false; ui.redraw = null; ui.tool = 'detect';
       if(EDIT && S.mode === 'wall' && v === 'boulder') S.mode = 'edit';
-      ui.nextRole = roleFor(curCircuit()); saveBUI(); render(); break;
+      ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); saveBUI(); render(); break;
     }
     case 'bshow': case 'bcolor': {
       if(a === 'bshow') ui.bShow = b.dataset.v; else ui.bColor = ui.bColor === b.dataset.v ? '' : b.dataset.v;
       saveBUI();
       const vis = w ? visibleCircuits(w) : [];
-      if(w && vis.length && !vis.some(x => x.id === w.activeCircuit)){ w.activeCircuit = sortedVisible(w)[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); }
+      if(w && vis.length && !vis.some(x => x.id === w.activeCircuit)){ w.activeCircuit = sortedVisible(w)[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); }
       render(); if(ui.sheet === 'clist') renderSheet(); break;
     }
     case 'cgen': {
@@ -2167,20 +2169,20 @@ document.addEventListener('click', e => {
     case 'circ':
       if(!w) break;
       if(c && b.dataset.id === c.id){ if(EDIT) openSheet('circ'); break; }
-      w.activeCircuit = b.dataset.id; ui.sel = null; ui.move = false; ui.nextRole = roleFor(curCircuit()); save(); render(); break;
+      w.activeCircuit = b.dataset.id; ui.sel = null; ui.move = false; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save(); render(); break;
     case 'clist': ui.confirm = null; openSheet('clist'); break;
     case 'fang': {
       ui.fAngle = b.dataset.v;
       try{ localStorage.setItem('circ-filters', JSON.stringify({ a: ui.fAngle || '', g: ui.fGrade || '', f: ui.fFeet || '' })); }catch(err){}
       const vis = w ? visibleCircuits(w) : [];
-      if(w && vis.length && !vis.some(x => x.id === w.activeCircuit)){ w.activeCircuit = vis[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); }
+      if(w && vis.length && !vis.some(x => x.id === w.activeCircuit)){ w.activeCircuit = vis[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); }
       render(); break;
     }
     case 'cedit': if(c && EDIT) openSheet('circ'); break;
     case 'pickc': {
       if(!w) break;
       const again = w.activeCircuit === b.dataset.id && b.classList.contains('lrow');
-      w.activeCircuit = b.dataset.id; ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.nextRole = roleFor(curCircuit());
+      w.activeCircuit = b.dataset.id; ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
       ui.sheet = null; save(); renderSheet();
       if(again && (!EDIT || S.mode === 'view')) setFull(true); else render();
       break;
@@ -2195,17 +2197,18 @@ document.addEventListener('click', e => {
     case 'addc': {
       if(!w) break;
       const n = newCircuit(w); w.circuits.push(n); w.activeCircuit = n.id;
-      ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.nextRole = 'start'; S.mode = 'edit'; touch(); render(); openSheet('circ'); break;
+      ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.nextRole = 'start'; ui.nextHand = 'L'; S.mode = 'edit'; touch(); render(); openSheet('circ'); break;
     }
     case 'hand': {
       const h = c && ui.sel != null ? c.holds[ui.sel] : null, v = b.dataset.v;
-      if(h){ if(v) h.hand = v; else delete h.hand; touch(); } else ui.nextHand = v;
+      if(!v) break;
+      if(h){ h.hand = v; touch(); } else ui.nextHand = v;
       render(); break;
     }
     case 'dup': {
       const h = c && ui.sel != null ? c.holds[ui.sel] : null;
       if(h){
-        const nh = h.hand === 'L' ? 'R' : h.hand === 'R' ? 'L' : ui.nextHand;
+        const nh = h.hand === 'L' ? 'R' : h.hand === 'R' ? 'L' : (ui.nextHand || 'L');
         const copy = Object.assign({}, h, { role: 'hold' });
         if(h.poly) copy.poly = h.poly.slice();
         if(nh) copy.hand = nh; else delete copy.hand;
@@ -2250,15 +2253,15 @@ document.addEventListener('click', e => {
     case 'move': ui.move = !ui.move; render(); break;
     case 'del':
       if(S.mode === 'wall'){ if(w && ui.csel != null && (w.holds || [])[ui.csel]) delCat(w, ui.csel); break; }
-      if(c && ui.sel != null){ c.holds.splice(ui.sel, 1); ui.sel = null; ui.move = false; if(!c.holds.length) ui.nextRole = 'start'; touch(); render(); } break;
-    case 'undo': if(c && c.holds.length){ c.holds.pop(); ui.sel = null; ui.move = false; if(!c.holds.length) ui.nextRole = 'start'; touch(); render(); } break;
+      if(c && ui.sel != null){ c.holds.splice(ui.sel, 1); ui.sel = null; ui.move = false; ui.nextHand = handFor(c); if(!c.holds.length) ui.nextRole = 'start'; touch(); render(); } break;
+    case 'undo': if(c && c.holds.length){ c.holds.pop(); ui.sel = null; ui.move = false; ui.nextHand = handFor(c); if(!c.holds.length) ui.nextRole = 'start'; touch(); render(); } break;
     case 'color': if(c){ c.color = b.dataset.c; touch(); render(); renderSheet(); } break;
     case 'delc':
       if(!w || !c) break;
       if(ui.confirm !== 'delc'){ ui.confirm = 'delc'; renderSheet(); break; }
       w.circuits = w.circuits.filter(x => x.id !== c.id);
       if(!w.circuits.length && !isSec(w)) w.circuits.push(newCircuit(w));
-      w.activeCircuit = w.circuits.length ? w.circuits[0].id : null; ui.sel = null; ui.nextRole = roleFor(curCircuit());
+      w.activeCircuit = w.circuits.length ? w.circuits[0].id : null; ui.sel = null; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
       ui.sheet = null; ui.confirm = null; touch(); render(); renderSheet(); break;
     case 'pickw': if(ui.scan) break; S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.full = false; ui.sel = null; ui.zoom = 1; ui.move = false; ui.sheet = null; save(); render(); renderSheet(); break;
     case 'delw':
@@ -2279,13 +2282,13 @@ document.addEventListener('input', e => {
     if(e.target.id === 'fangle') ui.fAngle = e.target.value; else if(e.target.id === 'ffeet') ui.fFeet = e.target.value; else ui.fGrade = e.target.value;
     try{ localStorage.setItem('circ-filters', JSON.stringify({ a: ui.fAngle || '', g: ui.fGrade || '', f: ui.fFeet || '' })); }catch(err){}
     const wf = curWall(), vis = wf ? visibleCircuits(wf) : [];
-    if(wf && vis.length && !vis.some(x => x.id === wf.activeCircuit)){ wf.activeCircuit = vis[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); }
+    if(wf && vis.length && !vis.some(x => x.id === wf.activeCircuit)){ wf.activeCircuit = vis[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); }
     render(); if(ui.sheet === 'clist') renderSheet(); return;
   }
   if(e.target.id === 'bgradef'){
     ui.bGrade = e.target.value; saveBUI();
     const wf = curWall(), vis = wf ? visibleCircuits(wf) : [];
-    if(wf && vis.length && !vis.some(x => x.id === wf.activeCircuit)){ wf.activeCircuit = sortedVisible(wf)[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); }
+    if(wf && vis.length && !vis.some(x => x.id === wf.activeCircuit)){ wf.activeCircuit = sortedVisible(wf)[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); }
     render(); if(ui.sheet === 'clist') renderSheet(); return;
   }
   if(!EDIT) return;
@@ -2492,7 +2495,7 @@ render();
   }catch(e){ EDIT = false; }
   if(EDIT){ await loadDraft(); S.mode = 'edit'; if(!curWall() && S.walls.length) S.active = S.walls[0].id; }
   ui.ready = true;
-  ui.nextRole = roleFor(curCircuit());
+  ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
   render();
 })();
 })();
