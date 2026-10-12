@@ -110,7 +110,7 @@ let EDIT = false, SB = null, BASE = null, ME = null;
    ui.viewAs permette allo staff di vedere l'app come la vede un ruolo con meno permessi. */
 let REAL_EDIT = false;
 const isMgr = () => !ME || (ME.role === 'gestore' && ui.viewAs !== 'tracciatore' && ui.viewAs !== 'cliente');
-const ui = { view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:null, csel:null, busy:false, sel:null, move:false, nextRole:'start', zoom:1, sheet:null, confirm:null, imgUrl:null, ready:false, publishing:false, saveWarned:false, scan:null, nextHand:'L', crop:null };
+const ui = { bline:false, lineDraft:[], view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:null, csel:null, busy:false, sel:null, move:false, nextRole:'start', zoom:1, sheet:null, confirm:null, imgUrl:null, ready:false, publishing:false, saveWarned:false, scan:null, nextHand:'L', crop:null };
 try{ const f = JSON.parse(localStorage.getItem('circ-filters') || '{}'); ui.fAngle = f.a || ''; ui.fGrade = f.g || ''; ui.fFeet = f.f || ''; }catch(e){}
 ui.section = 'circ'; ui.bShow = 'on'; ui.bColor = ''; ui.lastSec = {};
 try{ const f = JSON.parse(localStorage.getItem('boulder-ui') || '{}'); if(f.sec === 'boulder') ui.section = 'boulder'; ui.bShow = f.show || 'on'; ui.bColor = f.c || ''; ui.lastSec = f.last || {}; }catch(e){}
@@ -1515,6 +1515,27 @@ function finishBDraw(w, c){
   else { c.holds.push({ x: cx, y: cy, sx: cx, sy: cy, r: S.prefs.r, role: ui.nextRole, poly: flat, drawn: 1 }); ui.nextRole = 'hold'; }
   ui.draft = []; ui.bdraw = false; ui.sel = null; touch(); render();
 }
+/* boulder: linea indicativa disegnata a mano dal tracciatore (direzione generale, non le prese) */
+function lineSVG(pts, W, col){
+  if(!pts || pts.length < 4) return '';
+  const p = []; for(let i=0;i<pts.length;i+=2) p.push([pts[i], pts[i+1]]);
+  let d = 'M' + p[0][0].toFixed(1) + ',' + p[0][1].toFixed(1);
+  for(let i=0;i<p.length-1;i++){
+    const p0 = p[Math.max(0, i-1)], p1 = p[i], p2 = p[i+1], p3 = p[Math.min(p.length-1, i+2)];
+    d += 'C' + (p1[0] + (p2[0]-p0[0])/6).toFixed(1) + ',' + (p1[1] + (p2[1]-p0[1])/6).toFixed(1) + ' ' + (p2[0] - (p3[0]-p1[0])/6).toFixed(1) + ',' + (p2[1] - (p3[1]-p1[1])/6).toFixed(1) + ' ' + p2[0].toFixed(1) + ',' + p2[1].toFixed(1);
+  }
+  const lw = Math.max(3, W*0.009);
+  return `<path d="${d}" fill="none" stroke="${haloOf(col)}" stroke-opacity=".45" stroke-width="${lw*1.9}" stroke-linecap="round" stroke-linejoin="round"/>`+
+         `<path d="${d}" fill="none" stroke="${col}" stroke-opacity=".95" stroke-width="${lw}" stroke-linecap="round" stroke-linejoin="round"/>`;
+}
+/* dal tratto del dito a pochi punti puliti: si tengono quelli distanti almeno 2,5% della foto e poi si semplifica */
+function cleanLine(raw, W){
+  const out = []; const minD = W*0.025;
+  raw.forEach(q => { const l = out[out.length-1]; if(!l || Math.hypot(q[0]-l[0], q[1]-l[1]) >= minD) out.push(q); });
+  const last = raw[raw.length-1]; if(out.length && last !== out[out.length-1]) out.push(last);
+  const simp = rdpPts(out, W*0.006);
+  return simp.flatMap(q => [Math.round(q[0]), Math.round(q[1])]);
+}
 function overlay(w, o){
   if(o.wall){
     let s = ''; const t = Math.max(2, w.w*0.0028);
@@ -1539,6 +1560,8 @@ function overlay(w, o){
     });
     s += `<path d="${d}" fill="#000" fill-opacity="${o.edit ? .5 : .62}" fill-rule="evenodd"/>`;
   }
+  if(act && bo) s += lineSVG(act.line, w.w, colOf(act));
+  if(bo && ui.bline && ui.lineDraft.length > 1) s += lineSVG(ui.lineDraft, w.w, '#ff3b7a');
   if(act) s += circuitSVG(act, w.w, 1, Object.assign({}, o, { H: w.h, obst: w.holds || [], busy: busyMap(w) }));
   if(o.edit) s += draftSVG(w);
   if(o.edit && act && ui.sel != null && act.holds[ui.sel]){
@@ -1778,6 +1801,13 @@ function renderTools(){
   const dot = col => `<span style="display:inline-block;width:.7em;height:.7em;border-radius:50%;background:${col};border:1px solid #888;margin-right:6px;vertical-align:-1px"></span>`;
   const hb = (v,l) => `<button data-act="hand" data-v="${v}" aria-pressed="${hand === v}">${l}</button>`;
   const sec = isSec(w), lbl = h && !h.poly ? 'Anello' : 'Contorno';
+  if(sec && ui.bline){
+    el.innerHTML = `<p class="hint">Passa il dito sulla foto dalla partenza all'arrivo, lungo la direzione del blocco. Puoi rifarla quante volte vuoi.</p>`+
+      `<div class="trow"><button class="btn primary" data-act="lineok">Fatto</button>`+
+      (c && c.line ? `<button class="btn danger" data-act="linedel">Togli la linea</button>` : '')+
+      `<button class="btn" data-act="lineesc">Annulla</button></div>`;
+    return;
+  }
   if(sec && ui.bdraw){
     el.innerHTML = `<p class="hint">${h ? 'Ridisegna il contorno' : 'Disegna il contorno della presa'}: tocca i punti tutto intorno (puoi ingrandire), poi Chiudi o tocca di nuovo il primo punto.</p>`+
       (h ? '' : `<div class="trow"><div class="seg">${rb('start','Partenza')}${rb('hold','Presa')}${rb('top','Arrivo')}</div></div>`)+
@@ -1810,6 +1840,7 @@ function renderTools(){
     `<div class="trow">${roles}${hands}</div>`+
     `<div class="trow">`+
     (sec ? `<button class="btn" data-act="bdraw" ${c ? '' : 'disabled'}>Disegna a mano</button>` : '')+
+    (sec ? `<button class="btn" data-act="bline" ${c ? '' : 'disabled'}>${c && c.line ? 'Rifai linea' : 'Linea'}</button>` : '')+
     (first ? '' : `<button class="btn" data-act="undo">Annulla ultima</button>`)+
     dimBtn+`</div>`;
 }
@@ -2221,7 +2252,7 @@ async function publish(){
 /* ---------- interazione ---------- */
 $('#stage').addEventListener('click', async e => {
   const w = curWall(), c = curCircuit();
-  if(!EDIT || !w || S.mode === 'view' || ui.busy || ui.scan || Date.now() - ui.pinchAt < 350) return;
+  if(!EDIT || !w || S.mode === 'view' || ui.busy || ui.scan || ui.bline || Date.now() - ui.pinchAt < 350) return;
   if(S.mode !== 'wall' && !c) return;
   const r = e.currentTarget.getBoundingClientRect();
   const k = w.w / r.width;
@@ -2307,7 +2338,7 @@ document.addEventListener('click', e => {
   if(!EDIT && !PUBLIC_ACTS.includes(a)) return;
   if(!isMgr() && MGR_ACTS.includes(a)) return;
   switch(a){
-    case 'mode': if(EDIT && !ui.scan && !(b.dataset.v === 'wall' && !isMgr())){ S.mode = b.dataset.v; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.redraw = null; ui.tool = 'detect'; render(); } break;
+    case 'mode': if(EDIT && !ui.scan && !(b.dataset.v === 'wall' && !isMgr())){ S.mode = b.dataset.v; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; $('#stage').classList.remove('linedraw'); ui.redraw = null; ui.tool = 'detect'; render(); } break;
     case 'tool': ui.tool = b.dataset.v; ui.draft = []; ui.redraw = null; render(); break;
     case 'undel': if(w && ui.trash.length){ const ch = ui.trash.pop(); (w.holds = w.holds || []).push(ch); ui.csel = w.holds.length - 1; touch(); render(); } break;
     case 'susnext': {
@@ -2371,6 +2402,10 @@ document.addEventListener('click', e => {
     case 'editdim': ui.editDim = !ui.editDim; render(); break;
     case 'desel': ui.sel = null; ui.move = false; render(); break;
     case 'cfeet': if(c){ if(b.dataset.v) c.feet = b.dataset.v; else delete c.feet; touch(); renderChips(); renderSheet(); } break;
+    case 'bline': if(c){ ui.bline = true; ui.lineDraft = []; ui.lineBackup = c.line ? c.line.slice() : null; ui.sel = null; ui.move = false; $('#stage').classList.add('linedraw'); render(); } break;
+    case 'lineok': ui.bline = false; ui.lineDraft = []; $('#stage').classList.remove('linedraw'); render(); break;
+    case 'lineesc': if(c){ if(ui.lineBackup) c.line = ui.lineBackup; else delete c.line; touch(); } ui.bline = false; ui.lineDraft = []; $('#stage').classList.remove('linedraw'); render(); break;
+    case 'linedel': if(c){ delete c.line; touch(); } ui.bline = false; ui.lineDraft = []; $('#stage').classList.remove('linedraw'); render(); break;
     case 'bdraw': if(c){ ui.bdraw = true; ui.draft = []; ui.move = false; render(); } break;
     case 'bclose': if(w && c) finishBDraw(w, c); break;
     case 'bundo': ui.draft.pop(); render(); break;
@@ -2411,7 +2446,7 @@ document.addEventListener('click', e => {
     case 'pickc': {
       if(!w) break;
       const again = w.activeCircuit === b.dataset.id && b.classList.contains('lrow');
-      w.activeCircuit = b.dataset.id; ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
+      w.activeCircuit = b.dataset.id; ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.bline = false; $('#stage').classList.remove('linedraw'); ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
       ui.sheet = null; save(); renderSheet();
       if(again && (!EDIT || S.mode === 'view')) setFull(true); else render();
       break;
@@ -2612,6 +2647,21 @@ function applyZoom(nz, fx, fy){
     if(e.ctrlKey){ e.preventDefault(); applyZoom(ui.zoom * Math.exp(-e.deltaY*0.01), e.clientX, e.clientY); }
   }, { passive: false });
   document.addEventListener('gesturestart', e => e.preventDefault());
+})();
+/* disegno della linea del boulder: si segue il dito sulla foto */
+(function(){
+  const st = $('#stage');
+  const pt = e => { const w = curWall(), r = st.getBoundingClientRect(), k = w.w / r.width; return [clamp((e.clientX - r.left)*k, 0, w.w), clamp((e.clientY - r.top)*k, 0, w.h)]; };
+  let drawing = false;
+  st.addEventListener('pointerdown', e => { if(!ui.bline || !EDIT) return; drawing = true; ui.lineDraft = [pt(e)]; try{ st.setPointerCapture(e.pointerId); }catch(err){} e.preventDefault(); });
+  st.addEventListener('pointermove', e => { if(!drawing) return; ui.lineDraft.push(pt(e)); renderStage(); e.preventDefault(); });
+  const end = () => {
+    if(!drawing) return; drawing = false;
+    const w = curWall(), c = curCircuit();
+    if(c && w && ui.lineDraft.length > 3){ c.line = cleanLine(ui.lineDraft, w.w); touch(); }
+    ui.lineDraft = []; ui.pinchAt = Date.now(); render();
+  };
+  st.addEventListener('pointerup', end); st.addEventListener('pointercancel', end);
 })();
 $('#box').addEventListener('scroll', () => {
   const b = $('#box'), st = $('#stage');
