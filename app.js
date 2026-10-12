@@ -1431,7 +1431,7 @@ function bMeta(c){
 }
 function circMeta(c){
   if(curWall() && isSec(curWall())) return bMeta(c);
-  return [c.angle != null ? c.angle + '°' : '', c.style || '', c.holds.length + (c.holds.length === 1 ? ' presa' : ' prese')].filter(Boolean).map(esc).join(' · ');
+  return [c.angle != null ? c.angle + '°' : '', c.style || '', c.feet ? 'piedi ' + c.feet : '', c.holds.length + (c.holds.length === 1 ? ' presa' : ' prese')].filter(Boolean).map(esc).join(' · ');
 }
 /* filtri dei boulder: stato (in parete / smontati / tutti), grado, colore delle prese */
 function bFilters(w){
@@ -1678,6 +1678,8 @@ function renderSheet(){
       `</div>`+
       `<label class="field">Grado<select id="cgrade">${GRADES.map(gradeOpt).join('')}</select></label>`+
       `<label class="field">Stile<select id="cstyle">${STYLES.map(styleOpt).join('')}</select></label>`+
+      `<p class="field" style="margin-bottom:4px">Piedi</p><div class="seg" role="group" aria-label="Piedi" style="margin:0 0 12px">`+
+        [['','—'],['liberi','Liberi'],['obbligati','Obbligati']].map(o => `<button data-act="cfeet" data-v="${o[0]}" aria-pressed="${(c.feet || '') === o[0]}">${o[1]}</button>`).join('')+`</div>`+
       `<label class="field">Inclinazione (gradi dalla verticale)<select id="cangle"><option value="" ${c.angle == null ? 'selected' : ''}>—</option>${ANGLES.map(a => `<option value="${a}" ${c.angle === a ? 'selected' : ''}>${a}°</option>`).join('')}</select></label>`+
       `<div class="row"><button class="btn danger" data-act="delc">${ui.confirm === 'delc' ? 'Tocca ancora per eliminare' : 'Elimina circuito'}</button>`+
       `<button class="btn primary" data-act="close">Fatto</button></div>`;
@@ -2006,7 +2008,7 @@ $('#stage').addEventListener('click', async e => {
   toast('Qui non c\'è una presa del muro. Per aggiungerla sblocca il muro nel tab Muro.');
 });
 
-const EDIT_ONLY = ['bdraw','bclose','bundo','bcancel','bdiff','hcolor','btag','cropAll','tool','closeDraw','undoPt','cancelDraw','redraw','lock','unlock','tracing','addc','role','size','move','del','undo','color','delc','addw','delw','publish','autoall','stopauto','hand','dup','cropTap','cropUndo','cropClose','cropReset','cropCancel','cropDone','panelReset','panelDone','camlive','camCancel','camShot'];
+const EDIT_ONLY = ['cfeet','bdraw','bclose','bundo','bcancel','bdiff','hcolor','btag','cropAll','tool','closeDraw','undoPt','cancelDraw','redraw','lock','unlock','tracing','addc','role','size','move','del','undo','color','delc','addw','delw','publish','autoall','stopauto','hand','dup','cropTap','cropUndo','cropClose','cropReset','cropCancel','cropDone','panelReset','panelDone','camlive','camCancel','camShot'];
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b || b.disabled) return;
   const a = b.dataset.act, w = curWall(), c = curCircuit();
@@ -2075,6 +2077,7 @@ document.addEventListener('click', e => {
       if(w && vis.length && !vis.some(x => x.id === w.activeCircuit)){ w.activeCircuit = sortedVisible(w)[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); }
       render(); if(ui.sheet === 'clist') renderSheet(); break;
     }
+    case 'cfeet': if(c){ if(b.dataset.v) c.feet = b.dataset.v; else delete c.feet; touch(); renderChips(); renderSheet(); } break;
     case 'bdraw': if(c){ ui.bdraw = true; ui.draft = []; ui.move = false; render(); } break;
     case 'bclose': if(w && c) finishBDraw(w, c); break;
     case 'bundo': ui.draft.pop(); render(); break;
