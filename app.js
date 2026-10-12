@@ -1260,10 +1260,19 @@ function circuitSVG(c, W, alpha, o){
   const col = colOf(c), ha = haloOf(col);
   let s = `<g opacity="${alpha}">`;
   if(o.lines && c.holds.length > 1){
-    const p = c.holds.map(h => h.x.toFixed(1)+','+h.y.toFixed(1)).join(' ');
-    const lw = Math.max(3, W*0.0032);
-    s += `<polyline points="${p}" fill="none" stroke="${ha}" stroke-opacity=".5" stroke-width="${lw*2.6}" stroke-linecap="round" stroke-linejoin="round"/>`;
-    s += `<polyline points="${p}" fill="none" stroke="${col}" stroke-width="${lw}" stroke-dasharray="${lw*3} ${lw*2.2}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    const lw = Math.max(3, W*0.0032), P = q => q[0].toFixed(1)+','+q[1].toFixed(1);
+    const st = c.holds.filter(h => h.role === 'start'), rest = c.holds.filter(h => h.role !== 'start');
+    const paths = [];
+    if(st.length >= 2 && rest.length){
+      /* partenze a Y: ogni partenza raggiunge un punto d'incontro, da lì un solo tratto verso la prima presa */
+      const mx = st.reduce((t,h) => t + h.x, 0)/st.length, my = st.reduce((t,h) => t + h.y, 0)/st.length, f = rest[0];
+      const J = [mx + (f.x - mx)*0.45, my + (f.y - my)*0.45];
+      st.forEach(h => paths.push([[h.x, h.y], J]));
+      paths.push([J].concat(rest.map(h => [h.x, h.y])));
+    } else paths.push(c.holds.map(h => [h.x, h.y]));
+    const d = paths.map(pl => 'M' + pl.map(P).join('L')).join('');
+    s += `<path d="${d}" fill="none" stroke="${ha}" stroke-opacity=".5" stroke-width="${lw*2.6}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    s += `<path d="${d}" fill="none" stroke="${col}" stroke-width="${lw}" stroke-dasharray="${lw*3} ${lw*2.2}" stroke-linecap="round" stroke-linejoin="round"/>`;
   }
   const base = colOf(c);
   const grp = {};
@@ -1276,7 +1285,7 @@ function circuitSVG(c, W, alpha, o){
     (grp[key] = grp[key] || []).push(i);
   });
   const starts = []; c.holds.forEach((h,i) => { if(h.role === 'start') starts.push(i); });
-  if(starts.length > 1 && !o.boulder){
+  if(starts.length > 1 && !o.boulder && !(o.lines && c.holds.some(h => h.role !== 'start'))){
     const p = starts.map(i => c.holds[i].x.toFixed(1)+','+c.holds[i].y.toFixed(1)).join(' ');
     const lw = Math.max(3, W*0.0032);
     s += `<polyline points="${p}" fill="none" stroke="${ha}" stroke-opacity=".6" stroke-width="${lw*2.2}" stroke-linecap="round"/>`+
