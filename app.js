@@ -1717,32 +1717,41 @@ function renderTools(){
   const hand = h ? (h.hand || '') : ui.nextHand;
   const dot = col => `<span style="display:inline-block;width:.7em;height:.7em;border-radius:50%;background:${col};border:1px solid #888;margin-right:6px;vertical-align:-1px"></span>`;
   const hb = (v,l) => `<button data-act="hand" data-v="${v}" aria-pressed="${hand === v}">${l}</button>`;
-  let hint = isSec(w) ? 'Tocca una presa: ne rilevo il contorno e la aggiungo al boulder. Tocca una presa già segnata per selezionarla.' : 'Tocca una presa per accenderla. Tocca una presa accesa per selezionarla.';
-  if(ui.move && h) hint = 'Tocca la presa dove spostarla.';
-  else if(h) hint = 'Presa selezionata: cambia tipo o contorno, sposta o elimina.';
-  else if(c && !c.holds.length) hint = isSec(w) ? 'Tocca la prima presa di partenza: ne rilevo il contorno.' : 'Tocca la prima presa di partenza per accenderla.';
-  if(isSec(w) && !ui.move) hint += ` <span style="opacity:.8">${samStatus(w)}</span>`;
-  const lbl = h && !h.poly ? 'Anello' : 'Contorno';
-  if(isSec(w) && ui.bdraw){
-    el.innerHTML = `<p class="hint">${h ? 'Ridisegna il contorno della presa selezionata' : 'Disegna il contorno della presa'}: tocca i punti attorno alla presa (puoi ingrandire), poi Chiudi o tocca di nuovo il primo punto.</p>`+
-      (h ? '' : `<div class="seg">${rb('start','Partenza')}${rb('hold','Presa')}${rb('top','Arrivo')}</div>`)+
-      `<button class="btn primary" data-act="bclose" ${ui.draft.length >= 3 ? '' : 'disabled'}>Chiudi</button>`+
+  const sec = isSec(w), lbl = h && !h.poly ? 'Anello' : 'Contorno';
+  if(sec && ui.bdraw){
+    el.innerHTML = `<p class="hint">${h ? 'Ridisegna il contorno' : 'Disegna il contorno della presa'}: tocca i punti tutto intorno (puoi ingrandire), poi Chiudi o tocca di nuovo il primo punto.</p>`+
+      (h ? '' : `<div class="trow"><div class="seg">${rb('start','Partenza')}${rb('hold','Presa')}${rb('top','Arrivo')}</div></div>`)+
+      `<div class="trow"><button class="btn primary" data-act="bclose" ${ui.draft.length >= 3 ? '' : 'disabled'}>Chiudi</button>`+
       `<button class="btn" data-act="bundo" ${ui.draft.length ? '' : 'disabled'}>Annulla punto</button>`+
-      `<button class="btn" data-act="bcancel">Annulla disegno</button>`;
+      `<button class="btn" data-act="bcancel">Esci</button></div>`;
     return;
   }
-  el.innerHTML =
-    `<p class="hint">${hint}</p>`+
-    `<div class="seg">${rb('start','Partenza')}${rb('hold','Presa')}${rb('top','Arrivo')}</div>`+
-    (isSec(w) ? '' : `<div class="seg" role="group" aria-label="Mano">${hb('L',dot(S.prefs.handL)+'Sinistra')}${hb('R',dot(S.prefs.handR)+'Destra')}</div>`)+
-    `<div class="seg"><button data-act="size" data-d="-1" aria-label="${lbl} più piccolo" ${h ? '' : 'disabled'}>${lbl} &minus;</button>`+
-    `<button data-act="size" data-d="1" aria-label="${lbl} più grande" ${h ? '' : 'disabled'}>${lbl} +</button></div>`+
-    `<button class="btn ${ui.move ? 'on' : ''}" data-act="move" ${h ? '' : 'disabled'}>Sposta</button>`+
-    (isSec(w) ? `<button class="btn" data-act="bdraw" ${c ? '' : 'disabled'}>${h ? 'Ridisegna' : 'Disegna'}</button>` : '')+
-    (isSec(w) ? '' : `<button class="btn" data-act="dup" ${h ? '' : 'disabled'}>Ripeti qui (2ª mano)</button>`)+
-    `<button class="btn" data-act="del" ${h ? '' : 'disabled'}>Elimina</button>`+
-    `<button class="btn" data-act="undo" ${c && c.holds.length ? '' : 'disabled'}>Annulla</button>`+
-    `<button class="btn ${ui.editDim ? 'on' : ''}" data-act="editdim" aria-pressed="${!!ui.editDim}">Oscura il resto</button>`;
+  const roles = `<div class="seg" role="group" aria-label="Tipo di presa">${rb('start','Partenza')}${rb('hold','Presa')}${rb('top','Arrivo')}</div>`;
+  const hands = sec ? '' : `<div class="seg" role="group" aria-label="Mano">${hb('L',dot(S.prefs.handL)+'Sinistra')}${hb('R',dot(S.prefs.handR)+'Destra')}</div>`;
+  const dimBtn = `<button class="btn ${ui.editDim ? 'on' : ''}" data-act="editdim" aria-pressed="${!!ui.editDim}">Oscura</button>`;
+  if(h){
+    /* presa selezionata: tutto ciò che la riguarda, e "Fatto" per tornare a segnare */
+    el.innerHTML = `<p class="hint">${ui.move ? 'Tocca il punto dove spostarla.' : 'Presa selezionata: cambia tipo' + (sec ? '' : ' o mano') + ', contorno o posizione.'}</p>`+
+      `<div class="trow">${roles}${hands}</div>`+
+      `<div class="trow"><div class="seg"><button data-act="size" data-d="-1" aria-label="${lbl} più piccolo">${lbl} &minus;</button><button data-act="size" data-d="1" aria-label="${lbl} più grande">${lbl} +</button></div>`+
+      `<button class="btn ${ui.move ? 'on' : ''}" data-act="move">Sposta</button>`+
+      (sec ? `<button class="btn" data-act="bdraw">Ridisegna</button>` : `<button class="btn" data-act="dup" title="Aggiunge un passaggio sulla stessa presa con l'altra mano">Accoppia</button>`)+
+      `<button class="btn danger" data-act="del">Elimina</button>`+
+      `<button class="btn primary" data-act="desel">Fatto</button></div>`;
+    return;
+  }
+  /* nessuna selezione: si scelgono tipo (e mano) della prossima presa e si tocca la foto */
+  const first = !c || !c.holds.length;
+  let hint = first ? 'Tocca la presa di partenza' : 'Tocca la prossima presa';
+  hint += sec ? ': ne rilevo il contorno.' : '.';
+  if(!first) hint += ' Tocca una presa già segnata per modificarla.';
+  if(sec) hint += ` <span style="opacity:.75">${samStatus(w)}</span>`;
+  el.innerHTML = `<p class="hint">${hint}</p>`+
+    `<div class="trow">${roles}${hands}</div>`+
+    `<div class="trow">`+
+    (sec ? `<button class="btn" data-act="bdraw" ${c ? '' : 'disabled'}>Disegna a mano</button>` : '')+
+    (first ? '' : `<button class="btn" data-act="undo">Annulla ultima</button>`)+
+    dimBtn+`</div>`;
 }
 /* regole delle modalità (Muro = preparazione delle prese, Traccia, Guarda):
    - i settori boulder non hanno la fase Muro;
@@ -2233,6 +2242,7 @@ document.addEventListener('click', e => {
       touch(); renderChips(); break;
     }
     case 'editdim': ui.editDim = !ui.editDim; render(); break;
+    case 'desel': ui.sel = null; ui.move = false; render(); break;
     case 'cfeet': if(c){ if(b.dataset.v) c.feet = b.dataset.v; else delete c.feet; touch(); renderChips(); renderSheet(); } break;
     case 'bdraw': if(c){ ui.bdraw = true; ui.draft = []; ui.move = false; render(); } break;
     case 'bclose': if(w && c) finishBDraw(w, c); break;
