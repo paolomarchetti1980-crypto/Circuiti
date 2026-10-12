@@ -1437,7 +1437,7 @@ function circuitSVG(c, W, alpha, o){
       const bb = holdBox(h, W), mx = (bb.x0 + bb.x1)/2, id = 'sp' + String(c.id).replace(/[^\w-]/g, '') + '_' + i;
       const shape = (cl) => { const hh = haloOf(cl);
         if(h.poly){ const d = polyPath(sc(h.poly));
-          return `<path d="${d}" fill="${cl}" fill-opacity=".26" stroke="${hh}" stroke-opacity=".55" stroke-width="${sw+hw*2}" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="${cl}" stroke-width="${sw*1.15}" stroke-linejoin="round"/>`; }
+          return `<path d="${d}" fill="none" stroke="${hh}" stroke-opacity=".55" stroke-width="${sw+hw*2}" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="${cl}" stroke-width="${sw*1.15}" stroke-linejoin="round"/>`; }
         const rr = h.r*W*scale, rsw = Math.max(2, rr*0.10), rhw = rsw*0.55;
         return `<circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${hh}" stroke-opacity=".55" stroke-width="${rsw+rhw*2}"/><circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${cl}" stroke-width="${rsw}"/>`; };
       s += `<defs><clipPath id="${id}L" clipPathUnits="userSpaceOnUse"><rect x="${mx - 1e5}" y="-100000" width="100000" height="200000"/></clipPath>`+
@@ -1447,7 +1447,7 @@ function circuitSVG(c, W, alpha, o){
     else if(h.poly){
       const poly = scale < 1 ? h.poly.map((v,k) => k % 2 === 0 ? h.x + (v-h.x)*scale : h.y + (v-h.y)*scale) : h.poly;
       const d = polyPath(poly);
-      s += `<path d="${d}" fill="${col}" fill-opacity="${o.boulder ? 0 : .26}" stroke="${ha}" stroke-opacity=".55" stroke-width="${sw+hw*2}" stroke-linejoin="round"/>`+
+      s += `<path d="${d}" fill="${col}" fill-opacity="0" stroke="${ha}" stroke-opacity=".55" stroke-width="${sw+hw*2}" stroke-linejoin="round"/>`+
            `<path d="${d}" fill="none" stroke="${col}" stroke-width="${sw}" stroke-linejoin="round"/>`;
     } else {
       const rr = h.r*W*scale, rsw = Math.max(2, rr*0.10), rhw = rsw*0.55;
