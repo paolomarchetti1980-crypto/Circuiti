@@ -1257,7 +1257,57 @@ function polyPath(p){
 }
 
 /* ---------- disegno ---------- */
+/* ---- etichette: tonde, tangenti al contorno della presa, nel punto che copre meno linee e prese ---- */
+function holdPts(h, W, scale){
+  if(h.poly) return h.poly;
+  const r = h.r*W*(scale || 1), p = [];
+  for(let k=0;k<20;k++){ const a = k/20*Math.PI*2; p.push(h.x + Math.cos(a)*r, h.y + Math.sin(a)*r); }
+  return p;
+}
+function segDist(px, py, x1, y1, x2, y2){
+  const dx = x2-x1, dy = y2-y1, L = dx*dx + dy*dy;
+  let t = L ? ((px-x1)*dx + (py-y1)*dy)/L : 0; t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - x1 - t*dx, py - y1 - t*dy);
+}
+function polyDist(px, py, p){
+  if(inPoly(p, px, py)) return 0;
+  let m = 1e9;
+  for(let i=0, j=p.length-2; i<p.length; j=i, i+=2){ const d = segDist(px, py, p[j], p[j+1], p[i], p[i+1]); if(d < m) m = d; }
+  return m;
+}
+function rayExit(p, cx, cy, dx, dy){
+  let best = 0;
+  for(let i=0, j=p.length-2; i<p.length; j=i, i+=2){
+    const x1 = p[j], y1 = p[j+1], ex = p[i]-x1, ey = p[i+1]-y1, den = dx*ey - dy*ex;
+    if(Math.abs(den) < 1e-9) continue;
+    const t = ((x1-cx)*ey - (y1-cy)*ex)/den, u = ((x1-cx)*dy - (y1-cy)*dx)/den;
+    if(t > best && u >= 0 && u <= 1) best = t;
+  }
+  return best;
+}
+function placeBadge(h, W, br, gap, env){
+  const own = holdPts(h, W), bb = holdBox(h, W), cx = (bb.x0+bb.x1)/2, cy = (bb.y0+bb.y1)/2;
+  let best = null;
+  for(let k=0;k<24;k++){
+    const a = -Math.PI/4 + k/24*Math.PI*2, dx = Math.cos(a), dy = Math.sin(a);
+    let t = rayExit(own, cx, cy, dx, dy) + br + gap, x = cx + dx*t, y = cy + dy*t;
+    /* su prese concave il cerchio può toccare un altro lobo: lo si allontana finché è solo tangente */
+    for(let g=0; g<6 && polyDist(x, y, own) < br + gap*0.5; g++){ t += br*0.35; x = cx + dx*t; y = cy + dy*t; }
+    let cost = Math.min(k, 24-k)*0.02 + (t - br - gap - rayExit(own, cx, cy, dx, dy))/br*0.5;
+    if(x - br < 0 || y - br < 0 || x + br > env.W || y + br > env.H) cost += 6;
+    const lim = br + gap;
+    for(const q of env.shapes){
+      if(q.bb.x0 - lim > x || q.bb.x1 + lim < x || q.bb.y0 - lim > y || q.bb.y1 + lim < y) continue;
+      const d = polyDist(x, y, q.p); if(d < lim) cost += 3*(1 - d/lim) + (d === 0 ? 2 : 0);
+    }
+    for(const sg of env.segs){ const d = segDist(x, y, sg[0], sg[1], sg[2], sg[3]); if(d < lim) cost += 2.5*(1 - d/lim); }
+    for(const b of env.badges){ const d = Math.hypot(x - b[0], y - b[1]); if(d < br*2.2) cost += 5*(1 - d/(br*2.2)); }
+    if(!best || cost < best.cost) best = { x, y, cost };
+  }
+  return best;
+}
 function circuitSVG(c, W, alpha, o){
+  const segs = [], labels = [];
   const sw = Math.max(2, W*0.0028), hw = sw*0.5;
   const col = colOf(c), ha = haloOf(col);
   let s = `<g opacity="${alpha}">`;
@@ -1272,6 +1322,7 @@ function circuitSVG(c, W, alpha, o){
       st.forEach(h => paths.push([[h.x, h.y], J]));
       paths.push([J].concat(rest.map(h => [h.x, h.y])));
     } else paths.push(c.holds.map(h => [h.x, h.y]));
+    paths.forEach(pl => { for(let k=1;k<pl.length;k++) segs.push([pl[k-1][0], pl[k-1][1], pl[k][0], pl[k][1]]); });
     const d = paths.map(pl => 'M' + pl.map(P).join('L')).join('');
     s += `<path d="${d}" fill="none" stroke="${ha}" stroke-opacity=".5" stroke-width="${lw*2.6}" stroke-linecap="round" stroke-linejoin="round"/>`;
     s += `<path d="${d}" fill="none" stroke="${col}" stroke-width="${lw}" stroke-dasharray="${lw*3} ${lw*2.2}" stroke-linecap="round" stroke-linejoin="round"/>`;
@@ -1288,6 +1339,7 @@ function circuitSVG(c, W, alpha, o){
   });
   const starts = []; c.holds.forEach((h,i) => { if(h.role === 'start') starts.push(i); });
   if(starts.length > 1 && !o.boulder && !(o.lines && c.holds.some(h => h.role !== 'start'))){
+ for(let k=1;k<starts.length;k++){ const a = c.holds[starts[k-1]], b = c.holds[starts[k]]; segs.push([a.x, a.y, b.x, b.y]); }
     const p = starts.map(i => c.holds[i].x.toFixed(1)+','+c.holds[i].y.toFixed(1)).join(' ');
     const lw = Math.max(3, W*0.0032);
     s += `<polyline points="${p}" fill="none" stroke="${ha}" stroke-opacity=".6" stroke-width="${lw*2.2}" stroke-linecap="round"/>`+
@@ -1342,11 +1394,25 @@ function circuitSVG(c, W, alpha, o){
     }
     if(label){
       if(lv && lv.lastSplit){ col = base; ha = haloOf(base); }
-      const bb = holdBox(h, W), br = Math.max(W*0.018, 12), bx = bb.x1, by = bb.y0;
-      s += `<circle cx="${bx}" cy="${by}" r="${br}" fill="${col}" stroke="${ha}" stroke-opacity=".7" stroke-width="${br*0.22}"/>`+
-           `<text x="${bx}" y="${by}" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed, Arial, sans-serif" font-weight="700" font-size="${br*(label.length>1?0.8:1.25)}" fill="${inkOn(col)}">${label}</text>`;
+      labels.push({ h: lv ? c.holds[g[0]] : h, label, col, ha });
     }
   });
+  if(labels.length){
+    const br = Math.max(W*0.018, 12), gap = Math.max(1.5, br*0.12);
+    const shapes = [];
+    const seen = new Set();
+    c.holds.forEach(h => { const k = h.cid != null ? 'c'+h.cid : h.x+'_'+h.y; if(seen.has(k)) return; seen.add(k); const p = holdPts(h, W); shapes.push({ p, bb: holdBox(h, W), cid: h.cid, h }); });
+    (o.obst || []).forEach(q => { if(q.poly && !c.holds.some(h => h.cid === q.id)) shapes.push({ p: q.poly, bb: holdBox(q, W) }); });
+    const env = { W, H: o.H || 1e9, segs, badges: [], shapes: [] };
+    labels.forEach(L => {
+      env.shapes = shapes.filter(q => q.h !== L.h && !(q.cid != null && q.cid === L.h.cid));
+      const pos = placeBadge(L.h, W, br, gap, env);
+      env.badges.push([pos.x, pos.y]);
+      const bx = pos.x.toFixed(1), by = pos.y.toFixed(1);
+      s += `<circle cx="${bx}" cy="${by}" r="${br}" fill="${L.col}" stroke="${L.ha}" stroke-opacity=".7" stroke-width="${br*0.22}"/>`+
+           `<text x="${bx}" y="${by}" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed, Arial, sans-serif" font-weight="700" font-size="${br*(L.label.length>1?(L.label.length>3?0.62:0.8):1.25)}" fill="${inkOn(L.col)}">${L.label}</text>`;
+    });
+  }
   return s + '</g>';
 }
 function draftSVG(w){
@@ -1385,7 +1451,7 @@ function overlay(w, o){
   const bo = isSec(w);
   if(bo) o = Object.assign({}, o, { numbers: false, lines: false, boulder: true });
   let s = '';
-  if(o.others) visibleCircuits(w).forEach(c => { if(c !== act) s += circuitSVG(c, w.w, 0.28, {numbers:false, lines:false, boulder:bo}); });
+  if(o.others) visibleCircuits(w).forEach(c => { if(c !== act) s += circuitSVG(c, w.w, 0.28, {numbers:false, lines:false, boulder:bo, H: w.h}); });
   if(o.dim && act && act.holds.length){
     let d = `M0,0H${w.w}V${w.h}H0Z`;
     act.holds.forEach(h => {
@@ -1394,7 +1460,7 @@ function overlay(w, o){
     });
     s += `<path d="${d}" fill="#000" fill-opacity="${o.edit ? .5 : .62}" fill-rule="evenodd"/>`;
   }
-  if(act) s += circuitSVG(act, w.w, 1, o);
+  if(act) s += circuitSVG(act, w.w, 1, Object.assign({}, o, { H: w.h, obst: w.holds || [] }));
   if(o.edit) s += draftSVG(w);
   if(o.edit && act && ui.sel != null && act.holds[ui.sel]){
     const bb = holdBox(act.holds[ui.sel], w.w), pad = w.w*0.012, t = Math.max(2, w.w*0.003);
