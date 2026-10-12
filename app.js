@@ -1314,24 +1314,30 @@ function busyAt(m, x, y, r){
   }
   return n ? t/n : 0;
 }
-function placeBadge(h, W, br, gap, env){
+/* etichetta = "capsula" orizzontale: segmento centrale lungo 2e con raggio br (e = 0 per l'etichetta tonda).
+   Per ogni direzione la si avvicina alla presa finché la tocca appena, poi si sceglie la direzione che copre meno. */
+function placeBadge(h, W, br, gap, env, e){
+  e = e || 0;
   const own = holdPts(h, W), bb = holdBox(h, W), cx = (bb.x0+bb.x1)/2, cy = (bb.y0+bb.y1)/2;
+  const core = (x, y) => e ? [[x - e, y], [x - e/2, y], [x, y], [x + e/2, y], [x + e, y]] : [[x, y]];
+  const distTo = (x, y, fn) => { let m = 1e9; for(const q of core(x, y)){ const d = fn(q[0], q[1]); if(d < m) m = d; } return m; };
   let best = null;
   for(let k=0;k<24;k++){
     const a = -Math.PI/4 + k/24*Math.PI*2, dx = Math.cos(a), dy = Math.sin(a);
-    let t = rayExit(own, cx, cy, dx, dy) + br + gap, x = cx + dx*t, y = cy + dy*t;
-    /* su prese concave il cerchio può toccare un altro lobo: lo si allontana finché è solo tangente */
-    for(let g=0; g<6 && polyDist(x, y, own) < br + gap*0.5; g++){ t += br*0.35; x = cx + dx*t; y = cy + dy*t; }
-    let cost = Math.min(k, 24-k)*0.02 + (t - br - gap - rayExit(own, cx, cy, dx, dy))/br*0.5;
-    if(x - br < 0 || y - br < 0 || x + br > env.W || y + br > env.H) cost += 6;
+    const t0 = rayExit(own, cx, cy, dx, dy);
+    /* si parte appoggiati al bordo e ci si allontana a piccoli passi finché la capsula è fuori dalla presa: così resta tangente */
+    let t = t0 + gap, x = cx + dx*t, y = cy + dy*t;
+    for(let g=0; g<80 && distTo(x, y, (px, py) => polyDist(px, py, own)) < br + gap; g++){ t += br*0.12; x = cx + dx*t; y = cy + dy*t; }
+    let cost = Math.min(k, 24-k)*0.02 + (t - t0)/br*0.15;
+    if(x - e - br < 0 || y - br < 0 || x + e + br > env.W || y + br > env.H) cost += 6;
     const lim = br + gap;
     for(const q of env.shapes){
-      if(q.bb.x0 - lim > x || q.bb.x1 + lim < x || q.bb.y0 - lim > y || q.bb.y1 + lim < y) continue;
-      const d = polyDist(x, y, q.p); if(d < lim) cost += 3*(1 - d/lim) + (d === 0 ? 2 : 0);
+      if(q.bb.x0 - lim - e > x || q.bb.x1 + lim + e < x || q.bb.y0 - lim > y || q.bb.y1 + lim < y) continue;
+      const d = distTo(x, y, (px, py) => polyDist(px, py, q.p)); if(d < lim) cost += 3*(1 - d/lim) + (d === 0 ? 2 : 0);
     }
-    for(const sg of env.segs){ const d = segDist(x, y, sg[0], sg[1], sg[2], sg[3]); if(d < lim) cost += 2.5*(1 - d/lim); }
-    for(const b of env.badges){ const d = Math.hypot(x - b[0], y - b[1]); if(d < br*2.2) cost += 5*(1 - d/(br*2.2)); }
-    cost += 3*busyAt(env.busy, x, y, br);
+    for(const sg of env.segs){ const d = distTo(x, y, (px, py) => segDist(px, py, sg[0], sg[1], sg[2], sg[3])); if(d < lim) cost += 2.5*(1 - d/lim); }
+    for(const b of env.badges){ const d = Math.max(0, Math.abs(x - b[0]) - e - (b[2] || 0)); const dd = Math.hypot(d, y - b[1]); if(dd < br*2.2) cost += 5*(1 - dd/(br*2.2)); }
+    let bz = 0; for(const q of core(x, y)) bz += busyAt(env.busy, q[0], q[1], br); cost += 3*bz/core(x, y).length;
     if(!best || cost < best.cost) best = { x, y, cost };
   }
   return best;
@@ -1440,8 +1446,9 @@ function circuitSVG(c, W, alpha, o){
     labels.forEach((L, li) => {
       env.shapes = shapes.filter(q => q.h !== L.h && !(q.cid != null && q.cid === L.h.cid));
       const segW = br*1.6, wd = L.segs ? L.segs.length*segW : 0;
-      const pos = placeBadge(L.h, W, L.segs ? Math.max(br, wd*0.5) : br, gap, env);
-      env.badges.push([pos.x, pos.y]);
+      const ext = L.segs ? Math.max(0, wd/2 - br) : 0;
+      const pos = placeBadge(L.h, W, br, gap, env, ext);
+      env.badges.push([pos.x, pos.y, ext]);
       if(L.segs){
         const x0 = pos.x - wd/2, y0 = pos.y - br, id = 'bc' + String(c.id).replace(/[^\w-]/g, '') + '_' + li;
         s += `<defs><clipPath id="${id}"><rect x="${x0}" y="${y0}" width="${wd}" height="${br*2}" rx="${br}"/></clipPath></defs><g clip-path="url(#${id})">`+
