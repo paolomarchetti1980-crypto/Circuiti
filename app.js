@@ -1375,6 +1375,7 @@ function circuitSVG(c, W, alpha, o){
     s += `<polyline points="${p}" fill="none" stroke="${ha}" stroke-opacity=".6" stroke-width="${lw*2.2}" stroke-linecap="round"/>`+
          `<polyline points="${p}" fill="none" stroke="${base}" stroke-width="${lw*0.85}" stroke-dasharray="${lw*1.4} ${lw*1.4}" stroke-linecap="round"/>`;
   }
+ const handCol = h => !o.boulder && h.hand === 'L' ? S.prefs.handL : !o.boulder && h.hand === 'R' ? S.prefs.handR : base;
   c.holds.forEach((h,i) => {
     let col = !o.boulder && h.hand === 'L' ? S.prefs.handL : !o.boulder && h.hand === 'R' ? S.prefs.handR : base, ha = haloOf(col);
     const key = h.cid != null ? ('c'+h.cid) : ('p'+Math.round(h.x)+'_'+Math.round(h.y));
@@ -1386,7 +1387,7 @@ function circuitSVG(c, W, alpha, o){
       const levels = [];
       for(let k = 0; k < g.length;){
         const a1 = c.holds[g[k]], a2 = k + 1 < g.length ? c.holds[g[k+1]] : null;
-        if(a2 && ((a1.hand === 'L' && a2.hand === 'R') || (a1.hand === 'R' && a2.hand === 'L'))){ levels.push({ split: true, idx: [g[k], g[k+1]] }); k += 2; }
+        if(a2 && g[k+1] === g[k] + 1 && ((a1.hand === 'L' && a2.hand === 'R') || (a1.hand === 'R' && a2.hand === 'L'))){ levels.push({ split: true, idx: [g[k], g[k+1]] }); k += 2; }
         else { levels.push({ split: false, idx: [g[k]] }); k += 1; }
       }
       const li = levels.findIndex(L => L.idx.includes(i));
@@ -1424,7 +1425,9 @@ function circuitSVG(c, W, alpha, o){
     }
     if(label){
       if(lv && lv.lastSplit){ col = base; ha = haloOf(base); }
-      labels.push({ h: lv ? c.holds[g[0]] : h, label, col, ha });
+      /* presa con più passaggi: etichetta a capsula, un numero per passaggio nel colore della sua mano */
+      const segs = g && g.length > 1 && o.numbers && h.role === 'hold' ? g.map(j => ({ n: seqOf[j], col: handCol(c.holds[j]) })) : null;
+      labels.push({ h: lv ? c.holds[g[0]] : h, label, col, ha, segs });
     }
   });
   if(labels.length){
@@ -1434,10 +1437,19 @@ function circuitSVG(c, W, alpha, o){
     c.holds.forEach(h => { const k = h.cid != null ? 'c'+h.cid : h.x+'_'+h.y; if(seen.has(k)) return; seen.add(k); const p = holdPts(h, W); shapes.push({ p, bb: holdBox(h, W), cid: h.cid, h }); });
     (o.obst || []).forEach(q => { if(q.poly && !c.holds.some(h => h.cid === q.id)) shapes.push({ p: q.poly, bb: holdBox(q, W) }); });
     const env = { W, H: o.H || 1e9, segs, badges: [], shapes: [], busy: o.busy || null };
-    labels.forEach(L => {
+    labels.forEach((L, li) => {
       env.shapes = shapes.filter(q => q.h !== L.h && !(q.cid != null && q.cid === L.h.cid));
-      const pos = placeBadge(L.h, W, br, gap, env);
+      const segW = br*1.6, wd = L.segs ? L.segs.length*segW : 0;
+      const pos = placeBadge(L.h, W, L.segs ? Math.max(br, wd*0.5) : br, gap, env);
       env.badges.push([pos.x, pos.y]);
+      if(L.segs){
+        const x0 = pos.x - wd/2, y0 = pos.y - br, id = 'bc' + String(c.id).replace(/[^\w-]/g, '') + '_' + li;
+        s += `<defs><clipPath id="${id}"><rect x="${x0}" y="${y0}" width="${wd}" height="${br*2}" rx="${br}"/></clipPath></defs><g clip-path="url(#${id})">`+
+             L.segs.map((g2, k) => `<rect x="${x0 + k*segW}" y="${y0}" width="${segW + 0.5}" height="${br*2}" fill="${g2.col}"/>`).join('')+`</g>`+
+             `<rect x="${x0}" y="${y0}" width="${wd}" height="${br*2}" rx="${br}" fill="none" stroke="${L.ha}" stroke-opacity=".7" stroke-width="${br*0.22}"/>`+
+             L.segs.map((g2, k) => `<text x="${x0 + (k + 0.5)*segW}" y="${pos.y}" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed, Arial, sans-serif" font-weight="700" font-size="${br*(String(g2.n).length > 1 ? 0.95 : 1.15)}" fill="${inkOn(g2.col)}">${g2.n}</text>`).join('');
+        return;
+      }
       const bx = pos.x.toFixed(1), by = pos.y.toFixed(1);
       s += `<circle cx="${bx}" cy="${by}" r="${br}" fill="${L.col}" stroke="${L.ha}" stroke-opacity=".7" stroke-width="${br*0.22}"/>`+
            `<text x="${bx}" y="${by}" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed, Arial, sans-serif" font-weight="700" font-size="${br*(L.label.length>1?(L.label.length>3?0.62:0.8):1.25)}" fill="${inkOn(L.col)}">${L.label}</text>`;
