@@ -95,7 +95,16 @@ const S = {
   prefs: Object.assign({ numbers:false, lines:false, others:true, dim:true, handL:'#e5312b', handR:'#111111', r:0.03 })
 };
 let PUBREV = S.rev;
-let PUBWALLS = [];   /* muri come sono pubblicati adesso */
+let PUBWALLS = [];
+/* preferenze di visualizzazione (numeri, linee, altri blocchi, oscura): sono di chi guarda, restano sul suo telefono
+   e non vengono pubblicate. I numeri partono accesi. */
+const VIEW_KEYS = ['numbers', 'lines', 'others', 'dim'];
+function applyViewPrefs(){
+  let v = {};
+  try{ v = JSON.parse(localStorage.getItem('view-prefs') || '{}') || {}; }catch(e){}
+  Object.assign(S.prefs, { numbers: true, lines: false, others: true, dim: true }, v);
+}
+function saveViewPrefs(){ const v = {}; VIEW_KEYS.forEach(k => v[k] = !!S.prefs[k]); try{ localStorage.setItem('view-prefs', JSON.stringify(v)); }catch(e){} }   /* muri come sono pubblicati adesso */
 let EDIT = false, SB = null, BASE = null, ME = null;
 /* REAL_EDIT: l'account è dello staff. EDIT: in questo momento si modifica (falso se il gestore guarda "come cliente").
    ui.viewAs permette allo staff di vedere l'app come la vede un ruolo con meno permessi. */
@@ -164,7 +173,7 @@ async function loadDraft(){
     });
     if(d && Array.isArray(d.walls) && (d.rev || 0) > S.rev){
       S.walls = d.walls; S.active = d.active; S.rev = d.rev;
-      S.prefs = Object.assign(S.prefs, d.prefs || {});
+      S.prefs = Object.assign(S.prefs, d.prefs || {}); applyViewPrefs();
       if(Array.isArray(d.base)) BASE = d.base;
     }
   }catch(e){}
@@ -2394,7 +2403,7 @@ document.addEventListener('click', e => {
     case 'printone': printBlocks(false); break;
     case 'printall': printBlocks(true); break;
     case 'publish': publish(); break;
-    case 'pref': S.prefs[b.dataset.k] = !S.prefs[b.dataset.k]; save(); render(); break;
+    case 'pref': S.prefs[b.dataset.k] = !S.prefs[b.dataset.k]; saveViewPrefs(); render(); break;
     case 'zoom': { const bx = $('#box').getBoundingClientRect(); applyZoom(ui.zoom * Math.pow(1.4, +b.dataset.d), bx.left + bx.width/2, bx.top + bx.height/2); break; }
     case 'clist': ui.confirm = null; openSheet('clist'); break;
     case 'fang': ui.fAngle = b.dataset.v; saveCF(); afterFilter(); break;
@@ -2612,6 +2621,7 @@ $('#box').addEventListener('scroll', () => {
 if(window.ResizeObserver) new ResizeObserver(fit).observe($('#box')); else window.addEventListener('resize', fit);
 
 /* ---------- avvio: prima si mostra la versione pubblicata, poi si abilita la modifica a chi può ---------- */
+applyViewPrefs();
 if(!curWall() && S.walls.length) S.active = S.walls[0].id;
 render();
 (async function initCaps(){
@@ -2625,7 +2635,7 @@ render();
         const { data: row } = await SB.from('app_state').select('data,rev').eq('id', 1).maybeSingle();
         if(row && row.data && Array.isArray(row.data.walls) && (row.rev || 0) >= S.rev){
           S.walls = row.data.walls; S.active = row.data.active || S.active; S.rev = row.rev;
-          S.prefs = Object.assign(S.prefs, row.data.prefs || {});
+          S.prefs = Object.assign(S.prefs, row.data.prefs || {}); applyViewPrefs();
           PUBREV = S.rev; PUBWALLS = S.walls;
           if(!curWall() && S.walls.length) S.active = S.walls[0].id;
           render();
