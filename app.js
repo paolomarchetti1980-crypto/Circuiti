@@ -1314,33 +1314,48 @@ function busyAt(m, x, y, r){
   }
   return n ? t/n : 0;
 }
-/* etichetta = "capsula" orizzontale: segmento centrale lungo 2e con raggio br (e = 0 per l'etichetta tonda).
-   Per ogni direzione la si avvicina alla presa finché la tocca appena, poi si sceglie la direzione che copre meno. */
-function placeBadge(h, W, br, gap, env, e){
-  e = e || 0;
-  const own = holdPts(h, W), bb = holdBox(h, W), cx = (bb.x0+bb.x1)/2, cy = (bb.y0+bb.y1)/2;
-  const core = (x, y) => e ? [[x - e, y], [x - e/2, y], [x, y], [x + e/2, y], [x + e, y]] : [[x, y]];
-  const distTo = (x, y, fn) => { let m = 1e9; for(const q of core(x, y)){ const d = fn(q[0], q[1]); if(d < m) m = d; } return m; };
-  let best = null;
-  for(let k=0;k<24;k++){
-    const a = -Math.PI/4 + k/24*Math.PI*2, dx = Math.cos(a), dy = Math.sin(a);
-    const t0 = rayExit(own, cx, cy, dx, dy);
-    /* si parte appoggiati al bordo e ci si allontana a piccoli passi finché la capsula è fuori dalla presa: così resta tangente */
-    let t = t0 + gap, x = cx + dx*t, y = cy + dy*t;
-    for(let g=0; g<80 && distTo(x, y, (px, py) => polyDist(px, py, own)) < br + gap; g++){ t += br*0.12; x = cx + dx*t; y = cy + dy*t; }
-    let cost = Math.min(k, 24-k)*0.02 + (t - t0)/br*0.15;
-    if(x - e - br < 0 || y - br < 0 || x + e + br > env.W || y + br > env.H) cost += 6;
-    const lim = br + gap;
-    for(const q of env.shapes){
-      if(q.bb.x0 - lim - e > x || q.bb.x1 + lim + e < x || q.bb.y0 - lim > y || q.bb.y1 + lim < y) continue;
-      const d = distTo(x, y, (px, py) => polyDist(px, py, q.p)); if(d < lim) cost += 3*(1 - d/lim) + (d === 0 ? 2 : 0);
-    }
-    for(const sg of env.segs){ const d = distTo(x, y, (px, py) => segDist(px, py, sg[0], sg[1], sg[2], sg[3])); if(d < lim) cost += 2.5*(1 - d/lim); }
-    for(const b of env.badges){ const d = Math.max(0, Math.abs(x - b[0]) - e - (b[2] || 0)); const dd = Math.hypot(d, y - b[1]); if(dd < br*2.2) cost += 5*(1 - dd/(br*2.2)); }
-    let bz = 0; for(const q of core(x, y)) bz += busyAt(env.busy, q[0], q[1], br); cost += 3*bz/core(x, y).length;
-    if(!best || cost < best.cost) best = { x, y, cost };
+/* etichette: una o più bolle, ognuna tangente al contorno della presa.
+   Si calcola per 72 direzioni il punto in cui una bolla tocca appena la presa; le bolle di una presa con più passaggi
+   si mettono in fila lungo il contorno (fuse tra loro), scegliendo partenza e verso che coprono meno linee, prese ed etichette. */
+function bubbleCost(x, y, br, gap, env){
+  let cost = 0;
+  if(x - br < 0 || y - br < 0 || x + br > env.W || y + br > env.H) cost += 6;
+  const lim = br + gap;
+  for(const q of env.shapes){
+    if(q.bb.x0 - lim > x || q.bb.x1 + lim < x || q.bb.y0 - lim > y || q.bb.y1 + lim < y) continue;
+    const d = polyDist(x, y, q.p); if(d < lim) cost += 3*(1 - d/lim) + (d === 0 ? 2 : 0);
   }
-  return best;
+  for(const sg of env.segs){ const d = segDist(x, y, sg[0], sg[1], sg[2], sg[3]); if(d < lim) cost += 2.5*(1 - d/lim); }
+  for(const b of env.badges){ const d = Math.hypot(x - b[0], y - b[1]); if(d < br*2.2) cost += 5*(1 - d/(br*2.2)); }
+  return cost + 3*busyAt(env.busy, x, y, br);
+}
+function placeBubbles(h, W, br, gap, env, n){
+  const own = holdPts(h, W), bb = holdBox(h, W), cx = (bb.x0+bb.x1)/2, cy = (bb.y0+bb.y1)/2, N = 72;
+  const T = [];
+  for(let k=0;k<N;k++){
+    const a = -Math.PI/4 + k/N*Math.PI*2, dx = Math.cos(a), dy = Math.sin(a);
+    const t0 = rayExit(own, cx, cy, dx, dy);
+    let t = t0 + gap, x = cx + dx*t, y = cy + dy*t;
+    /* si parte appoggiati al bordo e ci si allontana a piccoli passi finché la bolla è fuori: così resta tangente */
+    for(let g=0; g<80 && polyDist(x, y, own) < br + gap; g++){ t += br*0.12; x = cx + dx*t; y = cy + dy*t; }
+    T.push({ x, y, k, c: bubbleCost(x, y, br, gap, env) + (t - t0)/br*0.15 + Math.min(k, N-k)*0.007 });
+  }
+  if(n <= 1){ let best = T[0]; for(const p of T) if(p.c < best.c) best = p; return [best]; }
+  const step = br*1.45;
+  let best = null;
+  for(let s0=0; s0<N; s0++) for(const dir of [1, -1]){
+    const chain = [T[s0]]; let idx = s0, ok = true;
+    for(let j=1;j<n && ok;j++){
+      const last = chain[chain.length-1]; let found = null;
+      for(let m=1;m<N/2;m++){ const p = T[((idx + dir*m) % N + N) % N]; if(Math.hypot(p.x - last.x, p.y - last.y) >= step*0.95){ found = p; idx = p.k; break; } }
+      if(!found) ok = false; else chain.push(found);
+    }
+    if(!ok) continue;
+    /* le bolle si accavallano tra loro: si conta il costo di ognuna, non le loro sovrapposizioni reciproche */
+    const cost = chain.reduce((t, p) => t + p.c, 0);
+    if(!best || cost < best.cost) best = { cost, chain };
+  }
+  return best ? best.chain : [T[0]];
 }
 function circuitSVG(c, W, alpha, o){
   const segs = [], labels = [];
@@ -1445,15 +1460,16 @@ function circuitSVG(c, W, alpha, o){
     const env = { W, H: o.H || 1e9, segs, badges: [], shapes: [], busy: o.busy || null };
     labels.forEach((L, li) => {
       env.shapes = shapes.filter(q => q.h !== L.h && !(q.cid != null && q.cid === L.h.cid));
-      /* più passaggi: bolle fuse, una per passaggio, ognuna nel colore della sua mano */
-      const step = br*1.45, ext = L.segs ? (L.segs.length - 1)*step/2 : 0;
-      const pos = placeBadge(L.h, W, br, gap, env, ext);
-      env.badges.push([pos.x, pos.y, ext]);
+      /* più passaggi: bolle fuse, una per passaggio, ognuna nel colore della sua mano e tangente alla presa */
+      const ps = placeBubbles(L.h, W, br, gap, env, L.segs ? L.segs.length : 1);
+      ps.forEach(p => env.badges.push([p.x, p.y]));
+      const pos = ps[0];
       if(L.segs){
-        const xs = L.segs.map((_, k) => pos.x - ext + k*step), hw = br*0.22;
-        s += xs.map(x => `<circle cx="${x}" cy="${pos.y}" r="${br + hw/2}" fill="#ffffff" fill-opacity=".8"/>`).join('')+
-             L.segs.map((g2, k) => `<circle cx="${xs[k]}" cy="${pos.y}" r="${br - hw/2}" fill="${g2.col}"/>`).join('')+
-             L.segs.map((g2, k) => `<text x="${xs[k] + (k === L.segs.length - 1 ? 0 : -br*0.12)}" y="${pos.y}" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed, Arial, sans-serif" font-weight="700" font-size="${br*(String(g2.n).length > 1 ? 0.95 : 1.15)}" fill="${inkOn(g2.col)}">${g2.n}</text>`).join('');
+        const hw = br*0.22;
+        s += ps.map(p => `<circle cx="${p.x}" cy="${p.y}" r="${br + hw/2}" fill="#ffffff" fill-opacity=".8"/>`).join('')+
+             L.segs.map((g2, k) => `<circle cx="${ps[k].x}" cy="${ps[k].y}" r="${br - hw/2}" fill="${g2.col}"/>`).join('')+
+             L.segs.map((g2, k) => { const nx = ps[k+1] ? ps[k].x - (ps[k+1].x - ps[k].x)*0.12 : ps[k].x, ny = ps[k+1] ? ps[k].y - (ps[k+1].y - ps[k].y)*0.12 : ps[k].y;
+               return `<text x="${nx}" y="${ny}" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed, Arial, sans-serif" font-weight="700" font-size="${br*(String(g2.n).length > 1 ? 0.95 : 1.15)}" fill="${inkOn(g2.col)}">${g2.n}</text>`; }).join('');
         return;
       }
       const bx = pos.x.toFixed(1), by = pos.y.toFixed(1);
