@@ -1460,7 +1460,7 @@ function circuitSVG(c, W, alpha, o){
       s += `<circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${ha}" stroke-opacity=".55" stroke-width="${rsw+rhw*2}"/>`+
            `<circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${col}" stroke-width="${rsw}"/>`;
     }
-    let label = h.role === 'start' ? (starts.length > 1 && !o.boulder ? 'S' + (starts.indexOf(i)+1) : 'S') : h.role === 'top' ? 'T' : '';
+    let label = h.role === 'start' ? (starts.length > 1 && !o.boulder ? 'S' + (starts.indexOf(i)+1) : 'S') : h.role === 'top' ? 'T' : h.role === 'foot' ? 'P' : '';
     if(!label && o.numbers && h.role === 'hold'){
       if(gi < g.length - 1) return; /* il numero si mette una sola volta, sull'ultimo passaggio del gruppo */
       label = g.map(j => seqOf[j]).join(',');
@@ -1522,48 +1522,115 @@ function finishBDraw(w, c){
   ui.draft = []; ui.bdraw = false; ui.sel = null; touch(); render();
 }
 /* boulder: linea indicativa disegnata a mano dal tracciatore (direzione generale, non le prese) */
-/* linea automatica: dal centro delle partenze al Top, piegando verso il punto medio delle prese in 3 fasce.
-   Non dipende dall'ordine in cui le prese sono state segnate. */
-function autoLine(c, W){
-  const H = c.holds; if(H.length < 2) return null;
+/* linea automatica. Parte dalla zona tra le prese di partenza e i piedi di partenza e arriva al Top;
+   la direzione la dà la posizione media delle prese in 3 fasce (non l'ordine in cui sono state segnate).
+   Poi il percorso si cerca su una griglia della foto che evita le prese: quelle segnate in tutti i boulder
+   del settore e quelle che si vedono nella foto (colore/contrasto). Infine si tira dritto dove si può. */
+const lineCache = {};
+function autoLine(c, w){
+  const H = c.holds, W = w.w; if(H.length < 2) return null;
   const avg = l => [l.reduce((t,h) => t + h.x, 0)/l.length, l.reduce((t,h) => t + h.y, 0)/l.length];
-  const st = H.filter(h => h.role === 'start'), tops = H.filter(h => h.role === 'top');
-  const S = avg(st.length ? st : [H[0]]);
+  const st = H.filter(h => h.role === 'start'), ft = H.filter(h => h.role === 'foot'), tops = H.filter(h => h.role === 'top');
+  const hs = st.length ? avg(st) : [H[0].x, H[0].y];
+  const S = ft.length ? [(hs[0] + avg(ft)[0])/2, (hs[1] + avg(ft)[1])/2] : hs;
   let T = tops.length ? avg(tops) : null;
   if(!T){ let far = H[0]; H.forEach(h => { if(Math.hypot(h.x-S[0], h.y-S[1]) > Math.hypot(far.x-S[0], far.y-S[1])) far = h; }); T = [far.x, far.y]; }
   const ax = T[0]-S[0], ay = T[1]-S[1], L2 = ax*ax + ay*ay; if(L2 < 1) return null;
   const mid = H.filter(h => h.role === 'hold'), K = 3, bins = Array.from({length:K}, () => []);
   mid.forEach(h => { const t = ((h.x-S[0])*ax + (h.y-S[1])*ay)/L2; if(t > 0.02 && t < 0.98) bins[Math.min(K-1, Math.floor(t*K))].push(h); });
-  const pts = [S]; bins.forEach(b => { if(b.length) pts.push(avg(b)); }); pts.push(T);
-  /* le estremità si fermano poco prima delle prese di partenza e di arrivo */
-  const cut = (a, b, d) => { const l = Math.hypot(b[0]-a[0], b[1]-a[1]) || 1, k = Math.min(0.45, d/l); return [a[0] + (b[0]-a[0])*k, a[1] + (b[1]-a[1])*k]; };
-  const gap = W*0.035;
-  pts[0] = cut(pts[0], pts[1], gap); pts[pts.length-1] = cut(pts[pts.length-1], pts[pts.length-2], gap);
-  return pts.flatMap(q => [Math.round(q[0]), Math.round(q[1])]);
+  const guide = [S]; bins.forEach(b => { if(b.length) guide.push(avg(b)); }); guide.push(T);
+  const bm = busyMap(w);
+  const key = JSON.stringify([guide.map(q => q.map(Math.round)), w.circuits.map(x => x.holds.length + ':' + (x.holds[0] ? Math.round(x.holds[0].x) : 0)), !!bm]);
+  const ce = lineCache[c.id]; if(ce && ce.key === key) return ce.pts;
+  let pts = routeLine(w, guide, bm);
+  if(!pts) pts = guide;
+  const out = pts.flatMap(q => [Math.round(q[0]), Math.round(q[1])]);
+  lineCache[c.id] = { key, pts: out };
+  return out;
 }
-/* linea spezzata con gli angoli smussati */
-function roundedPath(p, r){
-  let d = 'M' + p[0][0].toFixed(1) + ',' + p[0][1].toFixed(1);
-  for(let i=1;i<p.length-1;i++){
-    const a = p[i-1], b = p[i], c = p[i+1];
-    const l1 = Math.hypot(b[0]-a[0], b[1]-a[1]) || 1, l2 = Math.hypot(c[0]-b[0], c[1]-b[1]) || 1, rr = Math.min(r, l1/2, l2/2);
-    const p1 = [b[0] - (b[0]-a[0])/l1*rr, b[1] - (b[1]-a[1])/l1*rr], p2 = [b[0] + (c[0]-b[0])/l2*rr, b[1] + (c[1]-b[1])/l2*rr];
-    d += 'L' + p1[0].toFixed(1) + ',' + p1[1].toFixed(1) + 'Q' + b[0].toFixed(1) + ',' + b[1].toFixed(1) + ' ' + p2[0].toFixed(1) + ',' + p2[1].toFixed(1);
+function routeLine(w, guide, bm){
+  const W = w.w, Hh = w.h, s = bm ? bm.s : 140 / Math.max(W, Hh);
+  const gw = bm ? bm.bw : Math.max(8, Math.round(W*s)), gh = bm ? bm.bh : Math.max(8, Math.round(Hh*s)), N = gw*gh;
+  /* ostacoli: 0 parete libera … 1 presa */
+  const O0 = new Float32Array(N), B = new Float32Array(N);
+  if(bm) for(let i=0;i<N;i++) B[i] = bm.d[i];
+  w.circuits.forEach(x => { if(isOff(x)) return; x.holds.forEach(h => {
+    const p = h.poly ? h.poly : null, bb = holdBox(h, W);
+    const x0 = Math.max(0, Math.floor(bb.x0*s)), x1 = Math.min(gw-1, Math.ceil(bb.x1*s)), y0 = Math.max(0, Math.floor(bb.y0*s)), y1 = Math.min(gh-1, Math.ceil(bb.y1*s));
+    for(let yy=y0; yy<=y1; yy++) for(let xx=x0; xx<=x1; xx++){
+      const px = (xx+0.5)/s, py = (yy+0.5)/s;
+      if(p ? inPoly(p, px, py) : Math.hypot(px-h.x, py-h.y) <= h.r*W) O0[yy*gw+xx] = 1;
+    }
+  }); });
+  /* allargo di una cella: la linea ha uno spessore */
+  const O = new Float32Array(N);
+  for(let y=0;y<gh;y++) for(let x=0;x<gw;x++){
+    let m = 0;
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){ const xx = x+dx, yy = y+dy; if(xx>=0 && yy>=0 && xx<gw && yy<gh){ const v = O0[yy*gw+xx]*(dx||dy ? 0.85 : 1); if(v > m) m = v; } }
+    O[y*gw+x] = m;
   }
-  const z = p[p.length-1]; return d + 'L' + z[0].toFixed(1) + ',' + z[1].toFixed(1);
+  /* prese viste nella foto: si evitano, ma con meno forza di quelle segnate (sono tante e farebbero zig-zag) */
+  const Bs = new Float32Array(N);
+  for(let y=0;y<gh;y++) for(let x=0;x<gw;x++){ let m = 0; for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){ const xx = x+dx, yy = y+dy; if(xx>=0 && yy>=0 && xx<gw && yy<gh) m = Math.max(m, B[yy*gw+xx]*(dx||dy ? 0.7 : 1)); } Bs[y*gw+x] = m; }
+  /* distanza dalla linea guida, per non allontanarsi dalla zona del blocco */
+  const G = guide.map(q => [q[0]*s, q[1]*s]), span = Math.max(4, Math.hypot(G[G.length-1][0]-G[0][0], G[G.length-1][1]-G[0][1])*0.12);
+  const gd = (x, y) => { let d = 1e9; for(let k=0;k<G.length-1;k++) d = Math.min(d, segDist(x, y, G[k][0], G[k][1], G[k+1][0], G[k+1][1])); return d; };
+  const cost = new Float32Array(N); for(let y=0;y<gh;y++) for(let x=0;x<gw;x++){ const d = gd(x+0.5, y+0.5)/span; cost[y*gw+x] = 1 + 60*O[y*gw+x] + 4*Bs[y*gw+x]*Bs[y*gw+x] + 0.5*d*d; }
+  const cl = (v, m) => Math.max(0, Math.min(m-1, Math.round(v)));
+  /* partenza e arrivo: il punto di parete libera più vicino (non si parte né si arriva sopra una presa) */
+  /* si cerca solo dalla parte dell'altra estremità: la linea non deve girare attorno alle prese di partenza o al Top */
+  const freeNear = (x0, y0, toward, back) => { let best = null, bd = 1e9;
+    const L = Math.hypot(toward[0]-x0, toward[1]-y0) || 1, ux = (toward[0]-x0)/L, uy = (toward[1]-y0)/L;
+    for(let dy=-8; dy<=8; dy++) for(let dx=-8; dx<=8; dx++){ const x = x0+dx, y = y0+dy; if(x<0 || y<0 || x>=gw || y>=gh) continue;
+      if(dx*ux + dy*uy < -back) continue;
+      const i = y*gw+x; if(O[i] >= 0.3 || Bs[i] >= 0.5) continue;
+      const d = Math.hypot(dx, dy) + 0.6*Math.abs(dx*uy - dy*ux); if(d < bd){ bd = d; best = [x, y]; } }
+    return best || [x0, y0]; };
+  const g0 = [cl(G[0][0]-0.5, gw), cl(G[0][1]-0.5, gh)], g1 = [cl(G[G.length-1][0]-0.5, gw), cl(G[G.length-1][1]-0.5, gh)];
+  const [sx, sy] = freeNear(g0[0], g0[1], g1, 0.5), [tx, ty] = freeNear(g1[0], g1[1], g0, 0);
+  /* A* su 8 vicini */
+  const dist = new Float32Array(N).fill(Infinity), prev = new Int32Array(N).fill(-1), done = new Uint8Array(N);
+  const heap = []; const push = (i, f) => { heap.push([f, i]); let k = heap.length-1; while(k){ const p = (k-1)>>1; if(heap[p][0] <= heap[k][0]) break; [heap[p], heap[k]] = [heap[k], heap[p]]; k = p; } };
+  const pop = () => { const top = heap[0], last = heap.pop(); if(heap.length){ heap[0] = last; let k = 0; for(;;){ const l = 2*k+1, r = l+1; let m = k; if(l < heap.length && heap[l][0] < heap[m][0]) m = l; if(r < heap.length && heap[r][0] < heap[m][0]) m = r; if(m === k) break; [heap[m], heap[k]] = [heap[k], heap[m]]; k = m; } } return top; };
+  const s0 = sy*gw+sx, t0 = ty*gw+tx; dist[s0] = 0; push(s0, 0);
+  const NB = [[1,0,1],[-1,0,1],[0,1,1],[0,-1,1],[1,1,1.414],[1,-1,1.414],[-1,1,1.414],[-1,-1,1.414]];
+  while(heap.length){
+    const [, i] = pop(); if(done[i]) continue; done[i] = 1; if(i === t0) break;
+    const x = i % gw, y = (i - x)/gw;
+    for(const [dx, dy, l] of NB){
+      const xx = x+dx, yy = y+dy; if(xx<0 || yy<0 || xx>=gw || yy>=gh) continue;
+      const j = yy*gw+xx; if(done[j]) continue;
+      const nd = dist[i] + l*(cost[i] + cost[j])/2;
+      if(nd < dist[j]){ dist[j] = nd; prev[j] = i; push(j, nd + Math.hypot(tx-xx, ty-yy)); }
+    }
+  }
+  if(prev[t0] < 0 && t0 !== s0) return null;
+  const path = []; for(let i = t0; i >= 0; i = prev[i]){ path.push([i % gw + 0.5, Math.floor(i / gw) + 0.5]); if(i === s0) break; }
+  path.reverse();
+  const at = q => O[cl(q[1]-0.5, gh)*gw + cl(q[0]-0.5, gw)];
+  const atB = q => Bs[cl(q[1]-0.5, gh)*gw + cl(q[0]-0.5, gw)];
+  const P = path; if(P.length < 2) return null;
+  /* ammorbidisco: ogni punto si avvicina alla media dei vicini, ma solo se non finisce su una presa */
+  const Q = P.map(q => q.slice());
+  for(let it=0; it<120; it++){
+    for(let k=1;k<Q.length-1;k++){
+      const u = Math.max(0, k-2), v = Math.min(Q.length-1, k+2);
+      const mx = (Q[k-1][0] + Q[k+1][0] + Q[u][0] + Q[v][0])/4, my = (Q[k-1][1] + Q[k+1][1] + Q[u][1] + Q[v][1])/4;
+      const c2 = [Q[k][0] + (mx - Q[k][0])*0.5, Q[k][1] + (my - Q[k][1])*0.5];
+      const o2 = at(c2), b2 = atB(c2); if((o2 < 0.35 || o2 <= at(Q[k])) && (b2 < 0.7 || b2 <= atB(Q[k]) + 0.1)) Q[k] = c2;
+    }
+  }
+  const out = rdpPts(Q, 0.5);
+  return out.map(q => [q[0]/s, q[1]/s]);
 }
 /* boulder: linea indicativa (disegnata a mano dal tracciatore, oppure automatica). Non copre le prese del blocco. */
 function lineSVG(pts, W, col, c, k){
   if(!pts || pts.length < 4) return '';
   const p = []; for(let i=0;i<pts.length;i+=2) p.push([pts[i], pts[i+1]]);
-  let d;
-  if(c && !c.line) d = roundedPath(p, W*0.06);
-  else {
-    d = 'M' + p[0][0].toFixed(1) + ',' + p[0][1].toFixed(1);
-    for(let i=0;i<p.length-1;i++){
-      const p0 = p[Math.max(0, i-1)], p1 = p[i], p2 = p[i+1], p3 = p[Math.min(p.length-1, i+2)];
-      d += 'C' + (p1[0] + (p2[0]-p0[0])/6).toFixed(1) + ',' + (p1[1] + (p2[1]-p0[1])/6).toFixed(1) + ' ' + (p2[0] - (p3[0]-p1[0])/6).toFixed(1) + ',' + (p2[1] - (p3[1]-p1[1])/6).toFixed(1) + ' ' + p2[0].toFixed(1) + ',' + p2[1].toFixed(1);
-    }
+  let d = 'M' + p[0][0].toFixed(1) + ',' + p[0][1].toFixed(1);
+  for(let i=0;i<p.length-1;i++){
+    const p0 = p[Math.max(0, i-1)], p1 = p[i], p2 = p[i+1], p3 = p[Math.min(p.length-1, i+2)];
+    d += 'C' + (p1[0] + (p2[0]-p0[0])/6).toFixed(1) + ',' + (p1[1] + (p2[1]-p0[1])/6).toFixed(1) + ' ' + (p2[0] - (p3[0]-p1[0])/6).toFixed(1) + ',' + (p2[1] - (p3[1]-p1[1])/6).toFixed(1) + ' ' + p2[0].toFixed(1) + ',' + p2[1].toFixed(1);
   }
   const lw = Math.max(2, W*0.008*(k || 1));
   let mask = '', mattr = '';
@@ -1586,12 +1653,12 @@ function cleanLine(raw, W){
   return simp.flatMap(q => [Math.round(q[0]), Math.round(q[1])]);
 }
 /* livello 2: tutte le linee del settore, ognuna col numero del blocco in cima */
-function bPts(c, W){ return c.line || autoLine(c, W); }
+function bPts(c, w){ return c.line || autoLine(c, w); }
 function overviewSVG(w){
   const W = w.w, list = sortedVisible(w).slice().reverse();
   let s = '', tags = '';
   list.forEach(c => {
-    const pts = bPts(c, W), col = colOf(c);
+    const pts = bPts(c, w), col = colOf(c);
     if(pts && pts.length >= 4) s += lineSVG(pts, W, col, c, 1.1);
     const at = pts && pts.length >= 4 ? [pts[pts.length-2], pts[pts.length-1]] : c.holds.length ? [c.holds[0].x, c.holds[0].y] : null;
     if(!at) return;
@@ -1604,7 +1671,7 @@ function overviewSVG(w){
 function overviewHit(w, x, y, tol){
   let best = null, bd = tol;
   sortedVisible(w).forEach(c => {
-    const p = bPts(c, w.w); if(!p || p.length < 4) return;
+    const p = bPts(c, w); if(!p || p.length < 4) return;
     let d = Math.hypot(x - p[p.length-2], y - p[p.length-1]) - w.w*0.028;
     for(let i=0;i<p.length-2;i+=2) d = Math.min(d, segDist(x, y, p[i], p[i+1], p[i+2], p[i+3]));
     if(d < bd){ bd = d; best = c; }
@@ -1651,7 +1718,7 @@ function overlay(w, o){
     });
     s += `<path d="${d}" fill="#000" fill-opacity="${o.edit ? .5 : .62}" fill-rule="evenodd"/>`;
   }
-  if(act && bo) s += lineSVG(act.line || autoLine(act, w.w), w.w, colOf(act), act);
+  if(act && bo) s += lineSVG(act.line || autoLine(act, w), w.w, colOf(act), act);
   if(bo && ui.bline && ui.lineDraft.length > 1) s += lineSVG(ui.lineDraft, w.w, '#ff3b7a');
   if(act) s += circuitSVG(act, w.w, 1, Object.assign({}, o, { H: w.h, obst: w.holds || [], busy: busyMap(w) }));
   if(o.edit) s += draftSVG(w);
@@ -1904,13 +1971,13 @@ function renderTools(){
   }
   if(sec && ui.bdraw){
     el.innerHTML = `<p class="hint">${h ? 'Ridisegna il contorno' : 'Disegna il contorno della presa'}: tocca i punti tutto intorno (puoi ingrandire), poi Chiudi o tocca di nuovo il primo punto.</p>`+
-      (h ? '' : `<div class="trow"><div class="seg">${rb('start','Partenza')}${rb('hold','Presa')}${rb('top','Arrivo')}</div></div>`)+
+      (h ? '' : `<div class="trow"><div class="seg">${rb('start','Partenza')}${rb('foot','Piede')}${rb('hold','Presa')}${rb('top','Arrivo')}</div></div>`)+
       `<div class="trow"><button class="btn primary" data-act="bclose" ${ui.draft.length >= 3 ? '' : 'disabled'}>Chiudi</button>`+
       `<button class="btn" data-act="bundo" ${ui.draft.length ? '' : 'disabled'}>Annulla punto</button>`+
       `<button class="btn" data-act="bcancel">Esci</button></div>`;
     return;
   }
-  const roles = `<div class="seg" role="group" aria-label="Tipo di presa">${rb('start','Partenza')}${rb('hold','Presa')}${rb('top','Arrivo')}</div>`;
+  const roles = `<div class="seg" role="group" aria-label="Tipo di presa">${rb('start','Partenza')}${sec ? rb('foot','Piede') : ''}${rb('hold','Presa')}${rb('top','Arrivo')}</div>`;
   const hands = sec ? '' : `<div class="seg" role="group" aria-label="Mano">${hb('L',dot(S.prefs.handL)+'Sinistra')}${hb('R',dot(S.prefs.handR)+'Destra')}</div>`;
   const dimBtn = `<button class="btn ${ui.editDim ? 'on' : ''}" data-act="editdim" aria-pressed="${!!ui.editDim}">Oscura</button>`;
   if(h){
