@@ -118,6 +118,27 @@ button,label.btn{cursor:pointer}
 @keyframes spin{to{transform:rotate(360deg)}}
 .toast{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:20;
   background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:10px;max-width:88%;text-align:center}
+
+.menubtn{flex:none;width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:700 22px/1 Barlow,sans-serif;padding:0}
+.wrow:disabled{opacity:.45}
+#print{display:none}
+@media print{
+  @page{size:A4 portrait;margin:12mm}
+  :root{color-scheme:light}
+  html,body{height:auto!important;background:#fff!important;color:#111!important}
+  #app,#sheet,#toast,#busy{display:none!important}
+  #print{display:block!important;font-family:Barlow,Arial,sans-serif;color:#111}
+  .ppage{break-after:page;page-break-after:always;display:flex;flex-direction:column;gap:3mm}
+  .ppage:last-child{break-after:auto;page-break-after:auto}
+  .ppage header{display:flex;justify-content:space-between;font:600 10pt Barlow,Arial,sans-serif;color:#555;border-bottom:.4mm solid #ff7a1a;padding-bottom:2mm}
+  .ppage h1{display:flex;align-items:center;gap:3mm;margin:2mm 0 0;font:700 22pt "Barlow Semi Condensed",Arial,sans-serif}
+  .ppage h1 i{width:6mm;height:6mm;border-radius:50%;border:.3mm solid #888;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .ppage h1 b{margin-left:auto;font-size:20pt;border:.5mm solid #111;border-radius:2mm;padding:0 3mm}
+  .pmeta{margin:0;font-size:11pt;color:#333}
+  .pnotes{margin:0;font-size:11pt;font-style:italic}
+  .ppage img{width:100%;max-height:205mm;object-fit:contain;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .ppage footer{margin-top:auto;font-size:8pt;color:#777}
+}
 </style></head><body><div id="root"></div>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>

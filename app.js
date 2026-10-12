@@ -20,6 +20,7 @@ const BODY = `
       <button data-act="mode" data-v="view">Guarda</button>
       <button data-act="mode" data-v="wall">Muro</button>
     </div>
+    <button class="menubtn" id="menuBtn" data-act="menu" aria-label="Altro: stampa, condividi, installa">&#8942;</button>
   </header>
   <div class="pubbar" id="pubbar" hidden>
     <span>Modifiche non pubblicate</span>
@@ -46,6 +47,7 @@ const BODY = `
 </div>
 <div class="sheet" id="sheet" hidden><div class="card" id="card"></div></div>
 <div class="toast" id="toast" hidden></div>
+<div id="print" aria-hidden="true"></div>
 <div class="busy" id="busy" hidden role="status" aria-live="polite"><i class="spin" aria-hidden="true"></i><span></span></div>
 `;
 document.getElementById('root').innerHTML = BODY;
@@ -1606,11 +1608,15 @@ function visibleCircuits(w){
 const gradeBand = g => { const i = GRADES.indexOf(g || ''); if(i <= 0) return '#5b6068'; if(i <= GRADES.indexOf('5c')) return '#7bd389'; if(i <= GRADES.indexOf('6b+')) return '#ffd166'; if(i <= GRADES.indexOf('7a+')) return '#ff9a3d'; return '#ef476f'; };
 const gradeBadge = g => `<span class="gb" style="background:${gradeBand(g)}">${esc(g || '–')}</span>`;
 const gradeIdx = g => { const i = GRADES.indexOf(g || ''); return i <= 0 ? 999 : i; };
+/* "prese rosse", "prese gialle"…: colore delle prese di un boulder, al plurale femminile */
+function holdColText(c){
+  const PL = { Giallo:'gialle', Arancio:'arancioni', Rosso:'rosse', Rosa:'rosa', Viola:'viola', Blu:'blu', Azzurro:'azzurre', Verde:'verdi', Bianco:'bianche', Nero:'nere' };
+  const hc = c && c.holdColor && PALETTE.find(p => p[1] === c.holdColor);
+  return hc ? 'prese ' + (PL[hc[0]] || hc[0].toLowerCase()) : '';
+}
 function bMeta(c){
   const t = (c.tags || []).slice(0, 3).join(', ');
-  const hc = c.holdColor && PALETTE.find(p => p[1] === c.holdColor);
-  const PL = { Giallo:'gialle', Arancio:'arancioni', Rosso:'rosse', Rosa:'rosa', Viola:'viola', Blu:'blu', Azzurro:'azzurre', Verde:'verdi', Bianco:'bianche', Nero:'nere' };
-  return [hc ? 'prese ' + (PL[hc[0]] || hc[0].toLowerCase()) : '', c.setter || '', isOff(c) ? 'smontato ' + fmtDate(c.dateRemoved) : c.dateSet ? fmtDate(c.dateSet) : '', t].filter(Boolean).map(esc).join(' · ');
+  return [holdColText(c), c.setter || '', isOff(c) ? 'smontato ' + fmtDate(c.dateRemoved) : c.dateSet ? fmtDate(c.dateSet) : '', t].filter(Boolean).map(esc).join(' · ');
 }
 function circMeta(c){
   if(curWall() && isSec(curWall())) return bMeta(c);
@@ -1742,7 +1748,7 @@ function renderTools(){
       `<button class="btn ${p.lines ? 'on' : ''}" data-act="pref" data-k="lines">Linee</button>`)+
       `<button class="btn ${p.others ? 'on' : ''}" data-act="pref" data-k="others">${isSec(w) ? 'Altri boulder' : 'Altri circuiti'}</button>`+
       `<button class="btn ${p.dim ? 'on' : ''}" data-act="pref" data-k="dim">${isSec(w) ? 'Oscura settore' : 'Oscura muro'}</button>`+
-      `<button class="btn" data-act="img">Condividi immagine</button></div>` : '';
+      `</div>` : '';
     return;
   }
   const h = c && ui.sel != null ? c.holds[ui.sel] : null;
@@ -1918,6 +1924,18 @@ function renderSheet(){
     } else {
       h += `<div class="row">${canInstall() ? `<button class="btn" data-act="install">Installa l'app</button>` : ''}${SB ? `<button class="btn" data-act="login">Accedi (staff)</button>` : ''}<button class="btn primary" data-act="close">Chiudi</button></div>`;
     }
+  } else if(ui.sheet === 'menu'){
+    const bo = w && isSec(w), n = w ? sortedVisible(w).length : 0, one = bo ? 'questo boulder' : 'questo circuito';
+    const row = (act, label, sub, dis) => `<button class="wrow" data-act="${act}" ${dis ? 'disabled' : ''}><span>${label}</span><small>${sub || ''}</small></button>`;
+    h = `<h2>Altro</h2><div class="list">`+
+      row('printone', 'Stampa ' + one, c ? esc(blockTitle(w, c)) : '', !c)+
+      row('printall', bo ? 'Stampa i boulder del settore' : 'Stampa i circuiti del muro', n ? n + (n === 1 ? ' pagina' : ' pagine') + ' · filtri compresi' : '', !n)+
+      row('img', 'Condividi immagine', 'da salvare o mandare', !c)+
+      (canInstall() ? row('install', "Installa l'app", 'sulla schermata Home') : '')+
+      (SB && !EDIT ? row('login', 'Accesso staff', '') : '')+
+      (SB && EDIT ? row('logout', 'Esci', ME ? esc(ME.email) : '') : '')+
+      `</div><p class="note" style="margin:0 0 12px">Dalla finestra di stampa puoi anche scegliere "Salva come PDF".</p>`+
+      `<div class="row"><button class="btn primary" data-act="close">Chiudi</button></div>`;
   } else if(ui.sheet === 'install'){
     h = `<h2>Installa l'app</h2>`+
       (isIOS() ? `<p>Su iPhone:</p><ol style="margin:0 0 14px;padding-left:20px;line-height:1.6"><li>tocca <b>Condividi</b> (il quadrato con la freccia in su), in basso in Safari</li><li>scorri e scegli <b>Aggiungi alla schermata Home</b></li><li>tocca <b>Aggiungi</b></li></ol><p class="note" style="margin:0 0 12px">Funziona da Safari: se hai aperto il link da un'altra app, aprilo prima in Safari.</p>`
@@ -1975,31 +1993,72 @@ function renderSheet(){
   card.innerHTML = h;
   el.hidden = false;
 }
+/* foto del muro/settore con disegnato un blocco (per condividere e stampare) */
+async function composeBlock(w, c, o){
+  const keep = w.activeCircuit; w.activeCircuit = c.id;
+  try{
+    const photo = await loadImg(w.img);
+    const inner = overlay(w, Object.assign({ numbers: S.prefs.numbers, lines: S.prefs.lines, others: S.prefs.others, edit: false, dim: S.prefs.dim }, o || {}));
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w.w}" height="${w.h}" viewBox="0 0 ${w.w} ${w.h}">${inner}</svg>`;
+    const ov = await loadImg('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg));
+    const cv = document.createElement('canvas'); cv.width = w.w; cv.height = w.h;
+    const g = cv.getContext('2d'); g.drawImage(photo, 0, 0, w.w, w.h); g.drawImage(ov, 0, 0, w.w, w.h);
+    return cv;
+  } finally { w.activeCircuit = keep; }
+}
+const blockTitle = (w, c) => isSec(w) ? bTitle(c) + (c.name ? ' · ' + c.name : '') : c.name;
 async function makeImage(){
   const w = curWall(), c = curCircuit(); if(!w || !c) return;
   ui.imgUrl = null; openSheet('img');
   const done = busy('Creo l\'immagine…');
   try{
     await nextPaint();
-    const photo = await loadImg(w.img);
-    const inner = overlay(w, { numbers: S.prefs.numbers, lines: S.prefs.lines, others: S.prefs.others, edit: false, dim: S.prefs.dim });
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w.w}" height="${w.h}" viewBox="0 0 ${w.w} ${w.h}">${inner}</svg>`;
-    const ov = await loadImg('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg));
+    const pic = await composeBlock(w, c);
     const capH = Math.round(w.w*0.09);
     const cv = document.createElement('canvas'); cv.width = w.w; cv.height = w.h + capH;
     const g = cv.getContext('2d');
     g.fillStyle = '#ffffff'; g.fillRect(0, 0, cv.width, cv.height);
-    g.drawImage(photo, 0, 0, w.w, w.h); g.drawImage(ov, 0, 0, w.w, w.h);
+    g.drawImage(pic, 0, 0);
     g.beginPath(); g.arc(capH*0.5, w.h + capH/2, capH*0.2, 0, Math.PI*2);
     g.fillStyle = colOf(c); g.fill(); g.lineWidth = Math.max(2, capH*0.03); g.strokeStyle = '#111111'; g.stroke();
     g.fillStyle = '#111111'; g.textBaseline = 'middle';
     g.font = `700 ${Math.round(capH*0.4)}px "Barlow Semi Condensed", Arial, sans-serif`;
-    g.fillText(isSec(w) ? `${w.name}: ${bTitle(c)}${c.name ? ' · ' + c.name : ''}${c.setter ? ' · ' + c.setter : ''}` : `${w.name}: ${c.name}, ${c.holds.length} prese`, capH*0.9, w.h + capH/2);
+    g.fillText(isSec(w) ? `${w.name}: ${blockTitle(w, c)}${c.setter ? ' · ' + c.setter : ''}` : `${w.name}: ${c.name}${c.grade ? ' · ' + c.grade : ''}`, capH*0.9, w.h + capH/2);
     ui.imgUrl = cv.toDataURL('image/jpeg', 0.92);
   }catch(e){ ui.imgUrl = 'err'; }
   finally{ done(); }
   if(ui.sheet === 'img') renderSheet();
 }
+/* stampa: una pagina per blocco, con foto, nome, grado/difficoltà e dati; dal dialogo di stampa si può anche salvare in PDF */
+async function printBlocks(all){
+  const w = curWall(), c = curCircuit(); if(!w || !c) return;
+  const list = all ? sortedVisible(w) : [c];
+  ui.sheet = null; renderSheet();
+  const done = busy(list.length > 1 ? `Preparo ${list.length} pagine…` : 'Preparo la stampa…');
+  try{
+    await nextPaint();
+    const today = new Date().toLocaleDateString('it-IT');
+    let html = '';
+    for(const b of list){
+      const pic = await composeBlock(w, b, { numbers: !isSec(w), others: false, dim: true });
+      const meta = isSec(w)
+        ? [b.style, b.setter ? 'tracciato da ' + b.setter : '', b.dateSet ? 'montato il ' + fmtDate(b.dateSet) : '', holdColText(b)].filter(Boolean)
+        : [b.grade ? 'grado ' + b.grade : '', b.style, b.feet ? 'piedi ' + b.feet : '', b.angle != null ? b.angle + '°' : '', b.holds.length + ' prese'].filter(Boolean);
+      html += `<section class="ppage"><header><span>Monkey Island Roma</span><span>${esc(w.name)}</span></header>`+
+        `<h1><i style="background:${colOf(b)}"></i>${esc(blockTitle(w, b))}${!isSec(w) && b.grade ? `<b>${esc(b.grade)}</b>` : ''}</h1>`+
+        `<p class="pmeta">${meta.map(esc).join(' · ')}</p>`+
+        (isSec(w) && (b.tags || []).length ? `<p class="pmeta">${b.tags.map(esc).join(' · ')}</p>` : '')+
+        (isSec(w) && b.notes ? `<p class="pnotes">${esc(b.notes)}</p>` : '')+
+        `<img src="${pic.toDataURL('image/jpeg', 0.88)}" alt="">`+
+        `<footer>Monkey Roads · stampato il ${today}</footer></section>`;
+    }
+    const el = $('#print'); el.innerHTML = html;
+    await Promise.all([...el.querySelectorAll('img')].map(i => i.decode ? i.decode().catch(() => {}) : null));
+  }catch(e){ done(); toast('Non riesco a preparare la stampa.'); return; }
+  done();
+  setTimeout(() => { try{ window.print(); }catch(e){ toast('Stampa non disponibile su questo dispositivo.'); } }, 50);
+}
+window.addEventListener('afterprint', () => { const el = $('#print'); if(el) el.innerHTML = ''; });
 
 /* ---------- pubblicazione ---------- */
 async function loadStaff(){
@@ -2205,7 +2264,7 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
+const PUBLIC_ACTS = ['menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
 const MGR_ACTS = ['lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
@@ -2305,6 +2364,9 @@ document.addEventListener('click', e => {
     case 'tracing': if(w && w.locked){ S.mode = 'edit'; render(); } break;
     case 'wall': openSheet('wall'); break;
     case 'img': makeImage(); break;
+    case 'menu': openSheet('menu'); break;
+    case 'printone': printBlocks(false); break;
+    case 'printall': printBlocks(true); break;
     case 'publish': publish(); break;
     case 'pref': S.prefs[b.dataset.k] = !S.prefs[b.dataset.k]; save(); render(); break;
     case 'zoom': { const bx = $('#box').getBoundingClientRect(); applyZoom(ui.zoom * Math.pow(1.4, +b.dataset.d), bx.left + bx.width/2, bx.top + bx.height/2); break; }
