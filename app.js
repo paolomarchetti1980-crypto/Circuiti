@@ -2,8 +2,7 @@
 (function(){
 'use strict';
 
-/* ---- Documento: la pagina rigenera se stessa a partire dallo stato (mai dal DOM) ---- */
-const HEAD = '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Monkey Roads</title><link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">';
+/* ---- struttura della pagina ---- */
 const BODY = `
 <div id="app">
   <nav class="secbar" id="secbar" aria-label="Sezione">
@@ -48,15 +47,6 @@ const BODY = `
 <div class="sheet" id="sheet" hidden><div class="card" id="card"></div></div>
 <div class="toast" id="toast" hidden></div>
 <div class="busy" id="busy" hidden role="status" aria-live="polite"><i class="spin" aria-hidden="true"></i><span></span></div>
-<input type="file" id="file" accept="image/*" class="vhfile" tabindex="-1">
-<input type="file" id="cam" accept="image/*" capture="environment" class="vhfile" tabindex="-1">
-<div class="camwrap" id="camWrap" hidden>
-  <video id="camVideo" playsinline autoplay muted></video>
-  <div class="camBar">
-    <button class="btn big" data-act="camCancel">Annulla</button>
-    <button class="btn primary big" data-act="camShot">Scatta</button>
-  </div>
-</div>
 `;
 document.getElementById('root').innerHTML = BODY;
 
@@ -76,7 +66,7 @@ function colOf(c){
   const w = curWall();
   if(!w || isSec(w) || !w.circuits.includes(c)) return c.color;
   let i = sortedVisible(w).indexOf(c);
-  if(i < 0) i = w.circuits.slice().sort((x, y) => gradeIdx(x.grade) - gradeIdx(y.grade) || String(x.name).localeCompare(String(y.name))).indexOf(c);
+  if(i < 0) i = w.circuits.slice().sort(circCmp).indexOf(c);
   return CPAL[i % CPAL.length];
 }
 const diffOf = c => DIFFS.find(d => d[0] === (c && c.diff)) || null;
@@ -93,25 +83,32 @@ function assignNum(w, c){
 /* boulder: move, stile e particolarità (si possono scegliere più voci) */
 const BTAGS = ['Placca','Verticale','Strapiombo','Tetto','Spigolo','Diedro','Partenza seduta','Traverso','Dinamico','Lancio','Equilibrio','Compressione','Opposizione','Tallone','Punta','Incastro','Ribaltamento','Tacche','Svasi','Pinze','Buchi','Volumi','Uscita alta','Morfologico'];
 
-let seed = {};
-try{ seed = JSON.parse(document.getElementById('seed').textContent) || {}; }catch(e){}
+/* lo stato arriva dal database (vedi avvio in fondo); qui si parte vuoti */
 const S = {
-  walls: Array.isArray(seed.walls) ? seed.walls : [],
-  active: seed.active || null,
-  rev: seed.rev || 0,
+  walls: [],
+  active: null,
+  rev: 0,
   mode: 'view',
-  prefs: Object.assign({ numbers:false, lines:false, others:true, dim:true, handL:'#e5312b', handR:'#111111', r:0.03 }, seed.prefs || {})
+  prefs: Object.assign({ numbers:false, lines:false, others:true, dim:true, handL:'#e5312b', handR:'#111111', r:0.03 })
 };
 let PUBREV = S.rev;
-let SEEDWALLS = S.walls;
-let EDIT = false, ART = null, SB = null, BASE = null, ME = null;
+let PUBWALLS = [];   /* muri come sono pubblicati adesso */
+let EDIT = false, SB = null, BASE = null, ME = null;
 const isMgr = () => !ME || ME.role === 'gestore';
-const ui = { view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:null, csel:null, busy:false, warnedRing:false, sel:null, move:false, nextRole:'start', zoom:1, sheet:null, confirm:null, imgUrl:null, ready:false, publishing:false, saveWarned:false, scan:null, nextHand:'L', crop:null };
+const ui = { view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:null, csel:null, busy:false, sel:null, move:false, nextRole:'start', zoom:1, sheet:null, confirm:null, imgUrl:null, ready:false, publishing:false, saveWarned:false, scan:null, nextHand:'L', crop:null };
 try{ const f = JSON.parse(localStorage.getItem('circ-filters') || '{}'); ui.fAngle = f.a || ''; ui.fGrade = f.g || ''; ui.fFeet = f.f || ''; }catch(e){}
-ui.section = 'circ'; ui.bShow = 'on'; ui.bGrade = ''; ui.bColor = ''; ui.lastSec = {};
-try{ const f = JSON.parse(localStorage.getItem('boulder-ui') || '{}'); if(f.sec === 'boulder') ui.section = 'boulder'; ui.bShow = f.show || 'on'; ui.bGrade = f.g || ''; ui.bColor = f.c || ''; ui.lastSec = f.last || {}; }catch(e){}
+ui.section = 'circ'; ui.bShow = 'on'; ui.bColor = ''; ui.lastSec = {};
+try{ const f = JSON.parse(localStorage.getItem('boulder-ui') || '{}'); if(f.sec === 'boulder') ui.section = 'boulder'; ui.bShow = f.show || 'on'; ui.bColor = f.c || ''; ui.lastSec = f.last || {}; }catch(e){}
 if(!DIFFS.some(d => d[0] === ui.bColor)) ui.bColor = '';
-function saveBUI(){ try{ localStorage.setItem('boulder-ui', JSON.stringify({ sec: ui.section, show: ui.bShow, g: ui.bGrade, c: ui.bColor, last: ui.lastSec })); }catch(e){} }
+function saveBUI(){ try{ localStorage.setItem('boulder-ui', JSON.stringify({ sec: ui.section, show: ui.bShow, c: ui.bColor, last: ui.lastSec })); }catch(e){} }
+function saveCF(){ try{ localStorage.setItem('circ-filters', JSON.stringify({ a: ui.fAngle || '', g: ui.fGrade || '', f: ui.fFeet || '' })); }catch(e){} }
+/* dopo un cambio di filtro: se il blocco attivo non è più in elenco, si passa al primo visibile */
+function afterFilter(){
+  const w = curWall(); if(!w) return;
+  const vis = sortedVisible(w);
+  if(vis.length && !vis.some(x => x.id === w.activeCircuit)){ w.activeCircuit = vis[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); }
+  render(); if(ui.sheet === 'clist') renderSheet();
+}
 
 const uid = () => Math.random().toString(36).slice(2,9);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -141,14 +138,6 @@ function upgradeCatalog(w, sw){
   if(keep.length) S.rev = Math.max(Date.now(), S.rev + 1);
 }
 function snapshot(){ return { walls:S.walls, active:S.active, prefs:S.prefs, rev:S.rev }; }
-function buildDoc(){
-  const data = JSON.stringify(snapshot()).replace(/</g, '\\u003c');
-  return '<!DOCTYPE html>\n<html lang="it"><head>' + HEAD +
-    '<style id="css">' + document.getElementById('css').textContent + '</style></head><body><div id="root"></div>' +
-    '<script type="application/json" id="seed">' + data + '</' + 'script>' +
-    '<script id="app-js">' + document.getElementById('app-js').textContent + '</' + 'script></body></html>';
-}
-
 /* ---------- bozza locale (solo per chi può modificare) ---------- */
 function openDB(){
   return new Promise((res,rej) => {
@@ -174,9 +163,9 @@ async function loadDraft(){
     }
   }catch(e){}
   /* il catalogo pubblicato più di recente vince sempre, anche se la bozza locale è più "nuova" di orario */
-  S.walls.forEach(w => upgradeCatalog(w, SEEDWALLS.find(x => x.id === w.id)));
+  S.walls.forEach(w => upgradeCatalog(w, PUBWALLS.find(x => x.id === w.id)));
   /* muri già pubblicati che la bozza locale non conosce ancora (es. aggiunti da un'altra sessione) */
-  SEEDWALLS.forEach(sw => { if(!S.walls.some(w => w.id === sw.id)) S.walls.push(sw); });
+  PUBWALLS.forEach(sw => { if(!S.walls.some(w => w.id === sw.id)) S.walls.push(sw); });
 }
 async function saveNow(){
   if(!EDIT) return;
@@ -1553,6 +1542,8 @@ function renderPub(){
   b.disabled = ui.publishing;
   b.textContent = ui.publishing ? 'Pubblico…' : 'Pubblica';
 }
+/* oscuramento del resto della foto: in Traccia solo se chiesto col tasto, a schermo intero sempre, altrimenti come da preferenza */
+function dimOn(editing){ return editing ? !!ui.editDim : (!!ui.full || S.prefs.dim); }
 function renderStage(){
   const w = curWall(), st = $('#stage'), em = $('#empty'), z = $('#zoom');
   if(!w){
@@ -1571,7 +1562,7 @@ function renderStage(){
   const sv = $('#ov');
   sv.setAttribute('viewBox', `0 0 ${w.w} ${w.h}`);
   const editing = EDIT && S.mode === 'edit';
-  sv.innerHTML = overlay(w, { numbers: editing || S.prefs.numbers, lines: S.prefs.lines, others: S.prefs.others, edit: editing, dim: editing ? !!ui.editDim : (S.prefs.dim || !!ui.full), wall: EDIT && S.mode === 'wall' });
+  sv.innerHTML = overlay(w, { numbers: editing || S.prefs.numbers, lines: S.prefs.lines, others: S.prefs.others, edit: editing, dim: dimOn(editing), wall: EDIT && S.mode === 'wall' });
   fit();
 }
 function visibleCircuits(w){
@@ -1603,6 +1594,20 @@ function bRows(w, cls){
   if(!vis.length) return `<p class="hint" style="padding:6px 2px">${w.circuits.length ? 'Nessun boulder con questi filtri.' : 'Ancora nessun boulder su questo settore.'}</p>`;
   return `<div class="list" style="gap:${cls === 'crow' ? 6 : 0}px;margin:0">` + vis.map(x => `<button class="${cls} ${act && x.id === act.id ? 'active' : ''} ${isOff(x) ? 'off' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext" style="flex:1"><b>${bTitleHtml(x)}</b><small>${[x.style ? esc(x.style) : '', bMeta(x)].filter(Boolean).join(' · ')}</small></span></button>`).join('') + `</div>`;
 }
+function circFilters(w){
+  if(!w.circuits.length) return '';
+  const angles = [...new Set(w.circuits.map(x => x.angle).filter(x => x != null))].sort((x, y) => x - y);
+  const grades = GRADES.filter(g => g && w.circuits.some(x => x.grade === g));
+  const fa = v => `<button class="fchip ${String(ui.fAngle || '') === String(v) ? 'on' : ''}" data-act="fang" data-v="${v}">${v === '' ? 'Tutti' : v + '°'}</button>`;
+  const inner = (angles.length ? fa('') + angles.map(fa).join('') : '')+
+    (grades.length ? `<select id="fgrade" class="fsel" aria-label="Grado"><option value="">Tutti i gradi</option>${grades.map(g => `<option value="${g}" ${ui.fGrade === g ? 'selected' : ''}>${g}</option>`).join('')}</select>` : '')+feetSel(w);
+  return inner ? `<div class="fchips">${inner}</div>` : '';
+}
+function circRows(w, cls){
+  const act = curCircuit(), vis = sortedVisible(w);
+  if(!vis.length) return `<p class="hint" style="padding:6px 2px">${w.circuits.length ? 'Nessun circuito con questi filtri.' : 'Ancora nessun circuito su questo muro.'}</p>`;
+  return `<div class="list" style="gap:${cls === 'crow' ? 6 : 0}px;margin:0">` + vis.map(x => `<button class="${cls} ${act && x.id === act.id ? 'active' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${colOf(x)}"></i><span class="ctext" style="flex:1"><b>${esc(x.name)}</b><small>${circMeta(x)}</small></span>${gradeBadge(x.grade)}</button>`).join('') + `</div>`;
+}
 function feetSel(w){
   if(!w.circuits.some(x => x.feet)) return '';
   return `<select id="ffeet" class="fsel" aria-label="Piedi"><option value="">Tutti i piedi</option>${[['liberi','Piedi liberi'],['obbligati','Piedi obbligati']].map(o => `<option value="${o[0]}" ${ui.fFeet === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>`;
@@ -1617,15 +1622,8 @@ function renderChips(){
     return;
   }
   if(!EDIT || S.mode === 'view'){
-    const angles = [...new Set(w.circuits.map(x => x.angle).filter(x => x != null))].sort((x, y) => x - y);
-    const grades = GRADES.filter(g => g && w.circuits.some(x => x.grade === g));
-    const vis = visibleCircuits(w).slice().sort((x, y) => gradeIdx(x.grade) - gradeIdx(y.grade) || String(x.name).localeCompare(String(y.name)));
-    const fa = v => `<button class="fchip ${String(ui.fAngle || '') === String(v) ? 'on' : ''}" data-act="fang" data-v="${v}">${v === '' ? 'Tutti' : v + '°'}</button>`;
-    el.innerHTML = (tot ? `<div class="fchips">${angles.length ? fa('') + angles.map(fa).join('') : ''}`+
-        (grades.length ? `<select id="fgrade" class="fsel" aria-label="Grado"><option value="">Tutti i gradi</option>${grades.map(g => `<option value="${g}" ${ui.fGrade === g ? 'selected' : ''}>${g}</option>`).join('')}</select>` : '')+feetSel(w)+`</div>` : '')+
-      (vis.length ? vis.map(x => `<button class="lrow ${act && x.id === act.id ? 'active' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${colOf(x)}"></i><span class="ctext" style="flex:1"><b>${esc(x.name)}</b><small>${circMeta(x)}</small></span>${gradeBadge(x.grade)}</button>`).join('')
-        : `<p class="hint" style="padding:6px 2px">${tot ? 'Nessun circuito con questi filtri.' : 'Ancora nessun circuito su questo muro.'}</p>`)+
-      (vis.length ? `<p class="hint" style="text-align:center;margin:8px 0 0;font-size:13px">Tocca un circuito per vederlo sul muro, tocca di nuovo per aprirlo a schermo intero.</p>` : '');
+    el.innerHTML = circFilters(w) + circRows(w, 'lrow') +
+      (n ? `<p class="hint" style="text-align:center;margin:8px 0 0;font-size:13px">Tocca un circuito per vederlo sul muro, tocca di nuovo per aprirlo a schermo intero.</p>` : '');
     return;
   }
   const filtered = !isSec(w) && (ui.fAngle || ui.fGrade || ui.fFeet) ? ` · filtrati ${n}/${tot}` : '';
@@ -1746,18 +1744,30 @@ function renderTools(){
     `<button class="btn" data-act="undo" ${c && c.holds.length ? '' : 'disabled'}>Annulla</button>`+
     `<button class="btn ${ui.editDim ? 'on' : ''}" data-act="editdim" aria-pressed="${!!ui.editDim}">Oscura il resto</button>`;
 }
+/* regole delle modalità (Muro = preparazione delle prese, Traccia, Guarda):
+   - i settori boulder non hanno la fase Muro;
+   - un muro non ancora bloccato si prepara in Muro (il tracciatore, che non prepara muri, lo guarda soltanto) */
+function normalizeMode(w){
+  if(!EDIT || !w) return;
+  if(isSec(w)){ if(S.mode === 'wall') S.mode = 'edit'; return; }
+  if(!isMgr()){ if(S.mode === 'wall' || (!w.locked && S.mode === 'edit')) S.mode = 'view'; }
+  else if(!w.locked && S.mode === 'edit') S.mode = 'wall';
+}
+/* il riconoscimento intelligente si prepara in anticipo dove servirà un tocco: Muro (non bloccato) e Traccia dei settori */
+function needsSam(w){ return EDIT && w && ((!w.locked && S.mode === 'wall') || (isSec(w) && S.mode === 'edit')); }
 function render(){
-  { const w0 = curWall();
-    if(isSec(w0) && S.mode === 'wall') S.mode = 'edit';
-    if(EDIT && !isMgr()){ if(S.mode === 'wall' || (w0 && !w0.locked && S.mode === 'edit')) S.mode = 'view'; }
-    else if(EDIT && w0 && !w0.locked && S.mode === 'edit') S.mode = 'wall'; }
-  { const w1 = curWall(); if(EDIT && w1 && ((!w1.locked && S.mode === 'wall') || (isSec(w1) && S.mode === 'edit')) && sam.state !== 'failed' && !(sam.emb[w1.id] && sam.emb[w1.id].key === samKey(w1))) samWarm(w1); }
+  const w = curWall();
+  normalizeMode(w);
+  if(needsSam(w) && sam.state !== 'failed' && !(sam.emb[w.id] && sam.emb[w.id].key === samKey(w))) samWarm(w);
   const viewing = !EDIT || S.mode === 'view';
-  { const w2 = curWall(); if(viewing && isSec(w2)){ const v = sortedVisible(w2); if(v.length && !v.some(x => x.id === w2.activeCircuit)) w2.activeCircuit = v[0].id; } }
+  if(viewing && w && isSec(w)){ const v = sortedVisible(w); if(v.length && !v.some(x => x.id === w.activeCircuit)) w.activeCircuit = v[0].id; }
   if(ui.full && (!viewing || !curCircuit())) ui.full = false;
   $('#app').classList.toggle('full', !!ui.full);
   renderTop(); renderPub(); renderStage(); renderChips(); renderTools(); renderFull(); }
-function sortedVisible(w){ if(isSec(w)) return visibleCircuits(w).slice().sort((x, y) => diffIdx(x) - diffIdx(y) || (x.num || 0) - (y.num || 0) || (isOff(x) ? 1 : 0) - (isOff(y) ? 1 : 0)); return visibleCircuits(w).slice().sort((x, y) => gradeIdx(x.grade) - gradeIdx(y.grade) || String(x.name).localeCompare(String(y.name))); }
+/* ordine degli elenchi: circuiti per grado e nome, boulder per difficoltà e numero */
+const circCmp = (x, y) => gradeIdx(x.grade) - gradeIdx(y.grade) || String(x.name).localeCompare(String(y.name));
+const bouldCmp = (x, y) => diffIdx(x) - diffIdx(y) || (x.num || 0) - (y.num || 0) || (isOff(x) ? 1 : 0) - (isOff(y) ? 1 : 0);
+function sortedVisible(w){ return visibleCircuits(w).slice().sort(isSec(w) ? bouldCmp : circCmp); }
 function renderFull(){
   const el = $('#fcard'), w = curWall(), c = curCircuit();
   if(!ui.full || !w || !c){ el.hidden = true; el.innerHTML = ''; return; }
@@ -1844,18 +1854,8 @@ function renderSheet(){
       `<div class="row"><button class="btn danger" data-act="delc">${ui.confirm === 'delc' ? 'Tocca ancora per eliminare' : 'Elimina circuito'}</button>`+
       `<button class="btn primary" data-act="close">Fatto</button></div>`;
   } else if(ui.sheet === 'clist' && w){
-    const angles = [...new Set(w.circuits.map(x => x.angle).filter(x => x != null))].sort((x, y) => x - y);
-    const grades = GRADES.filter(g => g && w.circuits.some(x => x.grade === g));
-    const sel = (id, cur, all, opts) => `<select id="${id}" class="fsel" aria-label="${all}"><option value="">${all}</option>${opts.map(o => `<option value="${o[0]}" ${String(cur) === String(o[0]) ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>`;
-    const vis = visibleCircuits(w).slice().sort((x, y) => gradeIdx(x.grade) - gradeIdx(y.grade) || String(x.name).localeCompare(String(y.name)));
-    const act = curCircuit();
-    h = `<h2>Circuiti · ${esc(w.name)}</h2>`+
-      ((angles.length || grades.length || feetSel(w)) ? `<div class="row" style="margin:0 0 12px">${angles.length ? sel('fangle', ui.fAngle || '', 'Tutte le inclinazioni', angles.map(x => [x, x + '°'])) : ''}${grades.length ? sel('fgrade', ui.fGrade || '', 'Tutti i gradi', grades.map(g => [g, g])) : ''}${feetSel(w)}</div>` : '')+
-      `<div class="list">`+
-      (vis.length ? vis.map(x => `<button class="crow ${act && x.id === act.id ? 'active' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${colOf(x)}"></i><span class="ctext"><b>${esc(x.name)}</b><small>${circMeta(x)}</small></span>${gradeBadge(x.grade)}</button>`).join('')
-        : `<p class="note" style="margin:0">${w.circuits.length ? 'Nessun circuito con questi filtri.' : 'Ancora nessun circuito su questo muro.'}</p>`)+
-      `</div>`+
-      `<div class="row">${EDIT && w.locked ? `<button class="btn primary" data-act="addc">+ Nuovo circuito</button>` : ''}<button class="btn" data-act="close">Chiudi</button></div>`;
+    h = `<h2>Circuiti · ${esc(w.name)}</h2>` + circFilters(w) + circRows(w, 'crow') +
+      `<div class="row" style="margin-top:14px">${EDIT && w.locked ? `<button class="btn primary" data-act="addc">+ Nuovo circuito</button>` : ''}<button class="btn" data-act="close">Chiudi</button></div>`;
   } else if(ui.sheet === 'wall'){
     const bo = BO();
     h = `<h2>${bo ? 'Settori' : 'Muri'}</h2><div class="list">`+
@@ -2068,23 +2068,16 @@ async function publishRemote(){
   location.reload();
 }
 async function publish(){
-  if(!EDIT || !ART || ui.publishing || !dirty()) return;
+  if(!EDIT || !SB || ui.publishing || !dirty()) return;
   ui.publishing = true; renderPub();
   try{
     await saveNow();
     busy('Pubblico…'); await nextPaint();
-    await ART.publish();   /* dopo il successo la vista si ricarica sulla nuova versione */
+    await publishRemote();   /* dopo il successo la pagina si ricarica sulla nuova versione */
   }catch(e){
     busyStack.length = 0; renderBusy();
     ui.publishing = false;
-    const code = e && e.code;
-    if(code === 'conflict'){ /* la vista si ricarica da sola sulla versione vincente */ }
-    else if(['not_writer','not_granted','not_declared','consent_required','capability_disabled','capability_removed'].includes(code)){
-      EDIT = false; S.mode = 'view'; toast('Per te la pagina è in sola lettura: non posso pubblicare.'); render();
-    }
-    else if(code === 'too_large') toast('Troppo pesante da pubblicare: elimina un muro o usa foto più piccole.');
-    else if(code === 'rate_limited') toast('Troppe pubblicazioni ravvicinate: aspetta qualche secondo.');
-    else toast('Pubblicazione non riuscita. Riprova.');
+    toast('Pubblicazione non riuscita: ' + ((e && e.message) || 'riprova.'));
     renderPub();
   }
 }
@@ -2168,12 +2161,15 @@ $('#stage').addEventListener('click', async e => {
   toast('Qui non c\'è una presa del muro. Per aggiungerla sblocca il muro nel tab Muro.');
 });
 
-const EDIT_ONLY = ['cgen','cfeet','bdraw','bclose','bundo','bcancel','bdiff','hcolor','btag','cropAll','tool','closeDraw','undoPt','cancelDraw','redraw','lock','unlock','tracing','addc','role','size','move','del','undo','color','delc','addw','delw','publish','autoall','stopauto','hand','dup','cropTap','cropUndo','cropClose','cropReset','cropCancel','cropDone','panelReset','panelDone','camlive','camCancel','camShot'];
+/* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
+const PUBLIC_ACTS = ['wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
+/* azioni riservate al gestore (preparazione dei muri e dei settori) */
+const MGR_ACTS = ['lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b || b.disabled) return;
   const a = b.dataset.act, w = curWall(), c = curCircuit();
-  if(EDIT_ONLY.includes(a) && !EDIT) return;
-  if(!isMgr() && ['lock','unlock','autoall','stopauto','delw','addw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','camlive','camShot','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext'].includes(a)) return;
+  if(!EDIT && !PUBLIC_ACTS.includes(a)) return;
+  if(!isMgr() && MGR_ACTS.includes(a)) return;
   switch(a){
     case 'mode': if(EDIT && !ui.scan && !(b.dataset.v === 'wall' && !isMgr())){ S.mode = b.dataset.v; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.redraw = null; ui.tool = 'detect'; render(); } break;
     case 'tool': ui.tool = b.dataset.v; ui.draft = []; ui.redraw = null; render(); break;
@@ -2205,7 +2201,6 @@ document.addEventListener('click', e => {
     case 'cropClose': if(ui.crop && ui.crop.pts.length >= 3) { ui.crop.closed = true; renderSheet(); } break;
     case 'cropReset': if(ui.crop){ ui.crop.pts = []; ui.crop.closed = false; renderSheet(); } break;
     case 'cropCancel': ui.crop = null; ui.sheet = null; renderSheet(); break;
-    case 'camlive': openCamera(); break;
     case 'login': ui.loginSent = false; openSheet('login'); break;
     case 'sendlink': sendLoginLink(); break;
     case 'passlogin': passLogin(); break;
@@ -2215,8 +2210,6 @@ document.addEventListener('click', e => {
     case 'setpass': openSheet('setpass'); break;
     case 'savepass': savePassword(); break;
     case 'logout': if(SB){ SB.auth.signOut().finally(() => location.reload()); } break;
-    case 'camCancel': closeCamera(); break;
-    case 'camShot': shootCamera(); break;
     case 'cropDone': finishCrop(); break;
     case 'cropAll': finishCrop(true); break;
     case 'sec': {
@@ -2230,13 +2223,9 @@ document.addEventListener('click', e => {
       if(EDIT && S.mode === 'wall' && v === 'boulder') S.mode = 'edit';
       ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); saveBUI(); render(); break;
     }
-    case 'bshow': case 'bcolor': {
+    case 'bshow': case 'bcolor':
       if(a === 'bshow') ui.bShow = b.dataset.v; else ui.bColor = ui.bColor === b.dataset.v ? '' : b.dataset.v;
-      saveBUI();
-      const vis = w ? visibleCircuits(w) : [];
-      if(w && vis.length && !vis.some(x => x.id === w.activeCircuit)){ w.activeCircuit = sortedVisible(w)[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); }
-      render(); if(ui.sheet === 'clist') renderSheet(); break;
-    }
+      saveBUI(); afterFilter(); break;
     case 'cgen': {
       if(!c || !w || !window.genCircuitName) break;
       c.name = window.genCircuitName(c.style || '', w.circuits.filter(x => x !== c).map(x => x.name));
@@ -2275,18 +2264,8 @@ document.addEventListener('click', e => {
     case 'publish': publish(); break;
     case 'pref': S.prefs[b.dataset.k] = !S.prefs[b.dataset.k]; save(); render(); break;
     case 'zoom': { const bx = $('#box').getBoundingClientRect(); applyZoom(ui.zoom * Math.pow(1.4, +b.dataset.d), bx.left + bx.width/2, bx.top + bx.height/2); break; }
-    case 'circ':
-      if(!w) break;
-      if(c && b.dataset.id === c.id){ if(EDIT) openSheet('circ'); break; }
-      w.activeCircuit = b.dataset.id; ui.sel = null; ui.move = false; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save(); render(); break;
     case 'clist': ui.confirm = null; openSheet('clist'); break;
-    case 'fang': {
-      ui.fAngle = b.dataset.v;
-      try{ localStorage.setItem('circ-filters', JSON.stringify({ a: ui.fAngle || '', g: ui.fGrade || '', f: ui.fFeet || '' })); }catch(err){}
-      const vis = w ? visibleCircuits(w) : [];
-      if(w && vis.length && !vis.some(x => x.id === w.activeCircuit)){ w.activeCircuit = vis[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); }
-      render(); break;
-    }
+    case 'fang': ui.fAngle = b.dataset.v; saveCF(); afterFilter(); break;
     case 'cedit': if(c && EDIT) openSheet('circ'); break;
     case 'pickc': {
       if(!w) break;
@@ -2364,7 +2343,6 @@ document.addEventListener('click', e => {
       if(S.mode === 'wall'){ if(w && ui.csel != null && (w.holds || [])[ui.csel]) delCat(w, ui.csel); break; }
       if(c && ui.sel != null){ c.holds.splice(ui.sel, 1); ui.sel = null; ui.move = false; ui.nextHand = handFor(c); if(!c.holds.length) ui.nextRole = 'start'; touch(); render(); } break;
     case 'undo': if(c && c.holds.length){ c.holds.pop(); ui.sel = null; ui.move = false; ui.nextHand = handFor(c); if(!c.holds.length) ui.nextRole = 'start'; touch(); render(); } break;
-    case 'color': if(c){ c.color = b.dataset.c; touch(); render(); renderSheet(); } break;
     case 'delc':
       if(!w || !c) break;
       if(ui.confirm !== 'delc'){ ui.confirm = 'delc'; renderSheet(); break; }
@@ -2387,18 +2365,9 @@ document.addEventListener('click', e => {
 document.addEventListener('input', e => {
   const c = curCircuit(), w = curWall();
   if(e.target.id === 'lemail'){ ui.loginEmail = e.target.value.trim(); return; }
-  if(e.target.id === 'fangle' || e.target.id === 'fgrade' || e.target.id === 'ffeet'){
-    if(e.target.id === 'fangle') ui.fAngle = e.target.value; else if(e.target.id === 'ffeet') ui.fFeet = e.target.value; else ui.fGrade = e.target.value;
-    try{ localStorage.setItem('circ-filters', JSON.stringify({ a: ui.fAngle || '', g: ui.fGrade || '', f: ui.fFeet || '' })); }catch(err){}
-    const wf = curWall(), vis = wf ? visibleCircuits(wf) : [];
-    if(wf && vis.length && !vis.some(x => x.id === wf.activeCircuit)){ wf.activeCircuit = vis[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); }
-    render(); if(ui.sheet === 'clist') renderSheet(); return;
-  }
-  if(e.target.id === 'bgradef'){
-    ui.bGrade = e.target.value; saveBUI();
-    const wf = curWall(), vis = wf ? visibleCircuits(wf) : [];
-    if(wf && vis.length && !vis.some(x => x.id === wf.activeCircuit)){ wf.activeCircuit = sortedVisible(wf)[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); }
-    render(); if(ui.sheet === 'clist') renderSheet(); return;
+  if(e.target.id === 'fgrade' || e.target.id === 'ffeet'){
+    if(e.target.id === 'ffeet') ui.fFeet = e.target.value; else ui.fGrade = e.target.value;
+    saveCF(); afterFilter(); return;
   }
   if(!EDIT) return;
   if(e.target.id === 'bsetter' && c){ const v = e.target.value.trim(); if(v) c.setter = v; else delete c.setter; try{ localStorage.setItem('boulder-setter', v); }catch(err){} renderChips(); touch(); }
@@ -2418,43 +2387,9 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('keydown', e => {
   if(e.key === 'Escape' && ui.sheet){ ui.sheet = null; ui.confirm = null; renderSheet(); return; }
-  const l = e.target.closest && e.target.closest('label[for]');
-  if(l && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); const i = document.getElementById(l.htmlFor); if(i) i.click(); }
 });
 $('#sheet').addEventListener('click', e => { if(e.target.id === 'sheet'){ ui.sheet = null; ui.confirm = null; renderSheet(); } });
 
-let camStream = null;
-async function openCamera(){
-  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-    toast('Questo browser non offre accesso diretto alla fotocamera. Prova ad aprire il link nel browser del telefono.');
-    return;
-  }
-  try{
-    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-  }catch(err){
-    toast('Fotocamera non disponibile qui (' + (err && err.name || 'errore') + '). Prova ad aprire il link nel browser del telefono (Safari/Chrome) invece che dentro l\'app.');
-    return;
-  }
-  const v = $('#camVideo'); v.srcObject = camStream;
-  $('#camWrap').hidden = false;
-}
-function closeCamera(){
-  if(camStream){ camStream.getTracks().forEach(t => t.stop()); camStream = null; }
-  $('#camWrap').hidden = true;
-}
-function shootCamera(){
-  const v = $('#camVideo');
-  const vw = v.videoWidth, vh = v.videoHeight;
-  if(!vw || !vh) return;
-  const k = Math.min(1, 2000 / Math.max(vw, vh));
-  const w = Math.round(vw*k), h = Math.round(vh*k);
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  c.getContext('2d').drawImage(v, 0, 0, w, h);
-  const img = c.toDataURL('image/jpeg', 0.86);
-  closeCamera();
-  ui.crop = { w, h, img, pts: [], closed: false };
-  openSheet('crop');
-}
 async function onFile(e){
   const f = e.target.files && e.target.files[0]; e.target.value = '';
   if(!f || !EDIT || !isMgr()) return;
@@ -2499,30 +2434,6 @@ async function finishCrop0(cr){
   touch(); render(); renderSheet();
 }
 document.addEventListener('change', e => { if(e.target && e.target.matches && e.target.matches('input[data-pick]')) onFile(e); });
-/* incolla una foto copiata dalla galleria: non serve il selettore di file, che alcune app bloccano */
-function pastedImage(e){
-  const dt = e.clipboardData; if(!dt) return null;
-  for(const it of Array.from(dt.items || [])){ if(it.kind === 'file' && /^image\//.test(it.type)){ const f = it.getAsFile(); if(f) return f; } }
-  for(const f of Array.from(dt.files || [])){ if(/^image\//.test(f.type)) return f; }
-  return null;
-}
-document.addEventListener('beforeinput', e => { if(e.target && e.target.closest && e.target.closest('[data-paste]') && e.inputType !== 'insertFromPaste') e.preventDefault(); });
-document.addEventListener('paste', async e => {
-  const t = e.target, inZone = t && t.closest && t.closest('[data-paste]');
-  const f = pastedImage(e);
-  if(!f){ if(inZone){ e.preventDefault(); toast('Negli appunti non c\'è una foto. Copia prima l\'immagine dalla Galleria.'); } return; }
-  if(!inZone && t && t.closest && t.closest('input,textarea')) return;
-  e.preventDefault();
-  if(!EDIT) return;
-  try{
-    const p = await readPhoto(f);
-    ui.crop = { w: p.w, h: p.h, img: p.img, pts: [], closed: false };
-    openSheet('crop');
-  }catch(err){ toast('Non riesco a leggere questa foto. Prova con un\'altra.'); }
-});
-$('#file').addEventListener('change', onFile);
-$('#cam').addEventListener('change', onFile);
-
 /* zoom a due dita (e ctrl+rotella su computer), centrato sul punto tra le dita */
 function applyZoom(nz, fx, fy){
   const w = curWall(); if(!w) return;
@@ -2583,7 +2494,7 @@ render();
         if(row && row.data && Array.isArray(row.data.walls) && (row.rev || 0) >= S.rev){
           S.walls = row.data.walls; S.active = row.data.active || S.active; S.rev = row.rev;
           S.prefs = Object.assign(S.prefs, row.data.prefs || {});
-          PUBREV = S.rev; SEEDWALLS = S.walls;
+          PUBREV = S.rev; PUBWALLS = S.walls;
           if(!curWall() && S.walls.length) S.active = S.walls[0].id;
           render();
         }
@@ -2593,7 +2504,7 @@ render();
       if(session){
         const { data: ok } = await SB.rpc('is_editor');
         if(ok){
-          ART = { publish: publishRemote }; EDIT = true;
+          EDIT = true;
           let role = 'tracciatore';
           try{ const r = await SB.rpc('my_role'); if(r && r.data) role = r.data; }catch(e){}
           ME = { email: (session.user && session.user.email) || '', role };
