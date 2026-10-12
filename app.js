@@ -1795,8 +1795,8 @@ function renderTools(){
   if(!EDIT || S.mode === 'view'){
     const p = S.prefs;
     el.innerHTML = c ? `<div class="mini">`+
-      (isSec(w) ? '' : `<button class="btn ${p.numbers ? 'on' : ''}" data-act="pref" data-k="numbers">Numeri</button>`+
-      `<button class="btn ${p.lines ? 'on' : ''}" data-act="pref" data-k="lines">Linee</button>`)+
+      (isSec(w) ? '' : `<button class="btn ${p.numbers ? 'on' : ''}" data-act="pref" data-k="numbers">Numeri</button>`)+
+      `<button class="btn ${p.lines ? 'on' : ''}" data-act="pref" data-k="lines">${isSec(w) ? 'Linea' : 'Linee'}</button>`+
       `<button class="btn ${p.others ? 'on' : ''}" data-act="pref" data-k="others">${isSec(w) ? 'Altri boulder' : 'Altri circuiti'}</button>`+
       `<button class="btn ${p.dim ? 'on' : ''}" data-act="pref" data-k="dim">${isSec(w) ? 'Oscura settore' : 'Oscura muro'}</button>`+
       `</div>` : '';
