@@ -140,7 +140,8 @@ const curWall = () => { const l = secWalls(); return l.find(w => w.id === S.acti
 const BO = () => ui.section === 'boulder';
 /* boulder, per chi guarda: tre livelli. 1) griglia dei settori, 2) settore con tutte le linee, 3) blocco a schermo intero */
 const bView = () => BO() && (!EDIT || S.mode === 'view');
-const bGrid = () => bView() && !ui.full && ui.bLevel === 'sectors' && secWalls().length > 1;
+const bLv = () => BO() && !ui.full && !(EDIT && S.mode === 'wall');
+const bGrid = () => bLv() && ui.bLevel === 'sectors' && (secWalls().length > 1 || (EDIT && isMgr() && secWalls().length > 0));
 const bOver = () => bView() && !ui.full && !bGrid();
 const todayISO = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); };
 const isOff = c => !!(c && c.dateRemoved && c.dateRemoved <= todayISO());
@@ -1572,7 +1573,8 @@ function lineSVG(pts, W, col, c, k){
     mask = `<defs><mask id="${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="100000" height="100000"><rect x="0" y="0" width="100000" height="100000" fill="#fff"/>${holes}</mask></defs>`;
     mattr = ` mask="url(#${id})"`;
   }
-  return mask + `<g${mattr}><path d="${d}" fill="none" stroke="${haloOf(col)}" stroke-opacity=".45" stroke-width="${lw*1.9}" stroke-linecap="round" stroke-linejoin="round"/>`+
+  const light = lum(col) > 0.85;
+  return mask + `<g${mattr}><path d="${d}" fill="none" stroke="${haloOf(col)}" stroke-opacity="${light ? .85 : .45}" stroke-width="${lw*(light ? 2.3 : 1.9)}" stroke-linecap="round" stroke-linejoin="round"/>`+
          `<path d="${d}" fill="none" stroke="${col}" stroke-opacity=".95" stroke-width="${lw}" stroke-linecap="round" stroke-linejoin="round"/></g>`;
 }
 /* dal tratto del dito a pochi punti puliti: si tengono quelli distanti almeno 2,5% della foto e poi si semplifica */
@@ -1613,9 +1615,16 @@ function sectorGrid(){
   return `<div class="sgrid">` + secWalls().map(w => {
     const on = w.circuits.filter(c => !isOff(c));
     const dots = DIFFS.map(d => { const n = on.filter(c => c.diff === d[0]).length; return n ? `<span class="sdot"><i style="background:${d[2]}"></i>${n}</span>` : ''; }).join('');
+    let staff = '';
+    if(EDIT){
+      const last = on.map(c => c.dateSet || '').sort().pop();
+      const t = todayISO(), lim = new Date(Date.now() + 7*864e5).toISOString().slice(0,10);
+      const due = on.filter(c => c.dateRemoved && c.dateRemoved >= t && c.dateRemoved <= lim).length;
+      staff = `<span class="sinfo">${last ? 'ultimo montaggio ' + fmtDate(last) : 'nessun montaggio'}${due ? `<br><b>${due} da smontare entro 7 giorni</b>` : ''}</span>`;
+    }
     return `<button class="scard" data-act="opensec" data-id="${w.id}"><span class="sph"><img src="${esc(w.img)}" alt="" loading="lazy"></span>`+
-      `<span class="sname">${esc(w.name)}</span><span class="sdots">${dots || '<small>nessun boulder</small>'}</span></button>`;
-  }).join('') + `</div>`;
+      `<span class="sname">${esc(w.name)}</span><span class="sdots">${dots || '<small>nessun boulder</small>'}</span>${staff}</button>`;
+  }).join('') + (EDIT && isMgr() ? `<div class="scard sadd"><span class="sname">+ Nuovo settore</span><span class="sinfo">Carica la foto del settore</span><div class="sbtns">${PICK_BTNS}</div></div>` : '') + `</div>`;
 }
 function overlay(w, o){
   if(o.wall){
@@ -1680,9 +1689,9 @@ function renderTop(){
   $('#wallBtn').setAttribute('aria-label', BO() ? 'Scegli un settore' : 'Scegli un muro');
   const multi = secWalls().length > 1;
   $('#wallBtn').disabled = !EDIT && !multi && !SB;
-  if(bView()) $('#wallBtn').disabled = true;
+  if((bView() && !EDIT) || bGrid()) $('#wallBtn').disabled = true;
   $('#chev').toggleAttribute('hidden', $('#wallBtn').disabled);
-  $('#backBtn').hidden = !(bOver() && multi);
+  $('#backBtn').hidden = !(bLv() && !bGrid() && (multi || (EDIT && isMgr())));
   $('#modes').hidden = !EDIT;
   $('#instBtn').hidden = EDIT || !canInstall();
   document.querySelectorAll('#modes button').forEach(b => {
@@ -1949,6 +1958,7 @@ function render(){
   if(ui.full && (!viewing || !curCircuit())) ui.full = false;
   $('#app').classList.toggle('full', !!ui.full);
   $('#app').classList.toggle('grid', bGrid());
+  $('#app').classList.toggle('over', bOver());
   renderTop(); renderViewbar(); renderPub(); renderStage(); renderChips(); renderTools(); renderFull(); }
 /* ordine degli elenchi: circuiti per grado e nome, boulder per difficoltà e numero */
 const circCmp = (x, y) => gradeIdx(x.grade) - gradeIdx(y.grade) || String(x.name).localeCompare(String(y.name));
@@ -1990,7 +2000,7 @@ function focusCircuit(){
     box.scrollTop = st.offsetTop + (y0 + y1)/2*k - box.clientHeight/2;
   }));
 }
-window.addEventListener('popstate', () => { if(ui.full){ ui.full = false; ui.zoom = 1; render(); } else if(bOver() && ui.bLevel === 'sector' && !(history.state && history.state.sec)){ ui.bLevel = 'sectors'; ui.zoom = 1; render(); } });
+window.addEventListener('popstate', () => { if(ui.full){ ui.full = false; ui.zoom = 1; render(); } else if(bLv() && ui.bLevel === 'sector' && !(history.state && history.state.sec)){ ui.bLevel = 'sectors'; ui.zoom = 1; render(); } });
 
 /* ---------- pannelli ---------- */
 function openSheet(name){ ui.sheet = name; ui.confirm = null; renderSheet(); }
@@ -2044,14 +2054,14 @@ function renderSheet(){
       `<div class="row" style="margin-top:14px">${EDIT && w.locked ? `<button class="btn primary" data-act="addc">+ Nuovo circuito</button>` : ''}<button class="btn" data-act="close">Chiudi</button></div>`;
   } else if(ui.sheet === 'wall'){
     const bo = BO();
-    h = `<h2>${bo ? 'Settori' : 'Muri'}</h2><div class="list">`+
+    h = bo && EDIT ? `<h2>${w ? esc(w.name) : 'Settore'}</h2>` : `<h2>${bo ? 'Settori' : 'Muri'}</h2><div class="list">`+
       secWalls().map(x => `<button class="wrow ${w && x.id === w.id ? 'active' : ''}" data-act="pickw" data-id="${x.id}"><span>${esc(x.name)}</span><small>${bo ? x.circuits.filter(c => !isOff(c)).length + ' boulder' : x.circuits.length + ' circuiti'}</small></button>`).join('') +
       (secWalls().length ? '' : `<p class="note" style="margin:0">${bo ? 'Nessun settore ancora.' : 'Nessun muro ancora.'}</p>`) +
       `</div>`;
     if(EDIT){
       h += (w && isMgr() ? `<label class="field">${bo ? 'Nome del settore' : 'Nome del muro'}<input id="wname" value="${esc(w.name)}" maxlength="40"></label>` : '') +
         (w && !isMgr() && !w.locked ? `<p class="note" style="margin:0 0 12px">Questo muro è ancora in preparazione: potrai tracciarci quando il gestore lo blocca.</p>` : '') +
-        (isMgr() ? `${bo ? `<p class="note" style="margin:0 0 8px">Aggiungi un settore:</p>` : ''}<div class="row">${PICK_BTNS}</div>` : '')+
+        (isMgr() && !bo ? `<div class="row">${PICK_BTNS}</div>` : '')+
         `<div class="row" style="margin-top:10px">` +
         (w && isMgr() ? `<button class="btn danger" data-act="delw">${ui.confirm === 'delw' ? 'Tocca ancora per eliminare' : bo ? 'Elimina settore' : 'Elimina muro'}</button>` : '') +
         `<button class="btn primary" data-act="close">Fatto</button></div>`+
@@ -2062,7 +2072,7 @@ function renderSheet(){
       h += `<div class="row">${canInstall() ? `<button class="btn" data-act="install">Installa l'app</button>` : ''}${SB && !REAL_EDIT ? `<button class="btn" data-act="login">Accedi (staff)</button>` : ''}<button class="btn primary" data-act="close">Chiudi</button></div>`;
     }
   } else if(ui.sheet === 'menu'){
-    const bo = w && isSec(w), n = w ? sortedVisible(w).length : 0, one = bo ? 'questo boulder' : 'questo circuito';
+    const bo = w ? isSec(w) : BO(), n = w ? sortedVisible(w).length : 0, one = bo ? 'questo boulder' : 'questo circuito';
     const row = (act, label, sub, dis) => `<button class="wrow" data-act="${act}" ${dis ? 'disabled' : ''}><span>${label}</span><small>${sub || ''}</small></button>`;
     h = `<h2>Altro</h2><div class="list">`+
       row('printone', 'Stampa ' + one, c ? esc(blockTitle(w, c)) : '', !c)+
@@ -2524,7 +2534,7 @@ document.addEventListener('click', e => {
     case 'stopauto': if(ui.scan) ui.scan.stop = true; break;
     case 'tracing': if(w && w.locked){ S.mode = 'edit'; render(); } break;
     case 'wall': openSheet('wall'); break;
-    case 'opensec': S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.bLevel = 'sector'; ui.zoom = 1; try{ history.pushState({ sec: 1 }, ''); }catch(e){} render(); $('#box').scrollTop = 0; break;
+    case 'opensec': S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.bLevel = 'sector'; ui.zoom = 1; ui.sel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save(); try{ history.pushState({ sec: 1 }, ''); }catch(e){} render(); $('#box').scrollTop = 0; break;
     case 'bback': if(history.state && history.state.sec){ try{ history.back(); }catch(e){} } ui.bLevel = 'sectors'; ui.zoom = 1; render(); break;
     case 'img': makeImage(); break;
     case 'menu': openSheet('menu'); break;
@@ -2699,7 +2709,7 @@ async function finishCrop0(cr){
   const w = { id: uid(), name: pre + wn, w: cw, h: ch, img, circuits: [], activeCircuit: null };
   if(bo){ w.kind = 'sector'; w.locked = true; w.holds = []; }
   const circ = newCircuit(w); w.circuits.push(circ); w.activeCircuit = circ.id;
-  S.walls.push(w); S.active = w.id; S.mode = 'edit';
+  S.walls.push(w); S.active = w.id; S.mode = 'edit'; if(bo) ui.bLevel = 'sector';
   ui.sel = null; ui.move = false; ui.zoom = 1; ui.nextRole = 'start'; ui.crop = null; ui.sheet = null;
   touch(); render(); renderSheet();
 }
