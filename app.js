@@ -97,7 +97,7 @@ let SEEDWALLS = S.walls;
 let EDIT = false, ART = null, SB = null, BASE = null, ME = null;
 const isMgr = () => !ME || ME.role === 'gestore';
 const ui = { view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:null, csel:null, busy:false, warnedRing:false, sel:null, move:false, nextRole:'start', zoom:1, sheet:null, confirm:null, imgUrl:null, ready:false, publishing:false, saveWarned:false, scan:null, nextHand:'', crop:null };
-try{ const f = JSON.parse(localStorage.getItem('circ-filters') || '{}'); ui.fAngle = f.a || ''; ui.fGrade = f.g || ''; }catch(e){}
+try{ const f = JSON.parse(localStorage.getItem('circ-filters') || '{}'); ui.fAngle = f.a || ''; ui.fGrade = f.g || ''; ui.fFeet = f.f || ''; }catch(e){}
 ui.section = 'circ'; ui.bShow = 'on'; ui.bGrade = ''; ui.bColor = ''; ui.lastSec = {};
 try{ const f = JSON.parse(localStorage.getItem('boulder-ui') || '{}'); if(f.sec === 'boulder') ui.section = 'boulder'; ui.bShow = f.show || 'on'; ui.bGrade = f.g || ''; ui.bColor = f.c || ''; ui.lastSec = f.last || {}; }catch(e){}
 if(!DIFFS.some(d => d[0] === ui.bColor)) ui.bColor = '';
@@ -1418,7 +1418,7 @@ function renderStage(){
 }
 function visibleCircuits(w){
   if(isSec(w)) return w.circuits.filter(c => (ui.bShow === 'all' || (ui.bShow === 'off') === isOff(c)) && (!ui.bColor || c.diff === ui.bColor));
-  return w.circuits.filter(c => (!ui.fAngle || String(c.angle) === String(ui.fAngle)) && (!ui.fGrade || c.grade === ui.fGrade));
+  return w.circuits.filter(c => (!ui.fAngle || String(c.angle) === String(ui.fAngle)) && (!ui.fGrade || c.grade === ui.fGrade) && (!ui.fFeet || c.feet === ui.fFeet));
 }
 const gradeBand = g => { const i = GRADES.indexOf(g || ''); if(i <= 0) return '#5b6068'; if(i <= GRADES.indexOf('5c')) return '#7bd389'; if(i <= GRADES.indexOf('6b+')) return '#ffd166'; if(i <= GRADES.indexOf('7a+')) return '#ff9a3d'; return '#ef476f'; };
 const gradeBadge = g => `<span class="gb" style="background:${gradeBand(g)}">${esc(g || '–')}</span>`;
@@ -1445,6 +1445,10 @@ function bRows(w, cls){
   if(!vis.length) return `<p class="hint" style="padding:6px 2px">${w.circuits.length ? 'Nessun boulder con questi filtri.' : 'Ancora nessun boulder su questo settore.'}</p>`;
   return `<div class="list" style="gap:${cls === 'crow' ? 6 : 0}px;margin:0">` + vis.map(x => `<button class="${cls} ${act && x.id === act.id ? 'active' : ''} ${isOff(x) ? 'off' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext" style="flex:1"><b>${bTitleHtml(x)}</b><small>${[x.style ? esc(x.style) : '', bMeta(x)].filter(Boolean).join(' · ')}</small></span></button>`).join('') + `</div>`;
 }
+function feetSel(w){
+  if(!w.circuits.some(x => x.feet)) return '';
+  return `<select id="ffeet" class="fsel" aria-label="Piedi"><option value="">Tutti i piedi</option>${[['liberi','Piedi liberi'],['obbligati','Piedi obbligati']].map(o => `<option value="${o[0]}" ${ui.fFeet === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>`;
+}
 function renderChips(){
   const w = curWall(), el = $('#chips');
   if(!w || (EDIT && S.mode === 'wall')){ el.innerHTML = ''; return; }
@@ -1460,13 +1464,13 @@ function renderChips(){
     const vis = visibleCircuits(w).slice().sort((x, y) => gradeIdx(x.grade) - gradeIdx(y.grade) || String(x.name).localeCompare(String(y.name)));
     const fa = v => `<button class="fchip ${String(ui.fAngle || '') === String(v) ? 'on' : ''}" data-act="fang" data-v="${v}">${v === '' ? 'Tutti' : v + '°'}</button>`;
     el.innerHTML = (tot ? `<div class="fchips">${angles.length ? fa('') + angles.map(fa).join('') : ''}`+
-        (grades.length ? `<select id="fgrade" class="fsel" aria-label="Grado"><option value="">Tutti i gradi</option>${grades.map(g => `<option value="${g}" ${ui.fGrade === g ? 'selected' : ''}>${g}</option>`).join('')}</select>` : '')+`</div>` : '')+
+        (grades.length ? `<select id="fgrade" class="fsel" aria-label="Grado"><option value="">Tutti i gradi</option>${grades.map(g => `<option value="${g}" ${ui.fGrade === g ? 'selected' : ''}>${g}</option>`).join('')}</select>` : '')+feetSel(w)+`</div>` : '')+
       (vis.length ? vis.map(x => `<button class="lrow ${act && x.id === act.id ? 'active' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext" style="flex:1"><b>${esc(x.name)}</b><small>${circMeta(x)}</small></span>${gradeBadge(x.grade)}</button>`).join('')
         : `<p class="hint" style="padding:6px 2px">${tot ? 'Nessun circuito con questi filtri.' : 'Ancora nessun circuito su questo muro.'}</p>`)+
       (vis.length ? `<p class="hint" style="text-align:center;margin:8px 0 0;font-size:13px">Tocca un circuito per vederlo sul muro, tocca di nuovo per aprirlo a schermo intero.</p>` : '');
     return;
   }
-  const filtered = !isSec(w) && (ui.fAngle || ui.fGrade) ? ` · filtrati ${n}/${tot}` : '';
+  const filtered = !isSec(w) && (ui.fAngle || ui.fGrade || ui.fFeet) ? ` · filtrati ${n}/${tot}` : '';
   if(!act){
     el.innerHTML = `<div class="curbar"><span class="cinfo"><b>${isSec(w) ? 'Nessun boulder su questo settore' : 'Nessun circuito su questo muro'}</b></span>${EDIT ? `<button class="btn primary" data-act="addc">${isSec(w) ? '+ Nuovo boulder' : '+ Nuovo circuito'}</button>` : ''}</div>`;
     return;
@@ -1690,7 +1694,7 @@ function renderSheet(){
     const vis = visibleCircuits(w).slice().sort((x, y) => gradeIdx(x.grade) - gradeIdx(y.grade) || String(x.name).localeCompare(String(y.name)));
     const act = curCircuit();
     h = `<h2>Circuiti · ${esc(w.name)}</h2>`+
-      ((angles.length || grades.length) ? `<div class="row" style="margin:0 0 12px">${angles.length ? sel('fangle', ui.fAngle || '', 'Tutte le inclinazioni', angles.map(x => [x, x + '°'])) : ''}${grades.length ? sel('fgrade', ui.fGrade || '', 'Tutti i gradi', grades.map(g => [g, g])) : ''}</div>` : '')+
+      ((angles.length || grades.length || feetSel(w)) ? `<div class="row" style="margin:0 0 12px">${angles.length ? sel('fangle', ui.fAngle || '', 'Tutte le inclinazioni', angles.map(x => [x, x + '°'])) : ''}${grades.length ? sel('fgrade', ui.fGrade || '', 'Tutti i gradi', grades.map(g => [g, g])) : ''}${feetSel(w)}</div>` : '')+
       `<div class="list">`+
       (vis.length ? vis.map(x => `<button class="crow ${act && x.id === act.id ? 'active' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext"><b>${esc(x.name)}</b><small>${circMeta(x)}</small></span>${gradeBadge(x.grade)}</button>`).join('')
         : `<p class="note" style="margin:0">${w.circuits.length ? 'Nessun circuito con questi filtri.' : 'Ancora nessun circuito su questo muro.'}</p>`)+
@@ -2115,7 +2119,7 @@ document.addEventListener('click', e => {
     case 'clist': ui.confirm = null; openSheet('clist'); break;
     case 'fang': {
       ui.fAngle = b.dataset.v;
-      try{ localStorage.setItem('circ-filters', JSON.stringify({ a: ui.fAngle || '', g: ui.fGrade || '' })); }catch(err){}
+      try{ localStorage.setItem('circ-filters', JSON.stringify({ a: ui.fAngle || '', g: ui.fGrade || '', f: ui.fFeet || '' })); }catch(err){}
       const vis = w ? visibleCircuits(w) : [];
       if(w && vis.length && !vis.some(x => x.id === w.activeCircuit)){ w.activeCircuit = vis[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); }
       render(); break;
@@ -2219,9 +2223,9 @@ document.addEventListener('click', e => {
 document.addEventListener('input', e => {
   const c = curCircuit(), w = curWall();
   if(e.target.id === 'lemail'){ ui.loginEmail = e.target.value.trim(); return; }
-  if(e.target.id === 'fangle' || e.target.id === 'fgrade'){
-    if(e.target.id === 'fangle') ui.fAngle = e.target.value; else ui.fGrade = e.target.value;
-    try{ localStorage.setItem('circ-filters', JSON.stringify({ a: ui.fAngle || '', g: ui.fGrade || '' })); }catch(err){}
+  if(e.target.id === 'fangle' || e.target.id === 'fgrade' || e.target.id === 'ffeet'){
+    if(e.target.id === 'fangle') ui.fAngle = e.target.value; else if(e.target.id === 'ffeet') ui.fFeet = e.target.value; else ui.fGrade = e.target.value;
+    try{ localStorage.setItem('circ-filters', JSON.stringify({ a: ui.fAngle || '', g: ui.fGrade || '', f: ui.fFeet || '' })); }catch(err){}
     const wf = curWall(), vis = wf ? visibleCircuits(wf) : [];
     if(wf && vis.length && !vis.some(x => x.id === wf.activeCircuit)){ wf.activeCircuit = vis[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); }
     render(); if(ui.sheet === 'clist') renderSheet(); return;
