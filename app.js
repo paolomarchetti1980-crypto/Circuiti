@@ -1292,11 +1292,25 @@ function circuitSVG(c, W, alpha, o){
          `<polyline points="${p}" fill="none" stroke="${base}" stroke-width="${lw*0.85}" stroke-dasharray="${lw*1.4} ${lw*1.4}" stroke-linecap="round"/>`;
   }
   c.holds.forEach((h,i) => {
-    const col = !o.boulder && h.hand === 'L' ? S.prefs.handL : !o.boulder && h.hand === 'R' ? S.prefs.handR : base, ha = haloOf(col);
+    let col = !o.boulder && h.hand === 'L' ? S.prefs.handL : !o.boulder && h.hand === 'R' ? S.prefs.handR : base, ha = haloOf(col);
     const key = h.cid != null ? ('c'+h.cid) : ('p'+Math.round(h.x)+'_'+Math.round(h.y));
     const g = h.role === 'hold' ? grp[key] : null, gi = g ? g.indexOf(i) : 0;
-    const scale = gi > 0 ? Math.max(0.58, 1 - gi*0.22) : 1;
-    if(h.poly){
+    /* stessa presa presa con entrambe le mani: un solo contorno, metà sinistra colore della sinistra, metà destra della destra */
+    const split = !o.boulder && g && g.length > 1 && g.some(j => c.holds[j].hand === 'L') && g.some(j => c.holds[j].hand === 'R');
+    const scale = gi > 0 && !split ? Math.max(0.58, 1 - gi*0.22) : 1;
+    if(split && gi > 0){ /* già disegnata al primo passaggio */ }
+    else if(split){
+      const bb = holdBox(h, W), mx = (bb.x0 + bb.x1)/2, id = 'sp' + String(c.id).replace(/[^\w-]/g, '') + '_' + i;
+      const shape = (cl) => { const hh = haloOf(cl);
+        if(h.poly){ const d = polyPath(h.poly);
+          return `<path d="${d}" fill="${cl}" fill-opacity=".26" stroke="${hh}" stroke-opacity=".55" stroke-width="${sw+hw*2}" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="${cl}" stroke-width="${sw*1.15}" stroke-linejoin="round"/>`; }
+        const rr = h.r*W, rsw = Math.max(2, rr*0.10), rhw = rsw*0.55;
+        return `<circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${hh}" stroke-opacity=".55" stroke-width="${rsw+rhw*2}"/><circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${cl}" stroke-width="${rsw}"/>`; };
+      s += `<defs><clipPath id="${id}L" clipPathUnits="userSpaceOnUse"><rect x="${mx - 1e5}" y="-100000" width="100000" height="200000"/></clipPath>`+
+           `<clipPath id="${id}R" clipPathUnits="userSpaceOnUse"><rect x="${mx}" y="-100000" width="100000" height="200000"/></clipPath></defs>`+
+           `<g clip-path="url(#${id}L)">${shape(S.prefs.handL)}</g><g clip-path="url(#${id}R)">${shape(S.prefs.handR)}</g>`;
+    }
+    else if(h.poly){
       const poly = scale < 1 ? h.poly.map((v,k) => k % 2 === 0 ? h.x + (v-h.x)*scale : h.y + (v-h.y)*scale) : h.poly;
       const d = polyPath(poly);
       s += `<path d="${d}" fill="${col}" fill-opacity="${o.boulder ? 0 : .26}" stroke="${ha}" stroke-opacity=".55" stroke-width="${sw+hw*2}" stroke-linejoin="round"/>`+
@@ -1312,6 +1326,7 @@ function circuitSVG(c, W, alpha, o){
       label = g.map(j => seqOf[j]).join(',');
     }
     if(label){
+      if(split){ col = base; ha = haloOf(base); }
       const bb = holdBox(h, W), br = Math.max(W*0.018, 12), bx = bb.x1, by = bb.y0;
       s += `<circle cx="${bx}" cy="${by}" r="${br}" fill="${col}" stroke="${ha}" stroke-opacity=".7" stroke-width="${br*0.22}"/>`+
            `<text x="${bx}" y="${by}" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed, Arial, sans-serif" font-weight="700" font-size="${br*(label.length>1?0.8:1.25)}" fill="${inkOn(col)}">${label}</text>`;
