@@ -1380,6 +1380,26 @@ function placeBubbles(h, W, br, gap, env, n){
   }
   return best ? best.chain : [T[0]];
 }
+/* contorno rientrato verso l'interno di d: ogni vertice si sposta lungo la bisettrice delle normali dei due lati,
+   senza superare il 45% della sua distanza dal centro (sulle prese piccole non si chiude su se stesso) */
+function insetPoly(pl, d){
+  const n = pl.length/2; if(n < 3) return pl;
+  let A = 0, cx = 0, cy = 0;
+  for(let i=0;i<n;i++){ const j = (i+1)%n; A += pl[2*i]*pl[2*j+1] - pl[2*j]*pl[2*i+1]; cx += pl[2*i]; cy += pl[2*i+1]; }
+  cx /= n; cy /= n; const sg = A > 0 ? 1 : -1, out = [];
+  for(let i=0;i<n;i++){
+    const a = (i-1+n)%n, b = (i+1)%n, x = pl[2*i], y = pl[2*i+1];
+    let e1x = x - pl[2*a], e1y = y - pl[2*a+1], e2x = pl[2*b] - x, e2y = pl[2*b+1] - y;
+    const l1 = Math.hypot(e1x, e1y) || 1, l2 = Math.hypot(e2x, e2y) || 1;
+    /* normale interna: per un poligono antiorario (in coordinate schermo) è (-dy, dx) */
+    const n1x = -e1y/l1*sg, n1y = e1x/l1*sg, n2x = -e2y/l2*sg, n2y = e2x/l2*sg;
+    let bx = n1x + n2x, by = n1y + n2y; const bl = Math.hypot(bx, by) || 1; bx /= bl; by /= bl;
+    const cosh = Math.max(0.5, bx*n1x + by*n1y);
+    const k = Math.min(d/cosh, Math.hypot(cx - x, cy - y)*0.45);
+    out.push(x + bx*k, y + by*k);
+  }
+  return out;
+}
 function circuitSVG(c, W, alpha, o){
   const segs = [], labels = [];
   const sw = Math.max(2, W*0.0028), hw = sw*0.5;
@@ -1438,27 +1458,30 @@ function circuitSVG(c, W, alpha, o){
       lv = { n: li, split: levels[li].split, first: levels[li].idx[0] === i, lastSplit: levels[levels.length-1].split };
     }
     const split = !!(lv && lv.split);
-    const scale = lv ? (lv.n > 0 ? Math.max(0.58, 1 - lv.n*0.22) : 1) : (gi > 0 ? Math.max(0.58, 1 - gi*0.22) : 1);
-    const sc = (pl) => scale < 1 ? pl.map((v,k) => k % 2 === 0 ? h.x + (v-h.x)*scale : h.y + (v-h.y)*scale) : pl;
+    /* contorni dei passaggi successivi: rientrano di una distanza fissa (poco più di due spessori di linea),
+       così restano vicini al primo anche sulle prese grandi e sui volumi */
+    const lvN = lv ? lv.n : gi, inset = lvN > 0 ? lvN*sw*2.6 : 0;
+    const sc = (pl) => inset ? insetPoly(pl, inset) : pl;
+    const rIn = rr0 => Math.max(rr0*0.5, rr0 - inset);
     if(lv && !lv.first){ /* già disegnata col primo passaggio di questo livello */ }
     else if(split){
       const bb = holdBox(h, W), mx = (bb.x0 + bb.x1)/2, id = 'sp' + String(c.id).replace(/[^\w-]/g, '') + '_' + i;
       const shape = (cl) => { const hh = haloOf(cl);
         if(h.poly){ const d = polyPath(sc(h.poly));
           return `<path d="${d}" fill="none" stroke="${hh}" stroke-opacity=".55" stroke-width="${sw+hw*2}" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="${cl}" stroke-width="${sw*1.15}" stroke-linejoin="round"/>`; }
-        const rr = h.r*W*scale, rsw = Math.max(2, rr*0.10), rhw = rsw*0.55;
+        const rr = rIn(h.r*W), rsw = Math.max(2, rr*0.10), rhw = rsw*0.55;
         return `<circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${hh}" stroke-opacity=".55" stroke-width="${rsw+rhw*2}"/><circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${cl}" stroke-width="${rsw}"/>`; };
       s += `<defs><clipPath id="${id}L" clipPathUnits="userSpaceOnUse"><rect x="${mx - 1e5}" y="-100000" width="100000" height="200000"/></clipPath>`+
            `<clipPath id="${id}R" clipPathUnits="userSpaceOnUse"><rect x="${mx}" y="-100000" width="100000" height="200000"/></clipPath></defs>`+
            `<g clip-path="url(#${id}L)">${shape(S.prefs.handL)}</g><g clip-path="url(#${id}R)">${shape(S.prefs.handR)}</g>`;
     }
     else if(h.poly){
-      const poly = scale < 1 ? h.poly.map((v,k) => k % 2 === 0 ? h.x + (v-h.x)*scale : h.y + (v-h.y)*scale) : h.poly;
+      const poly = sc(h.poly);
       const d = polyPath(poly);
       s += `<path d="${d}" fill="${col}" fill-opacity="0" stroke="${ha}" stroke-opacity=".55" stroke-width="${sw+hw*2}" stroke-linejoin="round"/>`+
            `<path d="${d}" fill="none" stroke="${col}" stroke-width="${sw}" stroke-linejoin="round"/>`;
     } else {
-      const rr = h.r*W*scale, rsw = Math.max(2, rr*0.10), rhw = rsw*0.55;
+      const rr = rIn(h.r*W), rsw = Math.max(2, rr*0.10), rhw = rsw*0.55;
       s += `<circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${ha}" stroke-opacity=".55" stroke-width="${rsw+rhw*2}"/>`+
            `<circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${col}" stroke-width="${rsw}"/>`;
     }
