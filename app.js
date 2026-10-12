@@ -266,7 +266,8 @@ function newCircuit(w){
   const used = w.circuits.map(c => c.color);
   const p = PALETTE.find(p => !used.includes(p[1])) || PALETTE[0];
   let n = w.circuits.length + 1; while(w.circuits.some(c => c.name === 'Circuito ' + n)) n++;
-  return { id: uid(), name: 'Circuito ' + n, color: p[1], holds: [] };
+  const name = window.genCircuitName ? window.genCircuitName('', w.circuits.map(c => c.name)) : 'Circuito ' + n;
+  return { id: uid(), name, color: p[1], holds: [] };
 }
 function roleFor(c){ return c && c.holds.length ? 'hold' : 'start'; }
 
@@ -1687,7 +1688,7 @@ function renderSheet(){
     const gradeOpt = v => `<option value="${v}" ${(c.grade || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
     const styleOpt = v => `<option value="${v}" ${(c.style || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
     h = `<h2>Circuito</h2>`+
-      `<label class="field">Nome<input id="cname" value="${esc(c.name)}" maxlength="40"></label>`+
+      `<label class="field">Nome<span style="display:flex;gap:8px;margin-top:4px"><input id="cname" value="${esc(c.name)}" maxlength="40" style="margin-top:0;flex:1"><button type="button" class="btn" data-act="cgen" aria-label="Proponi un nome" title="Proponi un nome" style="flex:none;font-size:20px;padding:6px 12px">🎲</button></span></label>`+
       `<label class="field">Grado<select id="cgrade">${GRADES.map(gradeOpt).join('')}</select></label>`+
       `<label class="field">Stile<select id="cstyle">${STYLES.map(styleOpt).join('')}</select></label>`+
       `<p class="field" style="margin-bottom:4px">Piedi</p><div class="seg" role="group" aria-label="Piedi" style="margin:0 0 12px">`+
@@ -2020,7 +2021,7 @@ $('#stage').addEventListener('click', async e => {
   toast('Qui non c\'è una presa del muro. Per aggiungerla sblocca il muro nel tab Muro.');
 });
 
-const EDIT_ONLY = ['cfeet','bdraw','bclose','bundo','bcancel','bdiff','hcolor','btag','cropAll','tool','closeDraw','undoPt','cancelDraw','redraw','lock','unlock','tracing','addc','role','size','move','del','undo','color','delc','addw','delw','publish','autoall','stopauto','hand','dup','cropTap','cropUndo','cropClose','cropReset','cropCancel','cropDone','panelReset','panelDone','camlive','camCancel','camShot'];
+const EDIT_ONLY = ['cgen','cfeet','bdraw','bclose','bundo','bcancel','bdiff','hcolor','btag','cropAll','tool','closeDraw','undoPt','cancelDraw','redraw','lock','unlock','tracing','addc','role','size','move','del','undo','color','delc','addw','delw','publish','autoall','stopauto','hand','dup','cropTap','cropUndo','cropClose','cropReset','cropCancel','cropDone','panelReset','panelDone','camlive','camCancel','camShot'];
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b || b.disabled) return;
   const a = b.dataset.act, w = curWall(), c = curCircuit();
@@ -2088,6 +2089,12 @@ document.addEventListener('click', e => {
       const vis = w ? visibleCircuits(w) : [];
       if(w && vis.length && !vis.some(x => x.id === w.activeCircuit)){ w.activeCircuit = sortedVisible(w)[0].id; ui.sel = null; ui.nextRole = roleFor(curCircuit()); }
       render(); if(ui.sheet === 'clist') renderSheet(); break;
+    }
+    case 'cgen': {
+      if(!c || !w || !window.genCircuitName) break;
+      c.name = window.genCircuitName(c.style || '', w.circuits.filter(x => x !== c).map(x => x.name));
+      const inp = document.getElementById('cname'); if(inp) inp.value = c.name;
+      touch(); renderChips(); break;
     }
     case 'cfeet': if(c){ if(b.dataset.v) c.feet = b.dataset.v; else delete c.feet; touch(); renderChips(); renderSheet(); } break;
     case 'bdraw': if(c){ ui.bdraw = true; ui.draft = []; ui.move = false; render(); } break;
