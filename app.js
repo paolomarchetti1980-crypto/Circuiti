@@ -1516,17 +1516,59 @@ function finishBDraw(w, c){
   ui.draft = []; ui.bdraw = false; ui.sel = null; touch(); render();
 }
 /* boulder: linea indicativa disegnata a mano dal tracciatore (direzione generale, non le prese) */
-function lineSVG(pts, W, col){
+/* linea automatica: dal centro delle partenze al Top, piegando verso il punto medio delle prese in 3 fasce.
+   Non dipende dall'ordine in cui le prese sono state segnate. */
+function autoLine(c, W){
+  const H = c.holds; if(H.length < 2) return null;
+  const avg = l => [l.reduce((t,h) => t + h.x, 0)/l.length, l.reduce((t,h) => t + h.y, 0)/l.length];
+  const st = H.filter(h => h.role === 'start'), tops = H.filter(h => h.role === 'top');
+  const S = avg(st.length ? st : [H[0]]);
+  let T = tops.length ? avg(tops) : null;
+  if(!T){ let far = H[0]; H.forEach(h => { if(Math.hypot(h.x-S[0], h.y-S[1]) > Math.hypot(far.x-S[0], far.y-S[1])) far = h; }); T = [far.x, far.y]; }
+  const ax = T[0]-S[0], ay = T[1]-S[1], L2 = ax*ax + ay*ay; if(L2 < 1) return null;
+  const mid = H.filter(h => h.role === 'hold'), K = 3, bins = Array.from({length:K}, () => []);
+  mid.forEach(h => { const t = ((h.x-S[0])*ax + (h.y-S[1])*ay)/L2; if(t > 0.02 && t < 0.98) bins[Math.min(K-1, Math.floor(t*K))].push(h); });
+  const pts = [S]; bins.forEach(b => { if(b.length) pts.push(avg(b)); }); pts.push(T);
+  /* le estremità si fermano poco prima delle prese di partenza e di arrivo */
+  const cut = (a, b, d) => { const l = Math.hypot(b[0]-a[0], b[1]-a[1]) || 1, k = Math.min(0.45, d/l); return [a[0] + (b[0]-a[0])*k, a[1] + (b[1]-a[1])*k]; };
+  const gap = W*0.035;
+  pts[0] = cut(pts[0], pts[1], gap); pts[pts.length-1] = cut(pts[pts.length-1], pts[pts.length-2], gap);
+  return pts.flatMap(q => [Math.round(q[0]), Math.round(q[1])]);
+}
+/* linea spezzata con gli angoli smussati */
+function roundedPath(p, r){
+  let d = 'M' + p[0][0].toFixed(1) + ',' + p[0][1].toFixed(1);
+  for(let i=1;i<p.length-1;i++){
+    const a = p[i-1], b = p[i], c = p[i+1];
+    const l1 = Math.hypot(b[0]-a[0], b[1]-a[1]) || 1, l2 = Math.hypot(c[0]-b[0], c[1]-b[1]) || 1, rr = Math.min(r, l1/2, l2/2);
+    const p1 = [b[0] - (b[0]-a[0])/l1*rr, b[1] - (b[1]-a[1])/l1*rr], p2 = [b[0] + (c[0]-b[0])/l2*rr, b[1] + (c[1]-b[1])/l2*rr];
+    d += 'L' + p1[0].toFixed(1) + ',' + p1[1].toFixed(1) + 'Q' + b[0].toFixed(1) + ',' + b[1].toFixed(1) + ' ' + p2[0].toFixed(1) + ',' + p2[1].toFixed(1);
+  }
+  const z = p[p.length-1]; return d + 'L' + z[0].toFixed(1) + ',' + z[1].toFixed(1);
+}
+/* boulder: linea indicativa (disegnata a mano dal tracciatore, oppure automatica). Non copre le prese del blocco. */
+function lineSVG(pts, W, col, c){
   if(!pts || pts.length < 4) return '';
   const p = []; for(let i=0;i<pts.length;i+=2) p.push([pts[i], pts[i+1]]);
-  let d = 'M' + p[0][0].toFixed(1) + ',' + p[0][1].toFixed(1);
-  for(let i=0;i<p.length-1;i++){
-    const p0 = p[Math.max(0, i-1)], p1 = p[i], p2 = p[i+1], p3 = p[Math.min(p.length-1, i+2)];
-    d += 'C' + (p1[0] + (p2[0]-p0[0])/6).toFixed(1) + ',' + (p1[1] + (p2[1]-p0[1])/6).toFixed(1) + ' ' + (p2[0] - (p3[0]-p1[0])/6).toFixed(1) + ',' + (p2[1] - (p3[1]-p1[1])/6).toFixed(1) + ' ' + p2[0].toFixed(1) + ',' + p2[1].toFixed(1);
+  let d;
+  if(c && !c.line) d = roundedPath(p, W*0.06);
+  else {
+    d = 'M' + p[0][0].toFixed(1) + ',' + p[0][1].toFixed(1);
+    for(let i=0;i<p.length-1;i++){
+      const p0 = p[Math.max(0, i-1)], p1 = p[i], p2 = p[i+1], p3 = p[Math.min(p.length-1, i+2)];
+      d += 'C' + (p1[0] + (p2[0]-p0[0])/6).toFixed(1) + ',' + (p1[1] + (p2[1]-p0[1])/6).toFixed(1) + ' ' + (p2[0] - (p3[0]-p1[0])/6).toFixed(1) + ',' + (p2[1] - (p3[1]-p1[1])/6).toFixed(1) + ' ' + p2[0].toFixed(1) + ',' + p2[1].toFixed(1);
+    }
   }
-  const lw = Math.max(3, W*0.009);
-  return `<path d="${d}" fill="none" stroke="${haloOf(col)}" stroke-opacity=".45" stroke-width="${lw*1.9}" stroke-linecap="round" stroke-linejoin="round"/>`+
-         `<path d="${d}" fill="none" stroke="${col}" stroke-opacity=".95" stroke-width="${lw}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  const lw = Math.max(3, W*0.008);
+  let mask = '', mattr = '';
+  if(c){
+    const id = 'lm' + String(c.id).replace(/[^\w-]/g, '');
+    const holes = c.holds.map(h => h.poly ? `<path d="${polyPath(h.poly)}" fill="#000" stroke="#000" stroke-width="${lw*2.2}" stroke-linejoin="round"/>` : `<circle cx="${h.x}" cy="${h.y}" r="${h.r*W*1.2}" fill="#000"/>`).join('');
+    mask = `<defs><mask id="${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="100000" height="100000"><rect x="0" y="0" width="100000" height="100000" fill="#fff"/>${holes}</mask></defs>`;
+    mattr = ` mask="url(#${id})"`;
+  }
+  return mask + `<g${mattr}><path d="${d}" fill="none" stroke="${haloOf(col)}" stroke-opacity=".45" stroke-width="${lw*1.9}" stroke-linecap="round" stroke-linejoin="round"/>`+
+         `<path d="${d}" fill="none" stroke="${col}" stroke-opacity=".95" stroke-width="${lw}" stroke-linecap="round" stroke-linejoin="round"/></g>`;
 }
 /* dal tratto del dito a pochi punti puliti: si tengono quelli distanti almeno 2,5% della foto e poi si semplifica */
 function cleanLine(raw, W){
@@ -1560,7 +1602,7 @@ function overlay(w, o){
     });
     s += `<path d="${d}" fill="#000" fill-opacity="${o.edit ? .5 : .62}" fill-rule="evenodd"/>`;
   }
-  if(act && bo) s += lineSVG(act.line, w.w, colOf(act));
+  if(act && bo) s += lineSVG(act.line || autoLine(act, w.w), w.w, colOf(act), act);
   if(bo && ui.bline && ui.lineDraft.length > 1) s += lineSVG(ui.lineDraft, w.w, '#ff3b7a');
   if(act) s += circuitSVG(act, w.w, 1, Object.assign({}, o, { H: w.h, obst: w.holds || [], busy: busyMap(w) }));
   if(o.edit) s += draftSVG(w);
