@@ -69,6 +69,16 @@ const ANGLES = Array.from({length:41}, (_,i) => i);
 /* boulder: difficoltà a colori della palestra, dalla più facile alla più difficile */
 const DIFFS = [['bianco','Bianco','#ffffff'],['blu','Blu','#1e6bff'],['verde','Verde','#23b45a'],['giallo','Giallo','#f2c200'],['rosso','Rosso','#e5312b'],['nero','Nero','#111111']];
 const NODIFF = '#8d939b';
+/* circuiti: il colore non ha significato, serve solo a staccare un circuito dal vicino.
+   Lo assegna l'app seguendo l'ordine dell'elenco (filtri compresi), così due vicini non sono mai uguali. */
+const CPAL = ['#ff7a1a','#1e6bff','#23b45a','#ff5fa2','#22c3e6','#8a4dff','#e5312b'];
+function colOf(c){
+  const w = curWall();
+  if(!w || isSec(w) || !w.circuits.includes(c)) return c.color;
+  let i = sortedVisible(w).indexOf(c);
+  if(i < 0) i = w.circuits.slice().sort((x, y) => gradeIdx(x.grade) - gradeIdx(y.grade) || String(x.name).localeCompare(String(y.name))).indexOf(c);
+  return CPAL[i % CPAL.length];
+}
 const diffOf = c => DIFFS.find(d => d[0] === (c && c.diff)) || null;
 const diffIdx = c => { const i = DIFFS.findIndex(d => d[0] === (c && c.diff)); return i < 0 ? 99 : i; };
 const bTitle = c => { const d = diffOf(c); return d ? d[1] + ' ' + (c.num || 1) : 'Nuovo boulder'; };
@@ -255,7 +265,8 @@ function newCircuit(w){
   }
   const used = w.circuits.map(c => c.color);
   const p = PALETTE.find(p => !used.includes(p[1])) || PALETTE[0];
-  return { id: uid(), name: 'Nuovo circuito ' + (w.circuits.length + 1), color: p[1], holds: [] };
+  let n = w.circuits.length + 1; while(w.circuits.some(c => c.name === 'Circuito ' + n)) n++;
+  return { id: uid(), name: 'Circuito ' + n, color: p[1], holds: [] };
 }
 function roleFor(c){ return c && c.holds.length ? 'hold' : 'start'; }
 
@@ -1245,7 +1256,7 @@ function polyPath(p){
 /* ---------- disegno ---------- */
 function circuitSVG(c, W, alpha, o){
   const sw = Math.max(2, W*0.0028), hw = sw*0.5;
-  const col = c.color, ha = haloOf(col);
+  const col = colOf(c), ha = haloOf(col);
   let s = `<g opacity="${alpha}">`;
   if(o.lines && c.holds.length > 1){
     const p = c.holds.map(h => h.x.toFixed(1)+','+h.y.toFixed(1)).join(' ');
@@ -1253,7 +1264,7 @@ function circuitSVG(c, W, alpha, o){
     s += `<polyline points="${p}" fill="none" stroke="${ha}" stroke-opacity=".5" stroke-width="${lw*2.6}" stroke-linecap="round" stroke-linejoin="round"/>`;
     s += `<polyline points="${p}" fill="none" stroke="${col}" stroke-width="${lw}" stroke-dasharray="${lw*3} ${lw*2.2}" stroke-linecap="round" stroke-linejoin="round"/>`;
   }
-  const base = c.color;
+  const base = colOf(c);
   const grp = {};
   let seqN = 0;
   const seqOf = {};
@@ -1465,7 +1476,7 @@ function renderChips(){
     const fa = v => `<button class="fchip ${String(ui.fAngle || '') === String(v) ? 'on' : ''}" data-act="fang" data-v="${v}">${v === '' ? 'Tutti' : v + '°'}</button>`;
     el.innerHTML = (tot ? `<div class="fchips">${angles.length ? fa('') + angles.map(fa).join('') : ''}`+
         (grades.length ? `<select id="fgrade" class="fsel" aria-label="Grado"><option value="">Tutti i gradi</option>${grades.map(g => `<option value="${g}" ${ui.fGrade === g ? 'selected' : ''}>${g}</option>`).join('')}</select>` : '')+feetSel(w)+`</div>` : '')+
-      (vis.length ? vis.map(x => `<button class="lrow ${act && x.id === act.id ? 'active' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext" style="flex:1"><b>${esc(x.name)}</b><small>${circMeta(x)}</small></span>${gradeBadge(x.grade)}</button>`).join('')
+      (vis.length ? vis.map(x => `<button class="lrow ${act && x.id === act.id ? 'active' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${colOf(x)}"></i><span class="ctext" style="flex:1"><b>${esc(x.name)}</b><small>${circMeta(x)}</small></span>${gradeBadge(x.grade)}</button>`).join('')
         : `<p class="hint" style="padding:6px 2px">${tot ? 'Nessun circuito con questi filtri.' : 'Ancora nessun circuito su questo muro.'}</p>`)+
       (vis.length ? `<p class="hint" style="text-align:center;margin:8px 0 0;font-size:13px">Tocca un circuito per vederlo sul muro, tocca di nuovo per aprirlo a schermo intero.</p>` : '');
     return;
@@ -1476,7 +1487,7 @@ function renderChips(){
     return;
   }
   el.innerHTML = `<div class="curbar">`+
-    `<button class="cinfo" data-act="clist" aria-label="Elenco circuiti"><i class="dot" style="background:${act.color}"></i>`+
+    `<button class="cinfo" data-act="clist" aria-label="Elenco circuiti"><i class="dot" style="background:${colOf(act)}"></i>`+
     `<span class="ctext"><b>${isSec(w) ? bTitleHtml(act) : esc(act.name)}</b><small>${circMeta(act)}</small></span>${isSec(w) ? '' : gradeBadge(act.grade)}</button>`+
     (EDIT && S.mode === 'edit' ? `<button class="btn" data-act="cedit">Modifica</button>` : '')+
     `<button class="btn primary" data-act="clist">${isSec(w) ? `Boulder (${tot})` : `Circuiti (${tot})${filtered}`}</button></div>`;
@@ -1605,7 +1616,7 @@ function renderFull(){
   const list = sortedVisible(w), i = list.findIndex(x => x.id === c.id);
   el.hidden = false;
   el.innerHTML = `<div class="row" style="flex-wrap:nowrap;align-items:center;gap:12px">`+
-    `<i class="dot" style="background:${c.color};width:16px;height:16px"></i>`+
+    `<i class="dot" style="background:${colOf(c)};width:16px;height:16px"></i>`+
     `<span class="ctext" style="flex:1"><b>${isSec(w) ? bTitleHtml(c) : esc(c.name)}${isSec(w) && c.style ? ` · ${esc(c.style)}` : ''}</b><small>${isSec(w) ? esc([c.setter ? 'di ' + c.setter : '', c.dateSet ? 'montato ' + fmtDate(c.dateSet) : '', c.dateRemoved ? (isOff(c) ? 'smontato ' : 'smonta ') + fmtDate(c.dateRemoved) : ''].filter(Boolean).join(' · ')) : circMeta(c)}</small></span>${isSec(w) ? '' : gradeBadge(c.grade)}</div>`+
     (isSec(w) && (c.tags || []).length ? `<div class="tags" style="margin:10px 0 0">${c.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : '')+
     (isSec(w) && c.notes ? `<p class="bnotes">${esc(c.notes)}</p>` : '')+
@@ -1677,9 +1688,6 @@ function renderSheet(){
     const styleOpt = v => `<option value="${v}" ${(c.style || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
     h = `<h2>Circuito</h2>`+
       `<label class="field">Nome<input id="cname" value="${esc(c.name)}" maxlength="40"></label>`+
-      `<div class="sw" role="group" aria-label="Colore">` +
-      PALETTE.map(p => `<button data-act="color" data-c="${p[1]}" aria-label="${p[0]}" class="${p[1] === c.color ? 'sel' : ''}" style="background:${p[1]}"></button>`).join('') +
-      `</div>`+
       `<label class="field">Grado<select id="cgrade">${GRADES.map(gradeOpt).join('')}</select></label>`+
       `<label class="field">Stile<select id="cstyle">${STYLES.map(styleOpt).join('')}</select></label>`+
       `<p class="field" style="margin-bottom:4px">Piedi</p><div class="seg" role="group" aria-label="Piedi" style="margin:0 0 12px">`+
@@ -1696,7 +1704,7 @@ function renderSheet(){
     h = `<h2>Circuiti · ${esc(w.name)}</h2>`+
       ((angles.length || grades.length || feetSel(w)) ? `<div class="row" style="margin:0 0 12px">${angles.length ? sel('fangle', ui.fAngle || '', 'Tutte le inclinazioni', angles.map(x => [x, x + '°'])) : ''}${grades.length ? sel('fgrade', ui.fGrade || '', 'Tutti i gradi', grades.map(g => [g, g])) : ''}${feetSel(w)}</div>` : '')+
       `<div class="list">`+
-      (vis.length ? vis.map(x => `<button class="crow ${act && x.id === act.id ? 'active' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext"><b>${esc(x.name)}</b><small>${circMeta(x)}</small></span>${gradeBadge(x.grade)}</button>`).join('')
+      (vis.length ? vis.map(x => `<button class="crow ${act && x.id === act.id ? 'active' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${colOf(x)}"></i><span class="ctext"><b>${esc(x.name)}</b><small>${circMeta(x)}</small></span>${gradeBadge(x.grade)}</button>`).join('')
         : `<p class="note" style="margin:0">${w.circuits.length ? 'Nessun circuito con questi filtri.' : 'Ancora nessun circuito su questo muro.'}</p>`)+
       `</div>`+
       `<div class="row">${EDIT && w.locked ? `<button class="btn primary" data-act="addc">+ Nuovo circuito</button>` : ''}<button class="btn" data-act="close">Chiudi</button></div>`;
@@ -1792,7 +1800,7 @@ async function makeImage(){
     g.fillStyle = '#ffffff'; g.fillRect(0, 0, cv.width, cv.height);
     g.drawImage(photo, 0, 0, w.w, w.h); g.drawImage(ov, 0, 0, w.w, w.h);
     g.beginPath(); g.arc(capH*0.5, w.h + capH/2, capH*0.2, 0, Math.PI*2);
-    g.fillStyle = c.color; g.fill(); g.lineWidth = Math.max(2, capH*0.03); g.strokeStyle = '#111111'; g.stroke();
+    g.fillStyle = colOf(c); g.fill(); g.lineWidth = Math.max(2, capH*0.03); g.strokeStyle = '#111111'; g.stroke();
     g.fillStyle = '#111111'; g.textBaseline = 'middle';
     g.font = `700 ${Math.round(capH*0.4)}px "Barlow Semi Condensed", Arial, sans-serif`;
     g.fillText(isSec(w) ? `${w.name}: ${bTitle(c)}${c.name ? ' · ' + c.name : ''}${c.setter ? ' · ' + c.setter : ''}` : `${w.name}: ${c.name}, ${c.holds.length} prese`, capH*0.9, w.h + capH/2);
