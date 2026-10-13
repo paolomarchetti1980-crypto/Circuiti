@@ -2052,7 +2052,7 @@ function renderTools(){
   const first = !c || !c.holds.length;
   let hint = first ? 'Tocca la presa di partenza' : 'Tocca la prossima presa';
   hint += sec ? ': ne rilevo il contorno.' : '.';
-  if(sec && ui.nextRole === 'start') hint = `<!--s-->Punto di partenza: tocca la presa vicino al bordo, dove va il segno. Fino a 4 segni (mani e piedi), anche due sulla stessa presa${c ? ` · segnati ${startMarks(c)}/4` : ''}. Poi passa a Presa.`;
+  if(sec && ui.nextRole === 'start') hint = `<!--s-->Punto di partenza: tocca la presa vicino al bordo, dove va il segno. Da 1 a 4 segni (mani e piedi), anche tutti sulla stessa presa${c ? ` · segnati ${startMarks(c)}/4` : ''}. Poi passa a Presa.`;
   if(!first && !hint.startsWith('<!--s-->')) hint += ' Tocca una presa già segnata per modificarla.';
   if(sec) hint += ` <span style="opacity:.75">${samStatus(w)}</span>`;
   el.innerHTML = `<p class="hint">${hint}</p>`+
