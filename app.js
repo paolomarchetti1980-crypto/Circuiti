@@ -1556,8 +1556,12 @@ function autoLine(c, w){
   const H = c.holds, W = w.w; if(H.length < 2) return null;
   const avg = l => [l.reduce((t,h) => t + h.x, 0)/l.length, l.reduce((t,h) => t + h.y, 0)/l.length];
   const st = H.filter(h => h.role === 'start'), ft = H.filter(h => h.role === 'foot'), tops = H.filter(h => h.role === 'top');
-  const hs = st.length ? avg(st) : [H[0].x, H[0].y];
-  const S = ft.length ? [(hs[0] + avg(ft)[0])/2, (hs[1] + avg(ft)[1])/2] : hs;
+  /* partenza della linea: sotto le prese di partenza (tra queste e i piedi, se ci sono) */
+  const st0 = st.length ? st : [H[0]];
+  const sBot = Math.max(...st0.map(h => holdBox(h, W).y1));
+  let S = [avg(ft.length ? st0.concat(ft) : st0)[0], sBot + W*0.025];
+  if(ft.length){ const fTop = Math.min(...ft.map(h => holdBox(h, W).y0)); if(fTop > sBot) S[1] = (sBot + fTop)/2; }
+  S[1] = Math.min(S[1], w.h - W*0.01);
   let T = tops.length ? avg(tops) : null;
   if(!T){ let far = H[0]; H.forEach(h => { if(Math.hypot(h.x-S[0], h.y-S[1]) > Math.hypot(far.x-S[0], far.y-S[1])) far = h; }); T = [far.x, far.y]; }
   const ax = T[0]-S[0], ay = T[1]-S[1], L2 = ax*ax + ay*ay; if(L2 < 1) return null;
@@ -1567,13 +1571,13 @@ function autoLine(c, w){
   const bm = busyMap(w);
   const key = JSON.stringify([guide.map(q => q.map(Math.round)), w.circuits.map(x => x.holds.length + ':' + (x.holds[0] ? Math.round(x.holds[0].x) : 0)), !!bm]);
   const ce = lineCache[c.id]; if(ce && ce.key === key) return ce.pts;
-  let pts = routeLine(w, guide, bm);
+  let pts = routeLine(w, guide, bm, sBot);
   if(!pts) pts = guide;
   const out = pts.flatMap(q => [Math.round(q[0]), Math.round(q[1])]);
   lineCache[c.id] = { key, pts: out };
   return out;
 }
-function routeLine(w, guide, bm){
+function routeLine(w, guide, bm, sBot){
   const W = w.w, Hh = w.h, s = bm ? bm.s : 140 / Math.max(W, Hh);
   const gw = bm ? bm.bw : Math.max(8, Math.round(W*s)), gh = bm ? bm.bh : Math.max(8, Math.round(Hh*s)), N = gw*gh;
   /* ostacoli: 0 parete libera … 1 presa */
@@ -1604,15 +1608,15 @@ function routeLine(w, guide, bm){
   const cl = (v, m) => Math.max(0, Math.min(m-1, Math.round(v)));
   /* partenza e arrivo: il punto di parete libera più vicino (non si parte né si arriva sopra una presa) */
   /* si cerca solo dalla parte dell'altra estremità: la linea non deve girare attorno alle prese di partenza o al Top */
-  const freeNear = (x0, y0, toward, back) => { let best = null, bd = 1e9;
+  const freeNear = (x0, y0, toward, back, minY) => { let best = null, bd = 1e9;
     const L = Math.hypot(toward[0]-x0, toward[1]-y0) || 1, ux = (toward[0]-x0)/L, uy = (toward[1]-y0)/L;
     for(let dy=-8; dy<=8; dy++) for(let dx=-8; dx<=8; dx++){ const x = x0+dx, y = y0+dy; if(x<0 || y<0 || x>=gw || y>=gh) continue;
-      if(dx*ux + dy*uy < -back) continue;
+      if(dx*ux + dy*uy < -back || y < minY) continue;
       const i = y*gw+x; if(O[i] >= 0.3 || Bs[i] >= 0.5) continue;
       const d = Math.hypot(dx, dy) + 0.6*Math.abs(dx*uy - dy*ux); if(d < bd){ bd = d; best = [x, y]; } }
     return best || [x0, y0]; };
   const g0 = [cl(G[0][0]-0.5, gw), cl(G[0][1]-0.5, gh)], g1 = [cl(G[G.length-1][0]-0.5, gw), cl(G[G.length-1][1]-0.5, gh)];
-  const [sx, sy] = freeNear(g0[0], g0[1], g1, 0.5), [tx, ty] = freeNear(g1[0], g1[1], g0, 0);
+  const [sx, sy] = freeNear(g0[0], g0[1], g1, 99, Math.ceil(sBot*s)), [tx, ty] = freeNear(g1[0], g1[1], g0, 0, -1);
   /* A* su 8 vicini */
   const dist = new Float32Array(N).fill(Infinity), prev = new Int32Array(N).fill(-1), done = new Uint8Array(N);
   const heap = []; const push = (i, f) => { heap.push([f, i]); let k = heap.length-1; while(k){ const p = (k-1)>>1; if(heap[p][0] <= heap[k][0]) break; [heap[p], heap[k]] = [heap[k], heap[p]]; k = p; } };
