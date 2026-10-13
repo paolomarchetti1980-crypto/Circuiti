@@ -1466,6 +1466,11 @@ function circuitSVG(c, W, alpha, o){
     const lvN = lv ? lv.n : gi, inset = lvN > 0 ? lvN*sw*2.6 : 0;
     const sc = (pl) => inset ? insetPoly(pl, inset) : pl;
     const rIn = rr0 => Math.max(rr0*0.5, rr0 - inset);
+    /* boulder: tacche di partenza attaccate al contorno, come il manico di una lente.
+       L'alone delle tacche va sotto il contorno, il colore sopra: nessuno stacco tra bordo e tacca. */
+    const marks = o.boulder && isStart(h) ? markSegs(h, W, sCen, 0) : null, tw = sw*1.6;
+    const tack = (q, cl, wd, op) => `<path d="M${q[0].toFixed(1)},${q[1].toFixed(1)}L${q[2].toFixed(1)},${q[3].toFixed(1)}" stroke="${cl}" stroke-opacity="${op}" stroke-width="${wd}" stroke-linecap="butt" fill="none"/><circle cx="${q[2].toFixed(1)}" cy="${q[3].toFixed(1)}" r="${wd/2}" fill="${cl}" fill-opacity="${op}"/>`;
+    if(marks) marks.forEach(q => { s += tack(q, ha, tw + hw*2, .55); });
     if(lv && !lv.first){ /* già disegnata col primo passaggio di questo livello */ }
     else if(split){
       const bb = holdBox(h, W), mx = (bb.x0 + bb.x1)/2, id = 'sp' + String(c.id).replace(/[^\w-]/g, '') + '_' + i;
@@ -1488,12 +1493,7 @@ function circuitSVG(c, W, alpha, o){
       s += `<circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${ha}" stroke-opacity=".55" stroke-width="${rsw+rhw*2}"/>`+
            `<circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${col}" stroke-width="${rsw}"/>`;
     }
-    if(o.boulder && isStart(h)){
-      markSegs(h, W, sCen, sw*2.2).forEach(q => { segs.push(q);
-        s += `<line x1="${q[0].toFixed(1)}" y1="${q[1].toFixed(1)}" x2="${q[2].toFixed(1)}" y2="${q[3].toFixed(1)}" stroke="${ha}" stroke-opacity=".6" stroke-width="${sw*3.4}" stroke-linecap="round"/>`+
-             `<line x1="${q[0].toFixed(1)}" y1="${q[1].toFixed(1)}" x2="${q[2].toFixed(1)}" y2="${q[3].toFixed(1)}" stroke="${col}" stroke-width="${sw*1.9}" stroke-linecap="round"/>`; });
-      return;
-    }
+    if(marks){ marks.forEach(q => { segs.push(q); s += tack(q, col, tw, 1); }); return; }
     let label = h.role === 'start' ? (starts.length > 1 && !o.boulder ? 'S' + (starts.indexOf(i)+1) : 'S') : h.role === 'top' ? 'T' : '';
     if(!label && o.numbers && h.role === 'hold'){
       if(gi < g.length - 1) return; /* il numero si mette una sola volta, sull'ultimo passaggio del gruppo */
@@ -1623,7 +1623,7 @@ function autoLine(c, w){
   mid.forEach(h => { const t = ((h.x-S[0])*ax + (h.y-S[1])*ay)/L2; if(t > 0.02 && t < 0.98) bins[Math.min(K-1, Math.floor(t*K))].push(h); });
   const guide = [S]; bins.forEach(b => { if(b.length) guide.push(avg(b)); }); guide.push(T);
   const bm = busyMap(w);
-  const key = JSON.stringify([guide.map(q => q.map(Math.round)), w.circuits.map(x => x.holds.length + ':' + (x.holds[0] ? Math.round(x.holds[0].x) : 0)), !!bm]);
+  const key = JSON.stringify([guide.map(q => q.map(Math.round)), w.circuits.map(x => x.holds.length + ':' + (x.holds[0] ? Math.round(x.holds[0].x) : 0) + ':' + x.holds.map(h => isStart(h) ? (h.marks || []).length : '').join('')), !!bm]);
   const ce = lineCache[c.id]; if(ce && ce.key === key) return ce.pts;
   let pts = routeLine(w, guide, bm, sBot);
   if(!pts) pts = guide;
@@ -1645,6 +1645,15 @@ function routeLine(w, guide, bm, sBot){
       if(p ? inPoly(p, px, py) : Math.hypot(px-h.x, py-h.y) <= h.r*W) O0[yy*gw+xx] = 1;
     }
   }); });
+  /* anche le tacche di partenza sono ostacoli */
+  w.circuits.forEach(x => { if(isOff(x)) return; const ss = x.holds.filter(isStart); if(!ss.length) return;
+    const cen = ss.length > 1 ? [ss.reduce((t,q) => t + q.x, 0)/ss.length, ss.reduce((t,q) => t + q.y, 0)/ss.length] : null;
+    ss.forEach(h => markSegs(h, W, cen, 0).forEach(q => {
+      const n = Math.ceil(Math.hypot(q[2]-q[0], q[3]-q[1])*s*2) + 1;
+      for(let k=0;k<=n;k++){ const gx = Math.round((q[0] + (q[2]-q[0])*k/n)*s - 0.5), gy = Math.round((q[1] + (q[3]-q[1])*k/n)*s - 0.5);
+        if(gx >= 0 && gy >= 0 && gx < gw && gy < gh) O0[gy*gw+gx] = 1; }
+    }));
+  });
   /* allargo di una cella: la linea ha uno spessore */
   const O = new Float32Array(N);
   for(let y=0;y<gh;y++) for(let x=0;x<gw;x++){
