@@ -1556,8 +1556,7 @@ function addMark(c, h, x, y){
 }
 /* disposizione automatica delle tacche, come i nastri in gara:
    - una tacca per presa: esce dal lato rivolto al centro delle partenze e punta verso di esso;
-   - 2 o 3 tacche sulla stessa presa: escono a ventaglio e convergono verso un punto da quel lato;
-   - 4 tacche sulla stessa presa: tutte parallele.
+   - più tacche sulla stessa presa (2, 3 o 4): parallele, una accanto all'altra, dal lato rivolto al centro.
    La tacca parte appena fuori dal contorno, senza coprire la presa. */
 function markSegs(h, W, C, off){
   const pts = holdPts(h, W), bb = holdBox(h, W), cx = (bb.x0+bb.x1)/2, cy = (bb.y0+bb.y1)/2;
@@ -1571,24 +1570,16 @@ function markSegs(h, W, C, off){
   ux /= ul; uy /= ul;
   const vx = -uy, vy = ux;
   const exitAlong = (sx, sy, dx, dy) => { const t = rayExit(pts, sx, sy, dx, dy); return [sx + dx*t, sy + dy*t]; };
-  if(n === 4){
+  if(n >= 2){
     let lo = 1e9, hi = -1e9; for(let i=0;i<pts.length;i+=2){ const o = (pts[i]-cx)*vx + (pts[i+1]-cy)*vy; lo = Math.min(lo, o); hi = Math.max(hi, o); }
-    const gapv = Math.min((hi - lo)*0.8/3, L*0.5), mid = (lo + hi)/2;
-    return [-1.5, -0.5, 0.5, 1.5].map(k => {
+    const gapv = Math.min((hi - lo)*0.8/(n - 1), L*0.5), mid = (lo + hi)/2;
+    return Array.from({length: n}, (_, j) => j - (n - 1)/2).map(k => {
       const sx = cx + vx*(mid + k*gapv), sy = cy + vy*(mid + k*gapv), e = exitAlong(sx, sy, ux, uy);
       return [e[0] + ux*off, e[1] + uy*off, e[0] + ux*(off + L), e[1] + uy*(off + L)];
     });
   }
   const e0 = exitAlong(cx, cy, ux, uy);
-  if(n === 1) return [[e0[0] + ux*off, e0[1] + uy*off, e0[0] + ux*(off + L), e0[1] + uy*(off + L)]];
-  /* 2-3 tacche: punto di convergenza davanti alla presa, tacche che partono dal contorno a ventaglio */
-  const P = [e0[0] + ux*L*1.9, e0[1] + uy*L*1.9], th = 0.55, angs = n === 2 ? [-th, th] : [-th, 0, th];
-  return angs.map(a => {
-    const dx = ux*Math.cos(a) - uy*Math.sin(a), dy = uy*Math.cos(a) + ux*Math.sin(a), e = exitAlong(cx, cy, dx, dy);
-    let px = P[0]-e[0], py = P[1]-e[1]; const pl = Math.hypot(px, py) || 1; px /= pl; py /= pl;
-    const len = Math.min(L, pl - off - L*0.25);
-    return [e[0] + px*off, e[1] + py*off, e[0] + px*(off + len), e[1] + py*(off + len)];
-  });
+  return [[e0[0] + ux*off, e0[1] + uy*off, e0[0] + ux*(off + L), e0[1] + uy*(off + L)]];
 }
 function finishBDraw(w, c){
   const pts = ui.draft; if(!c || pts.length < 3) return;
