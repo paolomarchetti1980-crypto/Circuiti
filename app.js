@@ -1572,7 +1572,9 @@ function markSegs(h, W, C, off){
   const exitAlong = (sx, sy, dx, dy) => { const t = rayExit(pts, sx, sy, dx, dy); return [sx + dx*t, sy + dy*t]; };
   if(n >= 2){
     let lo = 1e9, hi = -1e9; for(let i=0;i<pts.length;i+=2){ const o = (pts[i]-cx)*vx + (pts[i+1]-cy)*vy; lo = Math.min(lo, o); hi = Math.max(hi, o); }
-    const gapv = Math.min((hi - lo)*0.8/(n - 1), L*0.5), mid = (lo + hi)/2;
+    /* coppie e terzetti: tacche strette, quasi a contatto; i quartetti si allargano sulla presa */
+    const swm = Math.max(2, W*0.0028), tight = swm*3.4;
+    const gapv = n < 4 ? Math.min(tight, (hi - lo)*0.8/(n - 1)) : Math.min((hi - lo)*0.8/(n - 1), L*0.5), mid = (lo + hi)/2;
     return Array.from({length: n}, (_, j) => j - (n - 1)/2).map(k => {
       const sx = cx + vx*(mid + k*gapv), sy = cy + vy*(mid + k*gapv), e = exitAlong(sx, sy, ux, uy);
       return [e[0] + ux*off, e[1] + uy*off, e[0] + ux*(off + L), e[1] + uy*(off + L)];
