@@ -1439,6 +1439,9 @@ function circuitSVG(c, W, alpha, o){
     s += `<polyline points="${p}" fill="none" stroke="${ha}" stroke-opacity=".6" stroke-width="${lw*2.2}" stroke-linecap="round"/>`+
          `<polyline points="${p}" fill="none" stroke="${base}" stroke-width="${lw*0.85}" stroke-dasharray="${lw*1.4} ${lw*1.4}" stroke-linecap="round"/>`;
   }
+ /* centro delle prese di partenza (per orientare le tacche dei boulder) */
+  const sHolds = o.boulder ? c.holds.filter(isStart) : [];
+  const sCen = sHolds.length > 1 ? [sHolds.reduce((t,q) => t + q.x, 0)/sHolds.length, sHolds.reduce((t,q) => t + q.y, 0)/sHolds.length] : null;
  const handCol = h => !o.boulder && h.hand === 'L' ? S.prefs.handL : !o.boulder && h.hand === 'R' ? S.prefs.handR : base;
   c.holds.forEach((h,i) => {
     let col = !o.boulder && h.hand === 'L' ? S.prefs.handL : !o.boulder && h.hand === 'R' ? S.prefs.handR : base, ha = haloOf(col);
@@ -1486,7 +1489,7 @@ function circuitSVG(c, W, alpha, o){
            `<circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${col}" stroke-width="${rsw}"/>`;
     }
     if(o.boulder && isStart(h)){
-      markSegs(h, W).forEach(q => { segs.push(q);
+      markSegs(h, W, sCen, sw*2.2).forEach(q => { segs.push(q);
         s += `<line x1="${q[0].toFixed(1)}" y1="${q[1].toFixed(1)}" x2="${q[2].toFixed(1)}" y2="${q[3].toFixed(1)}" stroke="${ha}" stroke-opacity=".6" stroke-width="${sw*3.4}" stroke-linecap="round"/>`+
              `<line x1="${q[0].toFixed(1)}" y1="${q[1].toFixed(1)}" x2="${q[2].toFixed(1)}" y2="${q[3].toFixed(1)}" stroke="${col}" stroke-width="${sw*1.9}" stroke-linecap="round"/>`; });
       return;
@@ -1551,16 +1554,40 @@ function addMark(c, h, x, y){
   (h.marks = h.marks || []).push([Math.round(x), Math.round(y)]);
   ui.markUndo = { h, prev }; touch(); render();
 }
-function markSegs(h, W){
+/* disposizione automatica delle tacche, come i nastri in gara:
+   - una tacca per presa: esce dal lato rivolto al centro delle partenze e punta verso di esso;
+   - 2 o 3 tacche sulla stessa presa: escono a ventaglio e convergono verso un punto da quel lato;
+   - 4 tacche sulla stessa presa: tutte parallele.
+   La tacca parte appena fuori dal contorno, senza coprire la presa. */
+function markSegs(h, W, C, off){
   const pts = holdPts(h, W), bb = holdBox(h, W), cx = (bb.x0+bb.x1)/2, cy = (bb.y0+bb.y1)/2;
-  const ms = (h.marks && h.marks.length) ? h.marks : [[cx, bb.y1 + 1]];
+  const n = Math.max(1, Math.min(4, (h.marks || []).length));
   const L = Math.max(W*0.03, 14);
-  return ms.map(m => {
-    let dx = m[0] - cx, dy = m[1] - cy, l = Math.hypot(dx, dy);
-    if(l < 1){ dx = 0; dy = 1; l = 1; }
-    dx /= l; dy /= l;
-    const t = rayExit(pts, cx, cy, dx, dy);
-    return [cx + dx*t, cy + dy*t, cx + dx*(t + L), cy + dy*(t + L)];
+  /* direzione: verso il centro delle partenze; se la presa è l'unica, dove ha toccato il tracciatore (o in basso) */
+  let ux = 0, uy = 0;
+  if(C && Math.hypot(C[0]-cx, C[1]-cy) > Math.max(bb.x1-bb.x0, bb.y1-bb.y0)*0.25){ ux = C[0]-cx; uy = C[1]-cy; }
+  else (h.marks || []).forEach(m => { const dx = m[0]-cx, dy = m[1]-cy, l = Math.hypot(dx, dy); if(l > 1){ ux += dx/l; uy += dy/l; } });
+  let ul = Math.hypot(ux, uy); if(ul < 1e-6){ ux = 0; uy = 1; ul = 1; }
+  ux /= ul; uy /= ul;
+  const vx = -uy, vy = ux;
+  const exitAlong = (sx, sy, dx, dy) => { const t = rayExit(pts, sx, sy, dx, dy); return [sx + dx*t, sy + dy*t]; };
+  if(n === 4){
+    let lo = 1e9, hi = -1e9; for(let i=0;i<pts.length;i+=2){ const o = (pts[i]-cx)*vx + (pts[i+1]-cy)*vy; lo = Math.min(lo, o); hi = Math.max(hi, o); }
+    const gapv = Math.min((hi - lo)*0.8/3, L*0.5), mid = (lo + hi)/2;
+    return [-1.5, -0.5, 0.5, 1.5].map(k => {
+      const sx = cx + vx*(mid + k*gapv), sy = cy + vy*(mid + k*gapv), e = exitAlong(sx, sy, ux, uy);
+      return [e[0] + ux*off, e[1] + uy*off, e[0] + ux*(off + L), e[1] + uy*(off + L)];
+    });
+  }
+  const e0 = exitAlong(cx, cy, ux, uy);
+  if(n === 1) return [[e0[0] + ux*off, e0[1] + uy*off, e0[0] + ux*(off + L), e0[1] + uy*(off + L)]];
+  /* 2-3 tacche: punto di convergenza davanti alla presa, tacche che partono dal contorno a ventaglio */
+  const P = [e0[0] + ux*L*1.9, e0[1] + uy*L*1.9], th = 0.55, angs = n === 2 ? [-th, th] : [-th, 0, th];
+  return angs.map(a => {
+    const dx = ux*Math.cos(a) - uy*Math.sin(a), dy = uy*Math.cos(a) + ux*Math.sin(a), e = exitAlong(cx, cy, dx, dy);
+    let px = P[0]-e[0], py = P[1]-e[1]; const pl = Math.hypot(px, py) || 1; px /= pl; py /= pl;
+    const len = Math.min(L, pl - off - L*0.25);
+    return [e[0] + px*off, e[1] + py*off, e[0] + px*(off + len), e[1] + py*(off + len)];
   });
 }
 function finishBDraw(w, c){
