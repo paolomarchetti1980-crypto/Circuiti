@@ -1485,7 +1485,13 @@ function circuitSVG(c, W, alpha, o){
       s += `<circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${ha}" stroke-opacity=".55" stroke-width="${rsw+rhw*2}"/>`+
            `<circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${col}" stroke-width="${rsw}"/>`;
     }
-    let label = h.role === 'start' ? (starts.length > 1 && !o.boulder ? 'S' + (starts.indexOf(i)+1) : 'S') : h.role === 'top' ? 'T' : h.role === 'foot' ? 'P' : '';
+    if(o.boulder && isStart(h)){
+      markSegs(h, W).forEach(q => { segs.push(q);
+        s += `<line x1="${q[0].toFixed(1)}" y1="${q[1].toFixed(1)}" x2="${q[2].toFixed(1)}" y2="${q[3].toFixed(1)}" stroke="${ha}" stroke-opacity=".6" stroke-width="${sw*3.4}" stroke-linecap="round"/>`+
+             `<line x1="${q[0].toFixed(1)}" y1="${q[1].toFixed(1)}" x2="${q[2].toFixed(1)}" y2="${q[3].toFixed(1)}" stroke="${col}" stroke-width="${sw*1.9}" stroke-linecap="round"/>`; });
+      return;
+    }
+    let label = h.role === 'start' ? (starts.length > 1 && !o.boulder ? 'S' + (starts.indexOf(i)+1) : 'S') : h.role === 'top' ? 'T' : '';
     if(!label && o.numbers && h.role === 'hold'){
       if(gi < g.length - 1) return; /* il numero si mette una sola volta, sull'ultimo passaggio del gruppo */
       label = g.map(j => seqOf[j]).join(',');
@@ -1534,6 +1540,29 @@ function draftSVG(w){
   return s;
 }
 /* boulder: contorno disegnato a mano (nuova presa, oppure ridisegna quella selezionata) */
+/* boulder: segni di partenza "come in gara". Ogni segno è un punto toccato sulla presa; si disegna come una tacca
+   che esce dal contorno in quella direzione. Al massimo 4 (mani e piedi). */
+const isStart = h => h && (h.role === 'start' || h.role === 'foot');
+function startMarks(c){ return c ? c.holds.reduce((t, h) => t + (isStart(h) ? Math.max(1, (h.marks || []).length) : 0), 0) : 0; }
+function addMark(c, h, x, y){
+  if(startMarks(c) >= 4 && isStart(h)){ toast('Ci sono già 4 punti di partenza.'); return; }
+  const prev = isStart(h) ? null : { role: h.role, marks: h.marks };
+  if(prev){ if(startMarks(c) >= 4){ toast('Ci sono già 4 punti di partenza.'); return; } h.role = 'start'; h.marks = []; }
+  (h.marks = h.marks || []).push([Math.round(x), Math.round(y)]);
+  ui.markUndo = { h, prev }; touch(); render();
+}
+function markSegs(h, W){
+  const pts = holdPts(h, W), bb = holdBox(h, W), cx = (bb.x0+bb.x1)/2, cy = (bb.y0+bb.y1)/2;
+  const ms = (h.marks && h.marks.length) ? h.marks : [[cx, bb.y1 + 1]];
+  const L = Math.max(W*0.03, 14);
+  return ms.map(m => {
+    let dx = m[0] - cx, dy = m[1] - cy, l = Math.hypot(dx, dy);
+    if(l < 1){ dx = 0; dy = 1; l = 1; }
+    dx /= l; dy /= l;
+    const t = rayExit(pts, cx, cy, dx, dy);
+    return [cx + dx*t, cy + dy*t, cx + dx*(t + L), cy + dy*(t + L)];
+  });
+}
 function finishBDraw(w, c){
   const pts = ui.draft; if(!c || pts.length < 3) return;
   const flat = []; pts.forEach(q => { flat.push(q[0], q[1]); });
@@ -1543,8 +1572,8 @@ function finishBDraw(w, c){
   else { A /= 2; cx /= 6*A; cy /= 6*A; }
   const old = ui.sel != null ? c.holds[ui.sel] : null;
   if(old){ old.poly = flat; old.x = cx; old.y = cy; old.sx = cx; old.sy = cy; old.drawn = 1; delete old.ts; }
-  else { c.holds.push({ x: cx, y: cy, sx: cx, sy: cy, r: S.prefs.r, role: ui.nextRole, poly: flat, drawn: 1 }); ui.nextRole = 'hold'; }
-  ui.draft = []; ui.bdraw = false; ui.sel = null; touch(); render();
+  else { c.holds.push({ x: cx, y: cy, sx: cx, sy: cy, r: S.prefs.r, role: ui.nextRole, poly: flat, drawn: 1 }); if(ui.nextRole !== 'start') ui.nextRole = 'hold'; }
+  ui.draft = []; ui.bdraw = false; ui.sel = null; ui.markUndo = null; touch(); render();
 }
 /* boulder: linea indicativa disegnata a mano dal tracciatore (direzione generale, non le prese) */
 /* linea automatica. Parte dalla zona tra le prese di partenza e i piedi di partenza e arriva al Top;
@@ -1555,13 +1584,11 @@ const lineCache = {};
 function autoLine(c, w){
   const H = c.holds, W = w.w; if(H.length < 2) return null;
   const avg = l => [l.reduce((t,h) => t + h.x, 0)/l.length, l.reduce((t,h) => t + h.y, 0)/l.length];
-  const st = H.filter(h => h.role === 'start'), ft = H.filter(h => h.role === 'foot'), tops = H.filter(h => h.role === 'top');
-  /* partenza della linea: sotto le prese di partenza (tra queste e i piedi, se ci sono) */
+  const st = H.filter(isStart), tops = H.filter(h => h.role === 'top');
+  /* partenza della linea: sotto i punti di partenza (mani e piedi) */
   const st0 = st.length ? st : [H[0]];
   const sBot = Math.max(...st0.map(h => holdBox(h, W).y1));
-  let S = [avg(ft.length ? st0.concat(ft) : st0)[0], sBot + W*0.025];
-  if(ft.length){ const fTop = Math.min(...ft.map(h => holdBox(h, W).y0)); if(fTop > sBot) S[1] = (sBot + fTop)/2; }
-  S[1] = Math.min(S[1], w.h - W*0.01);
+  const S = [avg(st0)[0], Math.min(sBot + W*0.025, w.h - W*0.01)];
   let T = tops.length ? avg(tops) : null;
   if(!T){ let far = H[0]; H.forEach(h => { if(Math.hypot(h.x-S[0], h.y-S[1]) > Math.hypot(far.x-S[0], far.y-S[1])) far = h; }); T = [far.x, far.y]; }
   const ax = T[0]-S[0], ay = T[1]-S[1], L2 = ax*ax + ay*ay; if(L2 < 1) return null;
@@ -2000,13 +2027,13 @@ function renderTools(){
   }
   if(sec && ui.bdraw){
     el.innerHTML = `<p class="hint">${h ? 'Ridisegna il contorno' : 'Disegna il contorno della presa'}: tocca i punti tutto intorno (puoi ingrandire), poi Chiudi o tocca di nuovo il primo punto.</p>`+
-      (h ? '' : `<div class="trow"><div class="seg">${rb('start','Partenza')}${rb('foot','Piede')}${rb('hold','Presa')}${rb('top','Arrivo')}</div></div>`)+
+      (h ? '' : `<div class="trow"><div class="seg">${rb('start','Punto di partenza')}${rb('hold','Presa')}${rb('top','Arrivo')}</div></div>`)+
       `<div class="trow"><button class="btn primary" data-act="bclose" ${ui.draft.length >= 3 ? '' : 'disabled'}>Chiudi</button>`+
       `<button class="btn" data-act="bundo" ${ui.draft.length ? '' : 'disabled'}>Annulla punto</button>`+
       `<button class="btn" data-act="bcancel">Esci</button></div>`;
     return;
   }
-  const roles = `<div class="seg" role="group" aria-label="Tipo di presa">${rb('start','Partenza')}${sec ? rb('foot','Piede') : ''}${rb('hold','Presa')}${rb('top','Arrivo')}</div>`;
+  const roles = `<div class="seg" role="group" aria-label="Tipo di presa">${rb('start', sec ? 'Punto di partenza' : 'Partenza')}${rb('hold','Presa')}${rb('top','Arrivo')}</div>`;
   const hands = sec ? '' : `<div class="seg" role="group" aria-label="Mano">${hb('L',dot(S.prefs.handL)+'Sinistra')}${hb('R',dot(S.prefs.handR)+'Destra')}</div>`;
   const dimBtn = `<button class="btn ${ui.editDim ? 'on' : ''}" data-act="editdim" aria-pressed="${!!ui.editDim}">Oscura</button>`;
   if(h){
@@ -2016,6 +2043,7 @@ function renderTools(){
       `<div class="trow"><div class="seg"><button data-act="size" data-d="-1" aria-label="${lbl} più piccolo">${lbl} &minus;</button><button data-act="size" data-d="1" aria-label="${lbl} più grande">${lbl} +</button></div>`+
       `<button class="btn ${ui.move ? 'on' : ''}" data-act="move">Sposta</button>`+
       (sec ? `<button class="btn" data-act="bdraw">Ridisegna</button>` : `<button class="btn" data-act="dup" title="Aggiunge un passaggio sulla stessa presa con l'altra mano">Accoppia</button>`)+
+      (sec && isStart(h) && (h.marks || []).length ? `<button class="btn" data-act="clrmarks">Togli i segni (${h.marks.length})</button>` : '')+
       `<button class="btn danger" data-act="del">Elimina</button>`+
       `<button class="btn primary" data-act="desel">Fatto</button></div>`;
     return;
@@ -2024,7 +2052,8 @@ function renderTools(){
   const first = !c || !c.holds.length;
   let hint = first ? 'Tocca la presa di partenza' : 'Tocca la prossima presa';
   hint += sec ? ': ne rilevo il contorno.' : '.';
-  if(!first) hint += ' Tocca una presa già segnata per modificarla.';
+  if(sec && ui.nextRole === 'start') hint = `<!--s-->Punto di partenza: tocca la presa vicino al bordo, dove va il segno. Fino a 4 segni (mani e piedi), anche due sulla stessa presa${c ? ` · segnati ${startMarks(c)}/4` : ''}. Poi passa a Presa.`;
+  if(!first && !hint.startsWith('<!--s-->')) hint += ' Tocca una presa già segnata per modificarla.';
   if(sec) hint += ` <span style="opacity:.75">${samStatus(w)}</span>`;
   el.innerHTML = `<p class="hint">${hint}</p>`+
     `<div class="trow">${roles}${hands}</div>`+
@@ -2503,7 +2532,9 @@ $('#stage').addEventListener('click', async e => {
     ui.move = false; ui.busy = false; touch(); render(); return;
   }
   const hit = hitIndex(c, w.w, x, y, ctol);
+  if(hit >= 0 && isSec(w) && ui.nextRole === 'start' && ui.sel == null){ addMark(c, c.holds[hit], x, y); return; }
   if(hit >= 0){ ui.sel = ui.sel === hit ? null : hit; ui.move = false; render(); return; }
+  if(isSec(w) && ui.nextRole === 'start' && startMarks(c) >= 4){ toast('Ci sono già 4 punti di partenza. Togline uno (seleziona la presa → Togli i segni) o passa a Presa.'); return; }
   if(isSec(w)){
     ui.busy = true;
     const res = await detect(w, x, y, 1);
@@ -2511,6 +2542,8 @@ $('#stage').addEventListener('click', async e => {
     applySeg(nh, res, x, y, w);
     if(!res) toast('Contorno non riconosciuto: ho messo un cerchio. Regolalo con Contorno +/−.');
     c.holds.push(nh);
+    ui.markUndo = null;
+    if(nh.role === 'start'){ nh.marks = [[Math.round(x), Math.round(y)]]; ui.markUndo = null; ui.busy = false; ui.sel = null; touch(); render(); return; }
     ui.nextRole = 'hold';
     if(ui.nextHand === 'L') ui.nextHand = 'R'; else if(ui.nextHand === 'R') ui.nextHand = 'L';
     ui.sel = null; ui.busy = false; touch(); render(); return;
@@ -2684,7 +2717,7 @@ document.addEventListener('click', e => {
     }
     case 'role': {
       const h = c && ui.sel != null ? c.holds[ui.sel] : null;
-      if(h){ h.role = b.dataset.v; touch(); } else ui.nextRole = b.dataset.v;
+      if(h){ h.role = b.dataset.v; if(h.role !== 'start') delete h.marks; touch(); } else ui.nextRole = b.dataset.v;
       render(); break;
     }
     case 'size': {
@@ -2718,7 +2751,13 @@ document.addEventListener('click', e => {
     case 'del':
       if(S.mode === 'wall'){ if(w && ui.csel != null && (w.holds || [])[ui.csel]) delCat(w, ui.csel); break; }
       if(c && ui.sel != null){ c.holds.splice(ui.sel, 1); ui.sel = null; ui.move = false; ui.nextHand = handFor(c); if(!c.holds.length) ui.nextRole = 'start'; touch(); render(); } break;
-    case 'undo': if(c && c.holds.length){ c.holds.pop(); ui.sel = null; ui.move = false; ui.nextHand = handFor(c); if(!c.holds.length) ui.nextRole = 'start'; touch(); render(); } break;
+    case 'clrmarks': { const h = c && ui.sel != null ? c.holds[ui.sel] : null; if(h){ delete h.marks; ui.markUndo = null; touch(); render(); } break; }
+    case 'undo': if(c && ui.markUndo && c.holds.includes(ui.markUndo.h)){
+        const { h, prev } = ui.markUndo; ui.markUndo = null;
+        if(prev){ h.role = prev.role; if(prev.marks) h.marks = prev.marks; else delete h.marks; } else if((h.marks || []).length) h.marks.pop();
+        touch(); render(); break;
+      }
+      if(c && c.holds.length){ c.holds.pop(); ui.sel = null; ui.move = false; ui.nextHand = handFor(c); if(!c.holds.length) ui.nextRole = 'start'; touch(); render(); } break;
     case 'delc':
       if(!w || !c) break;
       if(ui.confirm !== 'delc'){ ui.confirm = 'delc'; renderSheet(); break; }
