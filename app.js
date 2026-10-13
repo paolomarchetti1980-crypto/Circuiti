@@ -895,7 +895,7 @@ function rdpIdx(pts, eps){
   }
   return r;
 }
-async function samSegment(w, x, y, ts, strict){
+async function samSegment(w, x, y, ts, strict, auto){
   if(!(await samInit())) return undefined;
   const E = await samEmbed(w);
   const N = E.rw*E.rh;
@@ -913,12 +913,14 @@ async function samSegment(w, x, y, ts, strict){
     let a = 0; const off = k*N; for(let i=0; i<N; i++) if(md[off+i] > 0) a++;
     cands.push({ k, a, q: iou[k] });
   }
-  const ok = cands.filter(c => c.a > 6 && c.q > (strict ? 0.8 : 0.5));
+  const ok = cands.filter(c => c.a > 6 && c.q > (auto ? 0.86 : strict ? 0.8 : 0.5));
   if(!ok.length) return null;
   ok.sort((a, b) => a.a - b.a);
   let base = ok.findIndex(c => c.k === 1); if(base < 0) base = 0;
   const step = Math.round(Math.log(ts || 1)/Math.log(1.35));
-  const pi = Math.max(0, Math.min(ok.length-1, base + step));
+  let pi = Math.max(0, Math.min(ok.length-1, base + step));
+  /* rilevamento automatico: la maschera di cui SAM è più sicuro (a parità, la più piccola) */
+  if(auto){ pi = 0; ok.forEach((c, j) => { if(c.q > ok[pi].q + 0.015) pi = j; }); }
   let pick = ok[pi];
   const trace = c => { const m = new Uint8Array(N), off = c.k*N; for(let i=0; i<N; i++) m[i] = md[off+i] > 0 ? 1 : 0; return maskToPoly(m, E.rw, E.rh, x*E.s, y*E.s); };
   let tr = trace(pick);
@@ -927,7 +929,7 @@ async function samSegment(w, x, y, ts, strict){
   let st = straightPoly(tr.pts, tr.n);
   /* volume con due facce di luce diversa: la maschera scelta ne prende solo un pezzo frastagliato.
      Se una maschera più grande (fino a 5 volte) contiene il tocco ed è un poligono netto, si usa quella. */
-  if(!st && !strict && (!ts || ts === 1)){
+  if(!st && !strict && !auto && (!ts || ts === 1)){
     for(let j = pi + 1; j < ok.length; j++){
       if(ok[j].a > pick.a*5) break;
       const t2 = trace(ok[j]); if(!t2 || !t2.inside) continue;
@@ -1052,14 +1054,102 @@ function candClear(C, x0, y0, x1, y1, test){
   }
 }
 /* scansione con SAM: semi dove qualcosa si stacca dal pannello, ogni seme rifinito da SAM; più giri per separare prese vicine */
+let autoPanel = null;
+/* colore del pannello: dai campioni del gestore, altrimenti stimato (pixel chiari e poco saturi più comuni) */
+async function panelInfo(w){
+  const im = await loadImg(w.img), S = 360 / Math.max(w.w, w.h), cw = Math.max(1, Math.round(w.w*S)), ch = Math.max(1, Math.round(w.h*S));
+  const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+  const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0, cw, ch);
+  const d = g.getImageData(0, 0, cw, ch).data;
+  let refs = (w.panelSamples || []).map(p => p.rgb);
+  if(!refs.length){
+    const bins = {}; for(let i = 0; i < d.length; i += 4){ const r = d[i], gg = d[i+1], b = d[i+2], mx = Math.max(r,gg,b), mn = Math.min(r,gg,b);
+      if(mx > 120 && (mx - mn) < 0.28*mx){ const k = (r>>4)+'_'+(gg>>4)+'_'+(b>>4); bins[k] = (bins[k] || 0) + 1; } }
+    const top = Object.entries(bins).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    refs = top.map(([k]) => k.split('_').map(v => (+v)*16 + 8));
+  }
+  return { d, cw, ch, S, refs };
+}
+function panelLike(P, r, g, b, tol){
+  const sm = r + g + b + 1;
+  return P.refs.some(c => { const cs = c[0] + c[1] + c[2] + 1, k = sm / cs;
+    return k > 0.5 && k < 1.3 && Math.abs(r/sm - c[0]/cs) + Math.abs(g/sm - c[1]/cs) + Math.abs(b/sm - c[2]/cs) < tol; });
+}
+/* una presa trovata è buona se: non è un pezzo di pannello vuoto, non si sovrappone a prese già trovate, non ne unisce più di una */
+function autoAccept(w, holds, res, volArea){
+  const P = autoPanel, poly = res.poly;
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for(let i = 0; i < poly.length; i += 2){ x0 = Math.min(x0, poly[i]); x1 = Math.max(x1, poly[i]); y0 = Math.min(y0, poly[i+1]); y1 = Math.max(y1, poly[i+1]); }
+  const pts = [];
+  for(let gy = 0; gy < 9; gy++) for(let gx = 0; gx < 9; gx++){ const x = x0 + (gx + 0.5)*(x1 - x0)/9, y = y0 + (gy + 0.5)*(y1 - y0)/9; if(inPoly(poly, x, y)) pts.push([x, y]); }
+  if(!pts.length) return false;
+  /* troppo grande o attaccato ai bordi della foto: è pannello, cornice o soffitto, non una presa */
+  const W = w.w, H = w.h, e = 3;
+  if(x1 - x0 > W*0.35 || y1 - y0 > H*0.35) return false;
+  if((x0 < e) + (y0 < e) + (x1 > W - e) + (y1 > H - e) >= 2) return false;
+  if(P){
+    /* pannello: stessa tinta del pannello (anche in ombra o più illuminato). Le zone grandi così sono pannello vuoto;
+       per le piccole (possibili prese bianche) serve una somiglianza più stretta */
+    const big = res.area > W*H*0.004;
+    let near = 0;
+    pts.forEach(([x, y]) => { const i = (Math.min(P.ch-1, Math.round(y*P.S))*P.cw + Math.min(P.cw-1, Math.round(x*P.S)))*4;
+      if(panelLike(P, P.d[i], P.d[i+1], P.d[i+2], big ? 0.04 : 0.022)) near++; });
+    if(near / pts.length > (big ? 0.55 : 0.75)) return false;
+  }
+  let over = 0, inside = 0;
+  for(const h of holds){
+    if(!h.poly) continue;
+    const big = polyArea(h.poly) >= volArea;
+    if(big){ if(res.area < polyArea(h.poly)*0.35) continue; }
+    if(inPoly(poly, h.x, h.y)) inside++;
+  }
+  if(inside >= 2) return false;
+  pts.forEach(([x, y]) => { for(const h of holds){ if(h.poly && polyArea(h.poly) < volArea && inPoly(h.poly, x, y)){ over++; break; } } });
+  return over / pts.length <= 0.25;
+}
+/* passata a griglia: punti regolari su tutta la foto, dal largo al fitto. Trova anche le prese grandi e quelle
+   che si staccano poco dal pannello, che la ricerca per colore perde. */
+async function samGridPass(w, holds, maxArea, volArea){
+  try{ autoPanel = await panelInfo(w); }catch(e){ autoPanel = null; }
+  const L = Math.max(w.w, w.h), pts = [];
+  [10, 20, 34].forEach(n => { const st = L / n; for(let y = st/2; y < w.h; y += st) for(let x = st/2; x < w.w; x += st) pts.push([x, y]); });
+  ui.scan.prep = false; ui.scan.total = pts.length; ui.scan.round = 1; renderTools();
+  const covered = (x, y) => holds.some(h => h.poly && polyArea(h.poly) < volArea && inPoly(h.poly, x, y));
+  /* pannello liscio intorno al punto (tutto chiaro, grigio e uniforme): inutile chiedere a SAM, si risparmia tempo */
+  const plainPanel = (x, y, r) => { const P = autoPanel; if(!P) return false; let lo = 1e9, hi = -1e9;
+    for(let k = 0; k < 9; k++){ const a = k*0.785, q = k ? r : 0, px = Math.round((x + Math.cos(a)*q)*P.S), py = Math.round((y + Math.sin(a)*q)*P.S);
+      if(px < 0 || py < 0 || px >= P.cw || py >= P.ch) continue;
+      const i = (py*P.cw + px)*4, R = P.d[i], G = P.d[i+1], B = P.d[i+2];
+      if(!panelLike(P, R, G, B, 0.03)) return false; const v = R + G + B; lo = Math.min(lo, v); hi = Math.max(hi, v); }
+    return hi - lo < 80; };
+  let i = 0;
+  for(const [x, y] of pts){
+    if(ui.scan.stop) break;
+    i++; ui.scan.i = i;
+    if(!covered(x, y) && !plainPanel(x, y, L/60)){
+      let res = null;
+      try{ res = await samSegment(w, x, y, 1, false, true); }catch(e){ res = null; }
+      if(res && res.area > 60 && res.area < maxArea && res.solid >= 0.45 && inPoly(res.poly, x, y) && autoAccept(w, holds, res, volArea)){
+        holds.push({ id: uid(), poly: res.poly, x: res.cx, y: res.cy, sx: x, sy: y, det: 1 }); ui.scan.found++;
+      }
+    }
+    if(i % 4 === 0){ renderTools(); await new Promise(r => setTimeout(r, 0)); }
+    if(i % 80 === 0){ touch(); render(); }
+  }
+}
 async function samAutoScan(w){
   const holds = (w.holds = w.holds || []);
-  const maxArea = w.w * w.h * 0.008;
+  /* prese e volumi grandi fino all'8% della foto: sui muri con macro e volumi le prese grandi sono tante */
+  const maxArea = w.w * w.h * 0.08, volArea = w.w * w.h * 0.012;
   ui.scan = { i: 0, total: 1, found: 0, stop: false, prep: true }; renderTools();
   try{ await samEmbed(w); }catch(e){ ui.scan = null; toast('Non riesco a preparare il riconoscimento su questa foto.'); render(); return; }
   const C = await samCandidates(w);
-  const inAny = (x, y) => { for(let k = 0; k < holds.length; k++){ const p = holds[k].poly; if(p && inPoly(p, x, y)) return true; } return false; };
+  /* le prese grandi (volumi) non "coprono" i punti: sopra ci possono essere altre prese */
+  const inAny = (x, y) => { for(let k = 0; k < holds.length; k++){ const p = holds[k].poly; if(p && polyArea(p) < volArea && inPoly(p, x, y)) return true; } return false; };
   let done = 0;
+  await samGridPass(w, holds, maxArea, volArea);
+  if(ui.scan.stop){ const found = ui.scan.found; ui.scan = null; touch(); render(); toast(`Fermato: ${found} nuove prese aggiunte.`); return; }
+  done = ui.scan.i;
   for(let round = 0; round < 4 && !ui.scan.stop; round++){
     const seeds = candSeeds(C);
     if(!seeds.length) break;
@@ -1072,7 +1162,7 @@ async function samAutoScan(w){
       else{
         let res = null;
         try{ res = await samSegment(w, X, Y, 1, true); }catch(e){ res = null; }
-        if(res && res.area > 90 && res.area < maxArea){
+        if(res && res.area > 90 && res.area < maxArea && autoAccept(w, holds, res, volArea)){
           const poly = res.poly;
           holds.push({ id: uid(), poly, x: res.cx, y: res.cy, sx: X, sy: Y, det: 1 }); ui.scan.found++; ok = true;
           let bx0 = 1e9, by0 = 1e9, bx1 = -1, by1 = -1;
@@ -1090,7 +1180,7 @@ async function samAutoScan(w){
   }
   const stopped = ui.scan.stop, found = ui.scan.found;
   ui.scan = null; touch(); render();
-  toast(stopped ? `Fermato: ${found} nuove prese aggiunte.` : `Fatto: ${found} nuove prese trovate. Controlla e aggiungi a mano quelle mancanti.`);
+  toast(stopped ? `Fermato: ${found} nuove prese aggiunte (riconoscimento intelligente).` : `Fatto con il riconoscimento intelligente: ${found} nuove prese. Controlla e aggiungi a mano quelle mancanti.`);
 }
 async function autoDetectAll(w){
   if(!w || ui.scan || w.locked) return;
@@ -1131,7 +1221,7 @@ async function autoDetectAll(w){
   const stopped = ui.scan.stop, found = ui.scan.found;
   ui.scan = null;
   touch(); render();
-  toast(stopped ? `Fermato: ${found} nuove prese aggiunte.` : `Fatto: ${found} nuove prese trovate.`);
+  toast(stopped ? `Fermato: ${found} nuove prese aggiunte (metodo semplice).` : `Fatto con il metodo semplice (il riconoscimento intelligente non è disponibile su questo telefono): ${found} nuove prese.`);
 }
 function applySeg(h, r, x, y, w){
   h.sx = x; h.sy = y;
