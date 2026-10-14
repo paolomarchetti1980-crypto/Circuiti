@@ -1621,7 +1621,7 @@ function circuitSVG(c, W, alpha, o){
     const rIn = rr0 => Math.max(rr0*0.5, rr0 - inset);
     /* boulder: tacche di partenza attaccate al contorno, come il manico di una lente.
        L'alone delle tacche va sotto il contorno, il colore sopra: nessuno stacco tra bordo e tacca. */
-    const marks = o.boulder && isStart(h) ? markSegs(h, W, sCen, 0) : null, tw = sw*1.6;
+    const marks = o.boulder && isStart(h) ? ((o.mk && o.mk.get(h)) || markSegs(h, W, sCen, 0)) : null, tw = sw*1.6;
     const tack = (q, cl, wd, op) => `<path d="M${q[0].toFixed(1)},${q[1].toFixed(1)}L${q[2].toFixed(1)},${q[3].toFixed(1)}" stroke="${cl}" stroke-opacity="${op}" stroke-width="${wd}" stroke-linecap="butt" fill="none"/><circle cx="${q[2].toFixed(1)}" cy="${q[3].toFixed(1)}" r="${wd/2}" fill="${cl}" fill-opacity="${op}"/>`;
     if(marks) marks.forEach(q => { s += tack(q, ha, tw + hw*2, .55); });
     if(lv && !lv.first){ /* già disegnata col primo passaggio di questo livello */ }
@@ -1716,7 +1716,7 @@ function addMark(c, h, x, y){
    - una tacca per presa: esce dal lato rivolto al centro delle partenze e punta verso di esso;
    - più tacche sulla stessa presa (2, 3 o 4): parallele, una accanto all'altra, dal lato rivolto al centro.
    La tacca parte appena fuori dal contorno, senza coprire la presa. */
-function markSegs(h, W, C, off){
+function markSegs(h, W, C, off, dir){
   const pts = holdPts(h, W), bb = holdBox(h, W), cx = (bb.x0+bb.x1)/2, cy = (bb.y0+bb.y1)/2;
   const n = Math.max(1, Math.min(4, (h.marks || []).length));
   const L = Math.max(W*0.03, 14);
@@ -1726,6 +1726,7 @@ function markSegs(h, W, C, off){
   else (h.marks || []).forEach(m => { const dx = m[0]-cx, dy = m[1]-cy, l = Math.hypot(dx, dy); if(l > 1){ ux += dx/l; uy += dy/l; } });
   let ul = Math.hypot(ux, uy); if(ul < 1e-6){ ux = 0; uy = 1; ul = 1; }
   ux /= ul; uy /= ul;
+  if(dir){ ux = dir[0]; uy = dir[1]; }
   const vx = -uy, vy = ux;
   const exitAlong = (sx, sy, dx, dy) => { const t = rayExit(pts, sx, sy, dx, dy); return [sx + dx*t, sy + dy*t]; };
   if(n >= 2){
@@ -1740,6 +1741,50 @@ function markSegs(h, W, C, off){
   }
   const e0 = exitAlong(cx, cy, ux, uy);
   return [[e0[0] + ux*off, e0[1] + uy*off, e0[0] + ux*(off + L), e0[1] + uy*(off + L)]];
+}
+/* tacche di tutto il settore, scelte una volta sola: ogni tacca parte dalla direzione preferita (verso il centro
+   delle partenze) e, se lì coprirebbe un'altra presa o un'altra tacca, ruota fino al primo spazio libero */
+const marksCache = {};
+function wallMarks(w){
+  const W = w.w, key = W + '|' + w.circuits.map(c => c.id + (isOff(c) ? 'x' : '') + ':' + c.holds.map(h => Math.round(h.x) + ',' + Math.round(h.y) + h.role + ((h.marks || []).length) + (h.poly ? h.poly.length : 'c')).join(';')).join('|');
+  const ce = marksCache[w.id]; if(ce && ce.key === key) return ce.map;
+  const map = new Map(), placed = [], all = [];
+  w.circuits.forEach(c => c.holds.forEach(h => all.push(h)));
+  const tw = Math.max(2, W*0.0028)*1.6;
+  /* una tacca deve stare lontana dalle altre prese almeno un paio di spessori (dentro o troppo vicino conta uguale) */
+  const shapes = all.map(o => { const p = holdPts(o, W), b = holdBox(o, W); return { o, p, b }; });
+  const inHold = (x, y, self) => { const m = tw*2; return shapes.some(({ o, p, b }) => o !== self && !(Math.abs(o.x - self.x) < 1 && Math.abs(o.y - self.y) < 1) &&
+    x > b.x0 - m && x < b.x1 + m && y > b.y0 - m && y < b.y1 + m && (inPoly(p, x, y) || polyDist(x, y, p) < m)); };
+  const cost = (segs, h) => {
+    let c = 0;
+    segs.forEach(q => {
+      for(let k = 0; k <= 6; k++){
+        const t = k/6, x = q[0] + (q[2]-q[0])*t, y = q[1] + (q[3]-q[1])*t;
+        if(x < 0 || y < 0 || x > W || y > w.h) c += 20;
+        if(inHold(x, y, h)) c += 10;
+        for(const p of placed) if(segDist(x, y, p[0], p[1], p[2], p[3]) < tw*2.2) c += 8;
+      }
+    });
+    return c;
+  };
+  const order = w.circuits.filter(c => !isOff(c)).concat(w.circuits.filter(isOff));
+  order.forEach(c => {
+    const ss = c.holds.filter(isStart); if(!ss.length) return;
+    const C = ss.length > 1 ? [ss.reduce((t, q) => t + q.x, 0)/ss.length, ss.reduce((t, q) => t + q.y, 0)/ss.length] : null;
+    ss.forEach(h => {
+      const base = markSegs(h, W, C, 0), u = [base[0][2] - base[0][0], base[0][3] - base[0][1]], ul = Math.hypot(u[0], u[1]) || 1;
+      const a0 = Math.atan2(u[1]/ul, u[0]/ul);
+      let best = base, bc = cost(base, h);
+      if(bc > 0) for(let k = 1; k <= 12 && bc > 0; k++) for(const sgn of [1, -1]){
+        const a = a0 + sgn*k*Math.PI/12, segs = markSegs(h, W, C, 0, [Math.cos(a), Math.sin(a)]);
+        const cc = cost(segs, h) + k*0.6;
+        if(cc < bc){ bc = cc; best = segs; }
+      }
+      map.set(h, best); best.forEach(q => placed.push(q));
+    });
+  });
+  marksCache[w.id] = { key, map };
+  return map;
 }
 function finishBDraw(w, c){
   const pts = ui.draft; if(!c || pts.length < 3) return;
@@ -1797,14 +1842,12 @@ function routeLine(w, guide, bm, sBot){
     }
   }); });
   /* anche le tacche di partenza sono ostacoli */
-  w.circuits.forEach(x => { if(isOff(x)) return; const ss = x.holds.filter(isStart); if(!ss.length) return;
-    const cen = ss.length > 1 ? [ss.reduce((t,q) => t + q.x, 0)/ss.length, ss.reduce((t,q) => t + q.y, 0)/ss.length] : null;
-    ss.forEach(h => markSegs(h, W, cen, 0).forEach(q => {
+  wallMarks(w).forEach(segs => segs.forEach(q => {
       const n = Math.ceil(Math.hypot(q[2]-q[0], q[3]-q[1])*s*2) + 1;
       for(let k=0;k<=n;k++){ const gx = Math.round((q[0] + (q[2]-q[0])*k/n)*s - 0.5), gy = Math.round((q[1] + (q[3]-q[1])*k/n)*s - 0.5);
         if(gx >= 0 && gy >= 0 && gx < gw && gy < gh) O0[gy*gw+gx] = 1; }
-    }));
-  });
+  }));
+
   /* allargo di una cella: la linea ha uno spessore */
   const O = new Float32Array(N);
   for(let y=0;y<gh;y++) for(let x=0;x<gw;x++){
@@ -1954,7 +1997,8 @@ function overlay(w, o){
   const bo = isSec(w);
   if(bo) o = Object.assign({}, o, { numbers: false, lines: false, boulder: true });
   let s = '';
-  if(o.others) visibleCircuits(w).forEach(c => { if(c !== act) s += circuitSVG(c, w.w, 0.28, {numbers:false, lines:false, boulder:bo, H: w.h}); });
+  const mk = bo ? wallMarks(w) : null;
+  if(o.others) visibleCircuits(w).forEach(c => { if(c !== act) s += circuitSVG(c, w.w, 0.28, {numbers:false, lines:false, boulder:bo, H: w.h, mk}); });
   if(o.dim && act && act.holds.length){
     let d = `M0,0H${w.w}V${w.h}H0Z`;
     act.holds.forEach(h => {
@@ -1965,7 +2009,7 @@ function overlay(w, o){
   }
   if(act && bo) s += lineSVG(act.line || autoLine(act, w), w.w, colOf(act), act);
   if(bo && ui.bline && ui.lineDraft.length > 1) s += lineSVG(ui.lineDraft, w.w, '#ff3b7a');
-  if(act) s += circuitSVG(act, w.w, 1, Object.assign({}, o, { H: w.h, obst: w.holds || [], busy: busyMap(w) }));
+  if(act) s += circuitSVG(act, w.w, 1, Object.assign({}, o, { H: w.h, obst: w.holds || [], busy: busyMap(w), mk }));
   if(o.edit) s += draftSVG(w);
   if(o.edit && act && ui.sel != null && act.holds[ui.sel]){
     const bb = holdBox(act.holds[ui.sel], w.w), pad = w.w*0.012, t = Math.max(2, w.w*0.003);
