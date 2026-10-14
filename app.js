@@ -1938,8 +1938,10 @@ function overlay(w, o){
   if(o.wall){
     let s = ''; const t = Math.max(2, w.w*0.0028);
     const sus = catSuspects(w);
+    /* contorni sottili anche ingrandendo: lo spessore non supera circa un pixel di schermo */
+    const stg = $('#stage'), spx = stg && stg.clientWidth ? w.w / stg.clientWidth : 1e9, tw = Math.min(Math.max(1, w.w*0.0013), spx*0.9);
     (w.holds || []).forEach((h,i) => {
-      const d = polyPath(h.poly), sel = i === ui.csel, col = sel ? '#ffd400' : sus.has(i) ? '#ff7a00' : '#ffffff', tw = Math.max(1, w.w*0.0013);
+      const d = polyPath(h.poly), sel = i === ui.csel, col = sel ? '#ffd400' : sus.has(i) ? '#ff7a00' : '#ffffff';
       s += `<path d="${d}" fill="${col}" fill-opacity="${sel ? .32 : .10}" stroke="#000" stroke-opacity=".6" stroke-width="${tw*2.6}" stroke-linejoin="round"/>`+
            `<path d="${d}" fill="none" stroke="${col}" stroke-width="${sel ? tw*2 : tw}" stroke-linejoin="round"/>`;
     });
@@ -3073,7 +3075,9 @@ function applyZoom(nz, fx, fy){
   ui.zoom = nz; fit();
   box.scrollLeft = u*st.clientWidth + st.offsetLeft - px;
   box.scrollTop = v*st.clientHeight + st.offsetTop - py;
-  if(ui.draft.length && !ui.draftRaf) ui.draftRaf = requestAnimationFrame(() => { ui.draftRaf = 0; const g = document.getElementById('draftg'); if(g) g.innerHTML = draftInner(w); });
+  const wallMode = EDIT && S.mode === 'wall';
+  if((ui.draft.length || wallMode) && !ui.draftRaf) ui.draftRaf = requestAnimationFrame(() => { ui.draftRaf = 0;
+    if(EDIT && S.mode === 'wall') renderStage(); else { const g = document.getElementById('draftg'); if(g) g.innerHTML = draftInner(w); } });
 }
 (function(){
   const box = $('#box');
