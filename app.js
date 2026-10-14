@@ -1687,12 +1687,15 @@ function circuitSVG(c, W, alpha, o){
   }
   return s + '</g>';
 }
-function draftSVG(w){
+/* punti e linea del disegno restano della stessa misura sullo schermo anche ingrandendo, così il contorno resta visibile */
+function draftSVG(w){ return ui.draft.length ? `<g id="draftg">${draftInner(w)}</g>` : ''; }
+function draftInner(w){
   if(!ui.draft.length) return '';
-  const t = Math.max(2, w.w*0.0028), pts = ui.draft.map(q => q[0] + ',' + q[1]).join(' ');
+  const st = $('#stage'), px = st && st.clientWidth ? w.w / st.clientWidth : w.w / 400;   /* un pixel di schermo, in pixel della foto */
+  const t = Math.max(0.5, px*1.6), pts = ui.draft.map(q => q[0] + ',' + q[1]).join(' ');
   let s = `<polyline points="${pts}" fill="none" stroke="#000" stroke-opacity=".7" stroke-width="${t*3}" stroke-linejoin="round" stroke-linecap="round"/>`+
           `<polyline points="${pts}" fill="none" stroke="#ff3b7a" stroke-width="${t*1.4}" stroke-linejoin="round" stroke-linecap="round"/>`;
-  ui.draft.forEach((q,i) => { s += `<circle cx="${q[0]}" cy="${q[1]}" r="${i === 0 ? t*2.4 : t*1.3}" fill="${i === 0 ? '#ff3b7a' : '#fff'}" stroke="#000" stroke-width="${t*0.55}"/>`; });
+  ui.draft.forEach((q,i) => { s += `<circle cx="${q[0]}" cy="${q[1]}" r="${i === 0 ? t*2.6 : t*1.5}" fill="${i === 0 ? '#ff3b7a' : '#fff'}" stroke="#000" stroke-width="${t*0.5}"/>`; });
   return s;
 }
 /* boulder: contorno disegnato a mano (nuova presa, oppure ridisegna quella selezionata) */
@@ -3070,6 +3073,7 @@ function applyZoom(nz, fx, fy){
   ui.zoom = nz; fit();
   box.scrollLeft = u*st.clientWidth + st.offsetLeft - px;
   box.scrollTop = v*st.clientHeight + st.offsetTop - py;
+  if(ui.draft.length && !ui.draftRaf) ui.draftRaf = requestAnimationFrame(() => { ui.draftRaf = 0; const g = document.getElementById('draftg'); if(g) g.innerHTML = draftInner(w); });
 }
 (function(){
   const box = $('#box');
