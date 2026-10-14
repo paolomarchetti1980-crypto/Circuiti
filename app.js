@@ -1932,7 +1932,7 @@ function sectorGrid(){
       const due = on.filter(c => c.dateRemoved && c.dateRemoved >= t && c.dateRemoved <= lim).length;
       staff = `<span class="sinfo">${last ? 'ultimo montaggio ' + fmtDate(last) : 'nessun montaggio'}${due ? `<br><b>${due} da smontare entro 7 giorni</b>` : ''}</span>`;
     }
-    return `<button class="scard" data-act="opensec" data-id="${w.id}"><span class="sph"><img src="${esc(w.img)}" alt="" loading="lazy"></span>`+
+    return `<button class="scard" data-act="opensec" data-id="${w.id}"><span class="sph"><img src="${esc(w.img)}" alt="" loading="lazy">${EDIT && isMgr() ? `<span class="sedit" role="button" data-act="secedit" data-id="${w.id}" aria-label="Rinomina o elimina il settore">Modifica</span>` : ''}</span>`+
       `<span class="sname">${esc(w.name)}</span><span class="sdots">${dots || '<small>nessun boulder</small>'}</span>${staff}</button>`;
   }).join('') + (EDIT && isMgr() ? `<div class="scard sadd"><span class="sname">+ Nuovo settore</span><span class="sinfo">Carica la foto del settore</span><div class="sbtns">${PICK_BTNS}</div></div>` : '') + `</div>`;
 }
@@ -2762,7 +2762,7 @@ $('#stage').addEventListener('click', async e => {
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
 const PUBLIC_ACTS = ['opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
-const MGR_ACTS = ['clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
+const MGR_ACTS = ['secedit','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b || b.disabled) return;
   const a = b.dataset.act, w = curWall(), c = curCircuit();
@@ -2881,6 +2881,7 @@ document.addEventListener('click', e => {
     case 'stopauto': if(ui.scan) ui.scan.stop = true; break;
     case 'tracing': if(w && w.locked){ S.mode = 'edit'; render(); } break;
     case 'wall': openSheet('wall'); break;
+    case 'secedit': S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); openSheet('wall'); break;
     case 'opensec': S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.bLevel = 'sector'; ui.zoom = 1; ui.sel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save(); try{ history.pushState({ sec: 1 }, ''); }catch(e){} render(); $('#box').scrollTop = 0; break;
     case 'bback': if(history.state && history.state.sec){ try{ history.back(); }catch(e){} } ui.bLevel = 'sectors'; ui.zoom = 1; render(); break;
     case 'img': makeImage(); break;
@@ -2989,7 +2990,8 @@ document.addEventListener('click', e => {
       if(ui.confirm !== 'delw'){ ui.confirm = 'delw'; renderSheet(); break; }
       S.walls = S.walls.filter(x => x.id !== w.id);
       { const l = secWalls(); S.active = l[0] ? l[0].id : (S.walls[0] ? S.walls[0].id : null); }
-      ui.sel = null; ui.sheet = null; ui.confirm = null; touch(); render(); renderSheet(); break;
+      if(BO()) ui.bLevel = 'sectors';
+      ui.sel = null; ui.sheet = null; ui.confirm = null; touch(); render(); renderSheet(); toast(BO() ? 'Settore eliminato. Ricordati di pubblicare.' : 'Muro eliminato. Ricordati di pubblicare.'); break;
     case 'close': ui.sheet = null; ui.confirm = null; renderSheet(); break;
     case 'install': ui.sheet = null; renderSheet(); doInstall(); break;
   }
