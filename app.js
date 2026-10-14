@@ -1688,6 +1688,8 @@ function circuitSVG(c, W, alpha, o){
   return s + '</g>';
 }
 /* punti e linea del disegno restano della stessa misura sullo schermo anche ingrandendo, così il contorno resta visibile */
+/* modalità disegno del contorno (scheda Muro → Disegna, oppure "Disegna a mano" dei boulder) */
+const drawMode = () => EDIT && ((S.mode === 'wall' && ui.tool === 'draw') || (S.mode === 'edit' && !!ui.bdraw));
 function draftSVG(w){ return ui.draft.length ? `<g id="draftg">${draftInner(w)}</g>` : ''; }
 function draftInner(w){
   if(!ui.draft.length) return '';
@@ -2040,6 +2042,7 @@ function renderStage(){
   if(bGrid()){ st.hidden = true; z.hidden = true; em.hidden = false; em.innerHTML = sectorGrid(); return; }
   st.hidden = false; em.hidden = true; z.hidden = false;
   st.classList.toggle('edit', EDIT && S.mode !== 'view');
+  st.classList.toggle('linedraw', !!ui.bline || drawMode());
   const im = $('#photo');
   if(im.dataset.id !== w.id){ im.src = w.img; im.dataset.id = w.id; }
   const sv = $('#ov');
@@ -2155,7 +2158,7 @@ function renderTools(){
     const nsus = catSuspects(w).size;
     const tb = (v,l) => `<button data-act="tool" data-v="${v}" aria-pressed="${ui.tool === v}">${l}</button>`;
     let hint;
-    if(drawing) hint = ui.redraw != null ? 'Ridisegna il contorno: tocca i punti attorno alla presa, poi Chiudi.' : 'Tocca i punti attorno alla presa (anche zoomando), poi Chiudi.';
+    if(drawing) hint = (ui.redraw != null ? 'Ridisegna il contorno: ' : '') + 'passa il dito lungo il bordo della presa (staccandolo vicino all\'inizio si chiude da solo), oppure tocca i punti e poi Chiudi. Con due dita sposti e ingrandisci.';
     else if(erasing) hint = 'Gomma: tocca un contorno per eliminarlo. Puoi ripristinare l\'ultimo eliminato.';
     else if(ui.tool === 'panel') hint = 'Tocca uno o più punti di pannello vuoto, uno per ogni zona con colore/luce diversi. "Fine campionamento" quando hai finito.';
     else hint = `${n} prese nel muro. Tocca un contorno per selezionarlo (tocca ancora nello stesso punto per passare a quello sotto). Quelli arancioni sembrano sospetti.`;
@@ -2215,7 +2218,7 @@ function renderTools(){
     return;
   }
   if(sec && ui.bdraw){
-    el.innerHTML = `<p class="hint">${h ? 'Ridisegna il contorno' : 'Disegna il contorno della presa'}: tocca i punti tutto intorno (puoi ingrandire), poi Chiudi o tocca di nuovo il primo punto.</p>`+
+    el.innerHTML = `<p class="hint">${h ? 'Ridisegna il contorno' : 'Disegna il contorno della presa'}: passa il dito lungo il bordo (staccandolo vicino all'inizio si chiude da solo), oppure tocca i punti e poi Chiudi. Con due dita sposti e ingrandisci.</p>`+
       (h ? '' : `<div class="trow"><div class="seg">${rb('start','Punto di partenza')}${rb('hold','Presa')}${rb('top','Arrivo')}</div></div>`)+
       `<div class="trow"><button class="btn primary" data-act="bclose" ${ui.draft.length >= 3 ? '' : 'disabled'}>Chiudi</button>`+
       `<button class="btn" data-act="bundo" ${ui.draft.length ? '' : 'disabled'}>Annulla punto</button>`+
@@ -3086,14 +3089,18 @@ function applyZoom(nz, fx, fy){
   box.addEventListener('touchstart', e => {
     if(e.touches.length === 2){
       const a = e.touches[0], b = e.touches[1];
-      pinch = { d: dist(a,b) || 1, z: ui.zoom }; ui.pinchAt = Date.now();
+      pinch = { d: dist(a,b) || 1, z: ui.zoom, mx: (a.clientX + b.clientX)/2, my: (a.clientY + b.clientY)/2 }; ui.pinchAt = Date.now();
     }
   }, { passive: true });
   box.addEventListener('touchmove', e => {
     if(pinch && e.touches.length === 2){
       e.preventDefault();
       const a = e.touches[0], b = e.touches[1];
-      applyZoom(pinch.z * dist(a,b) / pinch.d, (a.clientX + b.clientX)/2, (a.clientY + b.clientY)/2);
+      const mx = (a.clientX + b.clientX)/2, my = (a.clientY + b.clientY)/2;
+      applyZoom(pinch.z * dist(a,b) / pinch.d, mx, my);
+      /* mentre si disegna un dito disegna: la foto si sposta con due dita */
+      if($('#stage').classList.contains('linedraw')){ box.scrollLeft -= mx - pinch.mx; box.scrollTop -= my - pinch.my; }
+      pinch.mx = mx; pinch.my = my;
       ui.pinchAt = Date.now();
     }
   }, { passive: false });
@@ -3117,6 +3124,43 @@ function applyZoom(nz, fx, fy){
     const w = curWall(), c = curCircuit();
     if(c && w && ui.lineDraft.length > 3){ c.line = cleanLine(ui.lineDraft, w.w); touch(); }
     ui.lineDraft = []; ui.pinchAt = Date.now(); render();
+  };
+  st.addEventListener('pointerup', end); st.addEventListener('pointercancel', end);
+})();
+/* contorno a mano libera: un dito che scorre disegna; un tocco semplice mette un punto (gestito dal click); due dita spostano */
+(function(){
+  const st = $('#stage');
+  const pt = e => { const w = curWall(), r = st.getBoundingClientRect(), k = w.w / r.width; return [clamp(Math.round((e.clientX - r.left)*k), 0, w.w), clamp(Math.round((e.clientY - r.top)*k), 0, w.h)]; };
+  let fh = null;   /* { id, x0, y0, base, pts, on } */
+  const live = () => { const w = curWall(), g = document.getElementById('draftg'); if(w && g) g.innerHTML = draftInner(w); else renderStage(); };
+  st.addEventListener('pointerdown', e => {
+    if(ui.bline || !drawMode() || ui.busy) return;
+    if(fh){ ui.draft = ui.draft.slice(0, fh.base); fh = null; live(); return; }   /* secondo dito: si annulla il tratto */
+    fh = { id: e.pointerId, x0: e.clientX, y0: e.clientY, base: ui.draft.length, on: false, last: null };
+  });
+  st.addEventListener('pointermove', e => {
+    if(!fh || e.pointerId !== fh.id) return;
+    if(!fh.on){ if(Math.hypot(e.clientX - fh.x0, e.clientY - fh.y0) < 8) return; fh.on = true; try{ st.setPointerCapture(e.pointerId); }catch(err){} const w = curWall(), r = st.getBoundingClientRect(), k = w.w / r.width; ui.draft.push([Math.round((fh.x0 - r.left)*k), Math.round((fh.y0 - r.top)*k)]); fh.last = [fh.x0, fh.y0]; }
+    if(Math.hypot(e.clientX - fh.last[0], e.clientY - fh.last[1]) < 3) return;
+    fh.last = [e.clientX, e.clientY]; ui.draft.push(pt(e)); live(); e.preventDefault();
+  });
+  const end = e => {
+    if(!fh || (e && e.pointerId !== fh.id)) return;
+    const f = fh; fh = null;
+    if(!f.on) return;   /* era un tocco: ci pensa il click */
+    ui.pinchAt = Date.now();   /* niente punto in più dal click che segue */
+    const w = curWall(); if(!w) return;
+    const r = st.getBoundingClientRect(), px = w.w / r.width;
+    /* il tratto si semplifica (scarto di circa un pixel e mezzo di schermo): niente seghettature del dito */
+    const stroke = rdpPts(ui.draft.slice(f.base), px*1.5);
+    ui.draft = ui.draft.slice(0, f.base).concat(stroke.map(q => [Math.round(q[0]), Math.round(q[1])]));
+    const a = ui.draft[0], z = ui.draft[ui.draft.length-1];
+    if(ui.draft.length >= 4 && Math.hypot(a[0]-z[0], a[1]-z[1]) <= px*22){
+      ui.draft.pop();
+      if(S.mode === 'wall') finishDraw(w); else { const c = curCircuit(); if(c) finishBDraw(w, c); }
+      return;
+    }
+    render();
   };
   st.addEventListener('pointerup', end); st.addEventListener('pointercancel', end);
 })();
