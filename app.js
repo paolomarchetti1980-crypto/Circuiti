@@ -818,7 +818,11 @@ function straightCore(pts, nPix){
     if(!r || r.length < 3 || r.length > 8) continue;
     /* il poligono deve coprire quasi la stessa superficie della presa: altrimenti era una forma tondeggiante */
     let A2 = 0; r.forEach((q, i) => { const n2 = r[(i+1) % r.length]; A2 += q[0]*n2[1] - n2[0]*q[1]; });
-    if(Math.abs(Math.abs(A2/2)/nPix - 1) < 0.07) return r;
+    if(Math.abs(Math.abs(A2/2)/nPix - 1) >= 0.07) continue;
+    /* e il contorno deve stare attaccato ai lati: una presa tonda somiglia a un ottagono per superficie, ma non per forma */
+    let dev = 0;
+    for(let i = 0; i < pts.length; i += 2){ let m = 1e9; for(let j = 0; j < r.length; j++){ const a = r[j], b = r[(j+1) % r.length]; m = Math.min(m, segDist(pts[i][0], pts[i][1], a[0], a[1], b[0], b[1])); } dev += m; }
+    if(dev / Math.ceil(pts.length/2) < 0.011*D) return r;
   }
   return null;
 }
@@ -937,18 +941,72 @@ async function samSegment(w, x, y, ts, strict, auto){
       if(s2){ tr = t2; st = s2; pick = ok[j]; break; }
     }
   }
-  const simp = st || rdpPts(tr.pts, 0.9);
-  if(simp.length < 3) return null;
-  const k = 1/E.s, flat = [];
-  simp.forEach(p => { flat.push(Math.round((p[0] + 0.5)*k), Math.round((p[1] + 0.5)*k)); });
+  const k = 1/E.s;
+  let op;   /* contorno nelle coordinate della foto originale */
+  if(st) op = st.map(p => [(p[0] + 0.5)*k, (p[1] + 0.5)*k]);
+  else {
+    /* la maschera di SAM è a bassa risoluzione: si aggancia il contorno ai bordi veri della presa nella foto */
+    let EM = null; try{ EM = await edgeMap(w); }catch(e){ EM = null; }
+    const raw = tr.pts.map(p => [(p[0] + 0.5)*k, (p[1] + 0.5)*k]);
+    op = rdpPts(EM ? snapContour(raw, EM, k) : raw, EM ? 0.7/EM.es : 0.9*k);
+  }
+  if(op.length < 3) return null;
+  const flat = []; op.forEach(p => { flat.push(Math.round(p[0]), Math.round(p[1])); });
   let A = 0, cx = 0, cy = 0;
-  for(let i=0; i<simp.length; i++){ const a = simp[i], b = simp[(i+1) % simp.length], c = a[0]*b[1] - b[0]*a[1]; A += c; cx += (a[0]+b[0])*c; cy += (a[1]+b[1])*c; }
+  for(let i=0; i<op.length; i++){ const a = op[i], b = op[(i+1) % op.length], c = a[0]*b[1] - b[0]*a[1]; A += c; cx += (a[0]+b[0])*c; cy += (a[1]+b[1])*c; }
   if(Math.abs(A) < 1) return null;
-  A /= 2; cx = (cx/(6*A) + 0.5)*k; cy = (cy/(6*A) + 0.5)*k;
-  const area = Math.abs(A)*k*k;
-  const solid = Math.abs(A) / (hullAreaFlat(simp.flat()) || 1);
+  A /= 2; cx = cx/(6*A); cy = cy/(6*A);
+  const area = Math.abs(A);
+  const solid = Math.abs(A) / (hullAreaFlat(op.flat()) || 1);
   if(strict && solid < 0.6) return null;
   return { poly: flat, cx, cy, area, solid, score: pick.q, sam: true };
+}
+/* bordi della foto (intensità del cambio di colore), a risoluzione alta, calcolati una volta per foto */
+const edgeCache = {};
+async function edgeMap(w){
+  const key = w.id + '|' + String(w.img).length + String(w.img).slice(-24), c = edgeCache[w.id];
+  if(c && c.key === key) return c.map ? c.map : c.pending;
+  const pending = (async () => {
+    const im = await loadImg(w.img), es = Math.min(1, 2048 / Math.max(w.w, w.h));
+    const ew = Math.max(1, Math.round(w.w*es)), eh = Math.max(1, Math.round(w.h*es));
+    const cv = document.createElement('canvas'); cv.width = ew; cv.height = eh;
+    const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0, ew, eh);
+    const d = g.getImageData(0, 0, ew, eh).data, G = new Uint8Array(ew*eh);
+    for(let y = 1; y < eh-1; y++) for(let x = 1; x < ew-1; x++){
+      const i = (y*ew + x)*4; let sx = 0, sy = 0;
+      for(let ch = 0; ch < 3; ch++){
+        const L = d[i-4+ch], Rr = d[i+4+ch], U = d[i-ew*4+ch], D = d[i+ew*4+ch];
+        sx += Math.abs(Rr - L); sy += Math.abs(D - U);
+      }
+      G[y*ew + x] = Math.min(255, (sx + sy) >> 1);
+    }
+    return { es, ew, eh, G };
+  })();
+  edgeCache[w.id] = { key, pending };
+  const map = await pending; edgeCache[w.id] = { key, map }; return map;
+}
+/* ogni punto del contorno si sposta lungo la perpendicolare fino al bordo più netto lì vicino (entro la precisione della maschera);
+   gli spostamenti si ammorbidiscono con quelli dei vicini, così il contorno resta pulito */
+function snapContour(pts, EM, k){
+  const n = pts.length; if(n < 8) return pts;
+  const R = Math.max(2, Math.round(1.6*k*EM.es)), off = new Float32Array(n);
+  const at = (x, y) => { const xi = Math.round(x*EM.es), yi = Math.round(y*EM.es); return (xi < 0 || yi < 0 || xi >= EM.ew || yi >= EM.eh) ? 0 : EM.G[yi*EM.ew + xi]; };
+  for(let i = 0; i < n; i++){
+    const a = pts[(i - 3 + n) % n], b = pts[(i + 3) % n];
+    let tx = b[0] - a[0], ty = b[1] - a[1]; const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+    const nx = ty, ny = -tx, p = pts[i];
+    let best = 0, bs = -1, top = 0;
+    for(let t = -R; t <= R; t++){ const gv = at(p[0] + nx*t/EM.es, p[1] + ny*t/EM.es); top = Math.max(top, gv); const sc = gv - 1.5*Math.abs(t); if(sc > bs){ bs = sc; best = t; } }
+    off[i] = top >= 28 ? best : 0;
+  }
+  const out = [];
+  for(let i = 0; i < n; i++){
+    const win = []; for(let j = -4; j <= 4; j++) win.push(off[(i + j + n) % n]); win.sort((x, y) => x - y);
+    const o = win[4]/EM.es, a = pts[(i - 3 + n) % n], b = pts[(i + 3) % n];
+    let tx = b[0] - a[0], ty = b[1] - a[1]; const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+    out.push([pts[i][0] + ty*o, pts[i][1] - tx*o]);
+  }
+  return out;
 }
 const segCache = {};
 async function getSeg(w){
@@ -1104,7 +1162,9 @@ function autoAccept(w, holds, res, volArea){
     if(inPoly(poly, h.x, h.y)) inside++;
   }
   if(inside >= 2) return false;
-  pts.forEach(([x, y]) => { for(const h of holds){ if(h.poly && polyArea(h.poly) < volArea && inPoly(h.poly, x, y)){ over++; break; } } });
+  /* sovrapposizione: con le prese normali sempre; con quelle grandi solo se la nuova è di misura simile (doppione) */
+  const blocking = holds.filter(h => h.poly && (polyArea(h.poly) < volArea || res.area >= polyArea(h.poly)*0.35));
+  pts.forEach(([x, y]) => { for(const h of blocking){ if(inPoly(h.poly, x, y)){ over++; break; } } });
   return over / pts.length <= 0.25;
 }
 /* passata a griglia: punti regolari su tutta la foto, dal largo al fitto. Trova anche le prese grandi e quelle
@@ -1289,13 +1349,15 @@ function catSuspects(w){
   cat.forEach((h,i) => {
     if(manual(h)) return;
     const f = ar[i]/W2, bw = bb[i][2]-bb[i][0], bh = bb[i][3]-bb[i][1];
-    if(f < 1.2e-4 || f > 4.5e-3) out.add(i);
+    if(f < 1.2e-4 || f > 0.06) out.add(i);
     else if(Math.max(bw,bh)/Math.max(1,Math.min(bw,bh)) > 3.6) out.add(i);
     else if(ar[i]/(hullAreaFlat(h.poly) || 1) < 0.62) out.add(i);
   });
   for(let i=0;i<cat.length;i++) for(let j=i+1;j<cat.length;j++){
     if(manual(cat[i]) || manual(cat[j])) continue;
     if(bb[i][2] < bb[j][0] || bb[j][2] < bb[i][0] || bb[i][3] < bb[j][1] || bb[j][3] < bb[i][1]) continue;
+    /* una presa piccola sopra una grande (presa su volume) è normale */
+    if(Math.min(ar[i], ar[j]) < Math.max(ar[i], ar[j])*0.35) continue;
     if(inPoly(cat[i].poly, cat[j].x, cat[j].y) || inPoly(cat[j].poly, cat[i].x, cat[i].y)){ if(ar[i] >= ar[j]) out.add(i); if(ar[j] >= ar[i]) out.add(j); }
   }
   return out;
