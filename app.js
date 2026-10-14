@@ -1244,6 +1244,7 @@ async function samAutoScan(w){
 }
 async function autoDetectAll(w){
   if(!w || ui.scan || w.locked) return;
+  ui.cleared = null;
   const useSam = sam.state !== 'failed' && await samInit();
   if(useSam) return samAutoScan(w);
   const step = useSam ? Math.max(14, Math.round(Math.max(w.w, w.h) / 64)) : Math.max(14, Math.round(Math.max(w.w, w.h) / 85));
@@ -2162,7 +2163,9 @@ function renderTools(){
       (ui.tool === 'panel' ? `<button class="btn primary" data-act="panelDone">Fine campionamento</button>` : '') +
       `<p class="hint">Riferimento colore pannello: ${panelLine}</p>`+
       `<p class="hint">${samStatus(w)}</p>`+
-      `<button class="btn" data-act="autoall">Rileva tutte le prese</button>`;
+      `<button class="btn" data-act="autoall">Rileva tutte le prese</button>`+
+      (ui.cleared && ui.cleared.id === w.id ? `<button class="btn" data-act="unclrall">Annulla cancellazione (${ui.cleared.holds.length})</button>` :
+        `<button class="btn danger" data-act="clrall" ${n ? '' : 'disabled'}>${ui.confirm === 'clrall' ? `Tocca ancora: cancello ${n} prese` : 'Cancella tutte le prese'}</button>`);
     if(drawing){
       h += `<button class="btn primary" data-act="closeDraw" ${ui.draft.length >= 3 ? '' : 'disabled'}>Chiudi</button>`+
            `<button class="btn" data-act="undoPt" ${ui.draft.length ? '' : 'disabled'}>Annulla punto</button>`+
@@ -2433,9 +2436,14 @@ function renderSheet(){
       cr.pts.length === 0 ? (BO() ? 'Puoi usare tutta la foto del settore, oppure toccare i punti attorno alla zona da tenere e poi "Chiudi forma".' : 'Tocca i punti lungo il vero bordo del pannello (anche se è storto/in prospettiva), poi "Chiudi forma".') :
       `Punti toccati: ${cr.pts.length}. Continua lungo il bordo, poi "Chiudi forma" (minimo 3 punti).`;
     h = `<h2>${BO() ? 'Foto del settore' : 'Ritaglia il pannello'}</h2><p class="hint">${step}</p>`+
-      `<div style="position:relative;overflow:hidden;line-height:0;border-radius:8px">`+
-      `<img data-act="cropTap" src="${cr.img}" style="width:100%;height:auto;display:block;touch-action:none">`+
-      `<svg viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none">${shape}${dots}</svg>`+
+      /* la foto si può ingrandire (tasti + e −) e spostare col dito, per mettere i punti con precisione */
+      `<div style="position:relative">`+
+      `<div id="cropbox" style="overflow:auto;max-height:62vh;border-radius:8px;touch-action:pan-x pan-y;overscroll-behavior:contain">`+
+      `<div style="position:relative;line-height:0;width:${100*(cr.z || 1)}%">`+
+      `<img data-act="cropTap" src="${cr.img}" style="width:100%;height:auto;display:block" draggable="false">`+
+      `<svg viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none">${shape}${dots.replace(/r="1.2"/g, `r="${(1.2/(cr.z || 1)).toFixed(2)}"`).replace(/stroke-width=".3"/g, `stroke-width="${(0.3/(cr.z || 1)).toFixed(2)}"`)}</svg>`+
+      `</div></div>`+
+      `<div class="zoom" style="position:absolute;right:8px;bottom:8px"><button data-act="cropZoom" data-d="1" aria-label="Ingrandisci">+</button><button data-act="cropZoom" data-d="-1" aria-label="Riduci" ${(cr.z || 1) > 1 ? '' : 'disabled'}>&minus;</button></div>`+
       `</div>`+
       `<div class="row" style="margin-top:10px">`+
       `<button class="btn" data-act="cropUndo" ${cr.pts.length && !cr.closed ? '' : 'disabled'}>Annulla ultimo punto</button>`+
@@ -2446,7 +2454,10 @@ function renderSheet(){
       (cr.pts.length ? '' : `<button class="btn primary" data-act="cropAll">Usa tutta la foto</button>`)+
       `</div>`;
   } else { ui.sheet = null; el.hidden = true; return; }
+  const cb0 = $('#cropbox'), keep = cb0 ? [cb0.scrollLeft, cb0.scrollTop] : null;
   card.innerHTML = h;
+  const cb1 = $('#cropbox');
+  if(cb1 && keep){ cb1.scrollLeft = keep[0]; cb1.scrollTop = keep[1]; }
   el.hidden = false;
 }
 /* foto del muro/settore con disegnato un blocco (per condividere e stampare) */
@@ -2743,7 +2754,7 @@ $('#stage').addEventListener('click', async e => {
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
 const PUBLIC_ACTS = ['opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
-const MGR_ACTS = ['lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
+const MGR_ACTS = ['clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b || b.disabled) return;
   const a = b.dataset.act, w = curWall(), c = curCircuit();
@@ -2752,6 +2763,13 @@ document.addEventListener('click', e => {
   switch(a){
     case 'mode': if(EDIT && !ui.scan && !(b.dataset.v === 'wall' && !isMgr())){ S.mode = b.dataset.v; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; $('#stage').classList.remove('linedraw'); ui.redraw = null; ui.tool = 'detect'; render(); } break;
     case 'tool': ui.tool = b.dataset.v; ui.draft = []; ui.redraw = null; render(); break;
+    case 'clrall':
+      if(!w || !(w.holds || []).length) break;
+      if(ui.confirm !== 'clrall'){ ui.confirm = 'clrall'; renderTools(); setTimeout(() => { if(ui.confirm === 'clrall'){ ui.confirm = null; renderTools(); } }, 4000); break; }
+      ui.confirm = null; ui.cleared = { id: w.id, holds: w.holds }; w.holds = []; ui.csel = null; ui.trash = [];
+      touch(); render(); toast('Prese cancellate. I circuiti già tracciati restano com\'erano. Ora puoi usare "Rileva tutte le prese".'); break;
+    case 'unclrall':
+      if(w && ui.cleared && ui.cleared.id === w.id){ w.holds = ui.cleared.holds.concat(w.holds || []); ui.cleared = null; touch(); render(); toast('Prese ripristinate.'); } break;
     case 'undel': if(w && ui.trash.length){ const ch = ui.trash.pop(); (w.holds = w.holds || []).push(ch); ui.csel = w.holds.length - 1; touch(); render(); } break;
     case 'susnext': {
       if(!w) break;
@@ -2775,6 +2793,17 @@ document.addEventListener('click', e => {
       const pt = { x: clamp((e.clientX - r.left) / r.width, 0, 1), y: clamp((e.clientY - r.top) / r.height, 0, 1) };
       cr.pts.push(pt);
       renderSheet(); break;
+    }
+    case 'cropZoom': {
+      const cr = ui.crop; if(!cr) break;
+      const box = $('#cropbox'), z0 = cr.z || 1, z1 = clamp(z0 * (+b.dataset.d > 0 ? 1.6 : 1/1.6), 1, 6);
+      if(Math.abs(z1 - z0) < 1e-3) break;
+      /* si ingrandisce attorno al centro di quello che si sta guardando */
+      const cx = box ? (box.scrollLeft + box.clientWidth/2) / box.scrollWidth : 0.5, cy = box ? (box.scrollTop + box.clientHeight/2) / box.scrollHeight : 0.5;
+      cr.z = z1; renderSheet();
+      const nb = $('#cropbox');
+      if(nb) requestAnimationFrame(() => { nb.scrollLeft = cx*nb.scrollWidth - nb.clientWidth/2; nb.scrollTop = cy*nb.scrollHeight - nb.clientHeight/2; });
+      break;
     }
     case 'cropUndo': if(ui.crop && !ui.crop.closed) { ui.crop.pts.pop(); renderSheet(); } break;
     case 'cropClose': if(ui.crop && ui.crop.pts.length >= 3) { ui.crop.closed = true; renderSheet(); } break;
