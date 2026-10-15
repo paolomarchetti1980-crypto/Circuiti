@@ -16,11 +16,7 @@ const BODY = `
       <svg id="chev" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 5l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
     <button class="btn" id="instBtn" data-act="install" hidden>Installa app</button>
-    <div class="seg" id="modes" hidden>
-      <button data-act="mode" data-v="edit">Traccia</button>
-      <button data-act="mode" data-v="view">Guarda</button>
-      <button data-act="mode" data-v="wall">Muro</button>
-    </div>
+    <button class="btn prevbtn" id="prevBtn" data-act="preview" hidden aria-label="Anteprima: vedi l'app come un cliente"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M1.5 12S5.5 4.5 12 4.5 22.5 12 22.5 12 18.5 19.5 12 19.5 1.5 12 1.5 12Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg><span>Anteprima</span></button>
     <button class="menubtn" id="menuBtn" data-act="menu" aria-label="Altro: stampa, condividi, installa">&#8942;</button>
   </header>
   <div class="viewbar" id="viewbar" hidden></div>
@@ -2048,13 +2044,9 @@ function renderTop(){
   if((bView() && !EDIT) || bGrid()) $('#wallBtn').disabled = true;
   $('#chev').toggleAttribute('hidden', $('#wallBtn').disabled);
   $('#backBtn').hidden = !(bLv() && !bGrid() && (multi || (EDIT && isMgr())));
-  $('#modes').hidden = !EDIT;
-  $('#instBtn').hidden = EDIT || !canInstall();
-  document.querySelectorAll('#modes button').forEach(b => {
-    b.setAttribute('aria-pressed', String(b.dataset.v === S.mode));
-    b.disabled = !w || (b.dataset.v === 'edit' && !w.locked);
-    b.hidden = b.dataset.v === 'wall' && (!isMgr() || BO());
-  });
+  /* lo staff lavora sempre in modalità tracciatura; l'anteprima mostra l'app esattamente come la vede un cliente */
+  $('#prevBtn').hidden = !REAL_EDIT || !!ui.viewAs;
+  $('#instBtn').hidden = REAL_EDIT || !canInstall();
 }
 function renderViewbar(){
   const el = $('#viewbar'); if(!el) return;
@@ -2194,7 +2186,7 @@ function renderTools(){
     if(w.locked){
       el.innerHTML = `<p class="hint">Muro bloccato: ${n} prese. Per modificarlo, sbloccalo.</p>`+
         `<button class="btn" data-act="unlock">Sblocca muro</button>`+
-        `<button class="btn primary" data-act="tracing">Vai a Traccia</button>`;
+        `<button class="btn primary" data-act="tracing">Torna ai circuiti</button>`;
       return;
     }
     const cs = ui.csel != null && (w.holds || [])[ui.csel];
@@ -2304,7 +2296,9 @@ function renderTools(){
    - un muro non ancora bloccato si prepara in Muro (il tracciatore, che non prepara muri, lo guarda soltanto) */
 function normalizeMode(w){
   if(!EDIT || !w) return;
-  if(isSec(w)){ if(S.mode === 'wall') S.mode = 'edit'; return; }
+  /* niente più "Guarda" per lo staff: si torna sempre a tracciare, tranne il tracciatore su un muro non ancora pronto */
+  if(isSec(w)){ if(S.mode === 'wall' || S.mode === 'view') S.mode = 'edit'; return; }
+  if(S.mode === 'view' && w.locked) S.mode = 'edit';
   if(!isMgr()){ if(S.mode === 'wall' || (!w.locked && S.mode === 'edit')) S.mode = 'view'; }
   else if(!w.locked && S.mode === 'edit') S.mode = 'wall';
 }
@@ -2439,6 +2433,7 @@ function renderSheet(){
       row('printone', 'Stampa ' + one, c ? esc(blockTitle(w, c)) : '', !c)+
       row('printall', bo ? 'Stampa i boulder del settore' : 'Stampa i circuiti del muro', n ? n + (n === 1 ? ' pagina' : ' pagine') + ' · filtri compresi' : '', !n)+
       row('img', 'Condividi immagine', 'da salvare o mandare', !c)+
+      (EDIT && isMgr() && w && !bo && S.mode !== 'wall' ? row('wallmode', 'Prese del muro', 'contorni delle prese, rilevamento automatico, blocco del muro') : '')+
       (canInstall() ? row('install', "Installa l'app", 'sulla schermata Home') : '')+
       (REAL_EDIT ? `<div class="wrow" style="flex-direction:column;align-items:stretch;gap:8px"><span>Vedi l'app come</span><div class="seg" role="group" aria-label="Vedi come">`+
         (ME.role === 'gestore' ? [['gestore','Gestore'],['tracciatore','Tracciatore'],['cliente','Cliente']] : [['tracciatore','Tracciatore'],['cliente','Cliente']])
@@ -2692,8 +2687,10 @@ async function publishRemote(){
 function setViewAs(v){
   if(!REAL_EDIT || !ME) return;
   if(ME.role !== 'gestore' && v === 'gestore') return;
+  const inSector = BO() && !bGrid() && !!curWall();   /* entrando o uscendo dall'anteprima si resta sullo stesso settore */
   ui.viewAs = v === ME.role ? null : v;
   EDIT = v !== 'cliente';
+  if(inSector) ui.bLevel = 'sector';
   S.mode = EDIT ? 'edit' : 'view';
   ui.sel = null; ui.csel = null; ui.move = false; ui.full = false; ui.draft = []; ui.bdraw = false; ui.sheet = null;
   renderSheet(); render();
@@ -2800,13 +2797,13 @@ $('#stage').addEventListener('click', async e => {
     if(ui.nextHand === 'L') ui.nextHand = 'R'; else if(ui.nextHand === 'R') ui.nextHand = 'L';
     ui.sel = null; touch(); render(); return;
   }
-  toast('Qui non c\'è una presa del muro. Per aggiungerla sblocca il muro nel tab Muro.');
+  toast('Qui non c\'è una presa del muro. Per aggiungerla: menu ⋮ → Prese del muro.');
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
+const PUBLIC_ACTS = ['preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
-const MGR_ACTS = ['secedit','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
+const MGR_ACTS = ['wallmode','secedit','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b || b.disabled) return;
   const a = b.dataset.act, w = curWall(), c = curCircuit();
@@ -2931,6 +2928,8 @@ document.addEventListener('click', e => {
     case 'img': makeImage(); break;
     case 'menu': openSheet('menu'); break;
     case 'viewas': setViewAs(b.dataset.v); break;
+    case 'preview': setViewAs('cliente'); break;
+    case 'wallmode': if(EDIT && isMgr() && w && !isSec(w) && !ui.scan){ S.mode = 'wall'; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.redraw = null; ui.tool = 'detect'; ui.sheet = null; renderSheet(); render(); } break;
     case 'printone': printBlocks(false); break;
     case 'printall': printBlocks(true); break;
     case 'publish': publish(); break;
@@ -3028,7 +3027,7 @@ document.addEventListener('click', e => {
       if(!w.circuits.length && !isSec(w)) w.circuits.push(newCircuit(w));
       w.activeCircuit = w.circuits.length ? w.circuits[0].id : null; ui.sel = null; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
       ui.sheet = null; ui.confirm = null; touch(); render(); renderSheet(); break;
-    case 'pickw': if(ui.scan) break; S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.full = false; ui.sel = null; ui.zoom = 1; ui.move = false; ui.sheet = null; save(); render(); renderSheet(); break;
+    case 'pickw': if(ui.scan) break; if(EDIT) S.mode = 'edit'; S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.full = false; ui.sel = null; ui.zoom = 1; ui.move = false; ui.sheet = null; save(); render(); renderSheet(); break;
     case 'delw':
       if(!w || !isMgr()) break;
       if(ui.confirm !== 'delw'){ ui.confirm = 'delw'; renderSheet(); break; }
