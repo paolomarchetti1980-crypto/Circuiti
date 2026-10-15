@@ -109,9 +109,14 @@ let REAL_EDIT = false;
 const isMgr = () => !ME || (ME.role === 'gestore' && ui.viewAs !== 'tracciatore' && ui.viewAs !== 'cliente');
 const ui = { bline:false, lineDraft:[], view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:null, csel:null, busy:false, sel:null, move:false, nextRole:'start', zoom:1, sheet:null, confirm:null, imgUrl:null, ready:false, publishing:false, saveWarned:false, scan:null, nextHand:'L', crop:null };
 try{ const f = JSON.parse(localStorage.getItem('circ-filters') || '{}'); ui.fAngle = f.a || ''; ui.fGrade = f.g || ''; ui.fFeet = f.f || ''; }catch(e){}
-ui.section = 'circ'; ui.bLevel = 'sectors'; ui.bShow = 'on'; ui.bColor = ''; ui.lastSec = {};
+ui.section = 'circ'; ui.home = true; ui.bLevel = 'sectors'; ui.bShow = 'on'; ui.bColor = ''; ui.lastSec = {};
 try{ const f = JSON.parse(localStorage.getItem('boulder-ui') || '{}'); if(f.sec === 'boulder') ui.section = 'boulder'; ui.bShow = f.show || 'on'; ui.bColor = f.c || ''; ui.lastSec = f.last || {}; }catch(e){}
 if(!DIFFS.some(d => d[0] === ui.bColor)) ui.bColor = '';
+/* dopo Pubblica o il login la pagina si ricarica: si torna dove si era invece che alla schermata iniziale */
+try{ const r = JSON.parse(sessionStorage.getItem('mr-resume') || 'null'); sessionStorage.removeItem('mr-resume');
+  if(r && Date.now() - r.t < 120000){ ui.home = false; ui.section = r.sec === 'boulder' ? 'boulder' : 'circ'; ui.bLevel = r.lvl === 'sector' ? 'sector' : 'sectors';
+    try{ history.pushState({ grid: 1 }, ''); if(ui.bLevel === 'sector') history.pushState({ sec: 1 }, ''); }catch(e){} } }catch(e){}
+function rememberPlace(){ try{ if(!ui.home) sessionStorage.setItem('mr-resume', JSON.stringify({ sec: ui.section, lvl: ui.bLevel, t: Date.now() })); }catch(e){} }
 function saveBUI(){ try{ localStorage.setItem('boulder-ui', JSON.stringify({ sec: ui.section, show: ui.bShow, c: ui.bColor, last: ui.lastSec })); }catch(e){} }
 function saveCF(){ try{ localStorage.setItem('circ-filters', JSON.stringify({ a: ui.fAngle || '', g: ui.fGrade || '', f: ui.fFeet || '' })); }catch(e){} }
 /* dopo un cambio di filtro: se il blocco attivo non è più in elenco, si passa al primo visibile */
@@ -138,8 +143,9 @@ const curWall = () => { const l = secWalls(); return l.find(w => w.id === S.acti
 const BO = () => ui.section === 'boulder';
 /* boulder, per chi guarda: tre livelli. 1) griglia dei settori, 2) settore con tutte le linee, 3) blocco a schermo intero */
 const bView = () => BO() && (!EDIT || S.mode === 'view');
-const bLv = () => !ui.full && !(EDIT && S.mode === 'wall' && ui.bLevel === 'sector');
-const bGrid = () => bLv() && ui.bLevel === 'sectors' && (secWalls().length > 1 || (EDIT && isMgr() && secWalls().length > 0));
+const bLv = () => !ui.home && !ui.full && !(EDIT && S.mode === 'wall' && ui.bLevel === 'sector');
+/* si passa sempre dalla griglia, anche con un solo muro o settore */
+const bGrid = () => bLv() && ui.bLevel === 'sectors' && secWalls().length > 0;
 const bOver = () => bView() && !ui.full && !bGrid();
 const todayISO = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); };
 const isOff = c => !!(c && c.dateRemoved && c.dateRemoved <= todayISO());
@@ -1977,6 +1983,17 @@ function overviewHit(w, x, y, tol){
   });
   return best;
 }
+/* schermata iniziale: lo schermo diviso in due, Boulder sopra e Circuiti sotto */
+function homeScreen(){
+  const tile = sec => {
+    const ws = S.walls.filter(w => secOf(w) === sec && !w.archived), bo = sec === 'boulder';
+    const n = ws.reduce((t, w) => t + (bo ? w.circuits.filter(c => !isOff(c)).length : w.circuits.length), 0);
+    const img = ws[0] ? `<img src="${esc(ws[0].img)}" alt="">` : '';
+    const sub = ws.length ? `${ws.length} ${bo ? (ws.length === 1 ? 'settore' : 'settori') : (ws.length === 1 ? 'muro' : 'muri')} · ${n} ${bo ? 'boulder' : (n === 1 ? 'circuito' : 'circuiti')}` : (bo ? 'nessun settore ancora' : 'nessun muro ancora');
+    return `<button class="htile" data-act="pickhome" data-v="${sec}">${img}<span class="hlab"><b>${bo ? 'Boulder' : 'Circuiti'}</b><small>${sub}</small></span></button>`;
+  };
+  return `<div class="home">${tile('boulder')}${tile('circ')}</div>`;
+}
 function sectorGrid(){
   const bo = BO(), mgr = EDIT && isMgr(), arch = archWalls();
   return `<div class="sgrid">` + secWalls().map(w => {
@@ -2064,15 +2081,17 @@ const PICK_BTNS = `<span class="btn primary big pick">Scegli dalla galleria<inpu
 function renderTop(){
   const w = curWall();
   document.querySelectorAll('#secbar button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === ui.section)));
-  $('#wallName').textContent = bGrid() ? (BO() ? 'Settori' : 'Muri') : w ? w.name : (BO() ? 'Nessun settore' : 'Nessun muro');
+  $('#wallName').textContent = ui.home ? 'Monkey Roads' : bGrid() ? (BO() ? 'Settori' : 'Muri') : w ? w.name : (BO() ? 'Nessun settore' : 'Nessun muro');
   $('#wallBtn').setAttribute('aria-label', BO() ? 'Scegli un settore' : 'Scegli un muro');
   const multi = secWalls().length > 1;
   $('#wallBtn').disabled = !EDIT && !multi && !SB;
   /* il nome è solo un titolo: si cambia muro/settore dalla griglia, si gestisce con "Modifica" sulla scheda */
   $('#wallBtn').disabled = true;
   $('#chev').toggleAttribute('hidden', $('#wallBtn').disabled);
-  $('#backBtn').hidden = !(!ui.full && ui.bLevel === 'sector' && !bGrid() && (multi || (EDIT && isMgr())));
-  $('#backBtn').setAttribute('aria-label', BO() ? 'Torna ai settori' : 'Torna ai muri');
+  /* indietro: dal muro/settore alla griglia, dalla griglia alla schermata iniziale */
+  const inPlace = ui.bLevel === 'sector' && !bGrid() && !!w;
+  $('#backBtn').hidden = ui.home || ui.full;
+  $('#backBtn').setAttribute('aria-label', inPlace ? (BO() ? 'Torna ai settori' : 'Torna ai muri') : 'Torna alla schermata iniziale');
   /* lo staff lavora sempre in modalità tracciatura; l'anteprima mostra l'app esattamente come la vede un cliente */
   /* occhio = guarda come un cliente; chiave inglese = torna a lavorare */
   const pb = $('#prevBtn'), inPrev = ui.viewAs === 'cliente';
@@ -2103,6 +2122,7 @@ function renderPub(){
 function dimOn(editing){ return editing ? !!ui.editDim : (!!ui.full || S.prefs.dim); }
 function renderStage(){
   const w = curWall(), st = $('#stage'), em = $('#empty'), z = $('#zoom');
+  if(ui.home){ st.hidden = true; z.hidden = true; em.hidden = false; em.innerHTML = homeScreen(); return; }
   if(!w){
     st.hidden = true; z.hidden = true; em.hidden = false;
     if(!ui.ready) em.innerHTML = `<p>Carico…</p>`;
@@ -2350,7 +2370,8 @@ function render(){
   if(viewing && w && isSec(w)){ const v = sortedVisible(w); if(v.length && !v.some(x => x.id === w.activeCircuit)) w.activeCircuit = v[0].id; }
   if(ui.full && (!viewing || !curCircuit())) ui.full = false;
   $('#app').classList.toggle('full', !!ui.full);
-  $('#app').classList.toggle('grid', bGrid());
+  $('#app').classList.toggle('grid', bGrid() || ui.home);
+  $('#app').classList.toggle('home', !!ui.home);
   $('#app').classList.toggle('over', bOver());
   renderTop(); renderViewbar(); renderPub(); renderStage(); renderChips(); renderTools(); renderFull(); }
 /* ordine degli elenchi: circuiti per grado e nome, boulder per difficoltà e numero */
@@ -2393,7 +2414,12 @@ function focusCircuit(){
     box.scrollTop = st.offsetTop + (y0 + y1)/2*k - box.clientHeight/2;
   }));
 }
-window.addEventListener('popstate', () => { if(ui.full){ ui.full = false; ui.zoom = 1; render(); } else if(!ui.scan && ui.bLevel === 'sector' && !(history.state && history.state.sec)){ ui.bLevel = 'sectors'; ui.zoom = 1; render(); } });
+window.addEventListener('popstate', () => {
+  const st = history.state || {};
+  if(ui.full){ ui.full = false; ui.zoom = 1; render(); }
+  else if(!ui.scan && ui.bLevel === 'sector' && !st.sec){ ui.bLevel = 'sectors'; ui.zoom = 1; render(); }
+  else if(!ui.scan && !ui.home && !st.grid && !st.sec){ ui.home = true; ui.zoom = 1; render(); }
+});
 
 /* ---------- pannelli ---------- */
 function openSheet(name){ ui.sheet = name; ui.confirm = null; renderSheet(); }
@@ -2642,7 +2668,7 @@ async function passLogin(){
   if(!SB || !/^\S+@\S+\.\S+$/.test(email) || !password){ toast('Scrivi email e password.'); return; }
   const { error } = await SB.auth.signInWithPassword({ email, password });
   if(error){ toast(/invalid/i.test(error.message || '') ? 'Email o password non corrette. Se non hai ancora una password, usa il link.' : 'Accesso non riuscito: ' + error.message); return; }
-  location.reload();
+  rememberPlace(); location.reload();
 }
 async function savePassword(){
   const pw = document.getElementById('npass'), password = (pw && pw.value) || '';
@@ -2721,7 +2747,7 @@ async function publishRemote(){
   }
   const { error } = await SB.from('app_state').upsert({ id: 1, data: snap, rev: snap.rev, updated_at: new Date().toISOString() });
   if(error) throw error;
-  location.reload();
+  rememberPlace(); location.reload();
 }
 /* passa al volo a vedere l'app come gestore, tracciatore o cliente (solo per lo staff; non cambia i permessi veri) */
 function setViewAs(v){
@@ -2841,7 +2867,7 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
+const PUBLIC_ACTS = ['pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
 const MGR_ACTS = ['wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
@@ -2913,7 +2939,7 @@ document.addEventListener('click', e => {
       const v = b.dataset.v === 'boulder' ? 'boulder' : 'circ';
       if(v === ui.section || ui.scan) break;
       const prev = curWall(); if(prev) ui.lastSec[ui.section] = prev.id;
-      ui.section = v; ui.bLevel = 'sectors';
+      ui.section = v; ui.bLevel = 'sectors'; ui.home = false;
       const l = secWalls(), keep = l.find(x => x.id === ui.lastSec[v]) || l[0];
       if(keep) S.active = keep.id;
       ui.full = false; ui.sel = null; ui.csel = null; ui.move = false; ui.zoom = 1; ui.draft = []; ui.bdraw = false; ui.redraw = null; ui.tool = 'detect';
@@ -2979,7 +3005,19 @@ document.addEventListener('click', e => {
       S.walls = S.walls.filter(q => q.id !== id); ui.confirm = null; if(!archWalls().length) ui.sheet = null; touch(); renderSheet(); render(); toast('Eliminato. Ricordati di pubblicare.'); break;
     }
     case 'opensec': if(EDIT && !ui.scan) S.mode = 'edit'; S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.bLevel = 'sector'; ui.zoom = 1; ui.sel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save(); try{ history.pushState({ sec: 1 }, ''); }catch(e){} render(); $('#box').scrollTop = 0; break;
-    case 'bback': if(ui.scan) break; if(history.state && history.state.sec){ try{ history.back(); }catch(e){} } ui.bLevel = 'sectors'; ui.zoom = 1; render(); break;
+    case 'bback':
+      if(ui.scan) break;
+      if(ui.bLevel === 'sector' && !bGrid() && curWall()){ if(history.state && history.state.sec){ try{ history.back(); }catch(e){} } ui.bLevel = 'sectors'; }
+      else { if(history.state && history.state.grid){ try{ history.back(); }catch(e){} } ui.home = true; ui.bLevel = 'sectors'; }
+      ui.zoom = 1; render(); break;
+    case 'pickhome': {
+      const v = b.dataset.v === 'boulder' ? 'boulder' : 'circ';
+      const prev = curWall(); if(prev && !ui.home) ui.lastSec[ui.section] = prev.id;
+      ui.section = v; ui.home = false; ui.bLevel = 'sectors'; ui.full = false; ui.sel = null; ui.zoom = 1;
+      const l = secWalls(), keep = l.find(x => x.id === ui.lastSec[v]) || l[0]; if(keep) S.active = keep.id;
+      if(EDIT) S.mode = 'edit';
+      saveBUI(); try{ history.pushState({ grid: 1 }, ''); }catch(e){} render(); break;
+    }
     case 'img': makeImage(); break;
     case 'menu': openSheet('menu'); break;
     case 'viewas': setViewAs(b.dataset.v); break;

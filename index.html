@@ -100,6 +100,15 @@ button,label.btn{cursor:pointer}
 .secbar button{flex:1;border:0;background:none;padding:8px 0;border-radius:9px;font:700 15px "Barlow Semi Condensed",Barlow,sans-serif;letter-spacing:.02em;color:var(--muted)}
 .secbar button[aria-pressed="true"]{background:var(--panel2);color:var(--ink);box-shadow:inset 0 -2px 0 var(--accent)}
 #app.full .secbar{display:none}
+#app.home .secbar{display:none}
+#empty:has(.home){margin:0;max-width:none;width:100%;height:100%;padding:12px;align-self:stretch}
+.home{display:flex;flex-direction:column;gap:12px;height:100%}
+.htile{position:relative;flex:1;min-height:0;border:0;border-radius:18px;overflow:hidden;background:var(--panel);padding:0;text-align:left;color:#fff}
+.htile img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:brightness(.55)}
+.htile::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 35%,rgba(0,0,0,.75))}
+.hlab{position:absolute;z-index:1;left:18px;bottom:16px;right:18px;display:flex;flex-direction:column;gap:4px}
+.hlab b{font:700 38px/1 "Barlow Semi Condensed",Barlow,sans-serif;letter-spacing:.01em}
+.hlab small{font:600 15px Barlow,sans-serif;opacity:.9}
 #app.grid .dock{display:none}
 .archrow{display:block;margin:16px auto 4px;padding:10px 16px;border-radius:999px;border:1px dashed var(--line);background:none;color:var(--muted);font:600 14px Barlow,sans-serif}
 .mhead{margin:14px 0 6px;font:700 13px Barlow,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
