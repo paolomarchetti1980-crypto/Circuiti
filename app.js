@@ -2373,8 +2373,8 @@ function normalizeMode(w){
   if(!isMgr()){ if(S.mode === 'wall' || (!w.locked && S.mode === 'edit')) S.mode = 'view'; }
   else if(!w.locked && S.mode === 'edit') S.mode = 'wall';
 }
-/* il riconoscimento intelligente si prepara in anticipo dove servirà un tocco: Muro (non bloccato) e Traccia dei settori */
-function needsSam(w){ return EDIT && w && ((!w.locked && S.mode === 'wall') || (isSec(w) && S.mode === 'edit')); }
+/* il riconoscimento intelligente si prepara solo dove servirà un tocco: Muro (non bloccato) e boulder aperto da tracciare, non su griglia o foto d'insieme */
+function needsSam(w){ return EDIT && w && !ui.home && !bGrid() && !bOver() && ((!w.locked && S.mode === 'wall') || (isSec(w) && S.mode === 'edit')); }
 function render(){
   const w = curWall();
   normalizeMode(w);
