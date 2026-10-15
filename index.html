@@ -175,6 +175,18 @@ button,label.btn{cursor:pointer}
   .ppage img{width:100%;max-height:205mm;object-fit:contain;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .ppage footer{margin-top:auto;font-size:8pt;color:#777}
 }
+
+#app.ccomp .stagewrap{flex:0 0 36%}
+#app.ccomp .dock{flex:1;max-height:none;margin-top:-16px}
+#app.ccomp .zoom{display:none}
+#app.ccomp .stagewrap::after{content:"Tocca per schermo intero";position:absolute;right:10px;bottom:26px;padding:5px 10px;border-radius:999px;background:rgba(18,19,21,.8);border:1px solid rgba(255,255,255,.2);font:600 12px Barlow,sans-serif;color:#fff;pointer-events:none}
+.sqbar{display:flex;align-items:center;gap:10px;width:100%;margin:0 0 12px;padding:13px 14px;border-radius:14px;border:1px solid var(--line);background:var(--panel);color:var(--ink);text-align:left;font:600 16px Barlow,sans-serif}
+.sqbar span{flex:1}
+.sqbar small{color:var(--muted);font-size:13px}
+.sqlab{margin:10px 0 4px;color:var(--muted);font:600 12px Barlow,sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.sqgr span{color:var(--muted)}
+.sqhead{display:flex;justify-content:space-between;align-items:center;margin:12px 0 4px}
+.linklike{border:0;background:none;padding:0;color:var(--accent);font:600 14px Barlow,sans-serif;text-decoration:underline}
 </style></head><body><div id="root"></div>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>

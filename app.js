@@ -147,6 +147,8 @@ const bLv = () => !ui.home && !ui.full && !(EDIT && S.mode === 'wall' && ui.bLev
 /* si passa sempre dalla griglia, anche con un solo muro o settore */
 const bGrid = () => bLv() && ui.bLevel === 'sectors' && secWalls().length > 0;
 /* foto d'insieme con tutte le linee: il cliente la vede sempre, lo staff appena entra nel settore (poi tocca un boulder per tracciarlo) */
+/* circuiti visti dal cliente: foto piccola in alto, lo spazio va alla scelta del circuito */
+const cCompact = () => !BO() && !ui.home && !ui.full && !bGrid() && (!EDIT || S.mode === 'view') && !!curWall();
 const bOver = () => BO() && !ui.home && !ui.full && !bGrid() && (bView() || (EDIT && ui.secOver && !ui.scan));
 const todayISO = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); };
 const isOff = c => !!(c && c.dateRemoved && c.dateRemoved <= todayISO());
@@ -2003,7 +2005,9 @@ function homeScreen(){
 }
 function sectorGrid(){
   const bo = BO(), mgr = EDIT && isMgr(), arch = archWalls();
-  return `<div class="sgrid">` + secWalls().map(w => {
+  const nC = bo ? 0 : secWalls().reduce((t, w) => t + w.circuits.length, 0);
+  return (nC > 1 ? `<button class="sqbar" data-act="csearch"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><circle cx="7.5" cy="7.5" r="5.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 12l4.5 4.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>Cerca un circuito</span><small>${nC} in palestra</small></button>` : '') +
+    `<div class="sgrid">` + secWalls().map(w => {
     const on = w.circuits.filter(c => !isOff(c));
     let info, staff = '';
     if(bo){
@@ -2189,7 +2193,7 @@ function bRows(w, cls){
   return `<div class="list" style="gap:${cls === 'crow' ? 6 : 0}px;margin:0">` + vis.map(x => `<button class="${cls} ${act && x.id === act.id ? 'active' : ''} ${isOff(x) ? 'off' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext" style="flex:1"><b>${bTitleHtml(x)}</b><small>${[x.style ? esc(x.style) : '', bMeta(x)].filter(Boolean).join(' · ')}</small></span></button>`).join('') + `</div>`;
 }
 function circFilters(w){
-  if(!w.circuits.length) return '';
+  if(w.circuits.length <= 3 && !ui.fAngle && !ui.fGrade && !ui.fFeet) return '';   /* con pochi circuiti la lista si legge a colpo d'occhio */
   const angles = [...new Set(w.circuits.map(x => x.angle).filter(x => x != null))].sort((x, y) => x - y);
   const grades = GRADES.filter(g => g && w.circuits.some(x => x.grade === g));
   const fa = v => `<button class="fchip ${String(ui.fAngle || '') === String(v) ? 'on' : ''}" data-act="fang" data-v="${v}">${v === '' ? 'Tutti' : v + '°'}</button>`;
@@ -2219,7 +2223,7 @@ function renderChips(){
   }
   if(!EDIT || S.mode === 'view'){
     el.innerHTML = circFilters(w) + circRows(w, 'lrow') +
-      (n ? `<p class="hint" style="text-align:center;margin:8px 0 0;font-size:13px">Tocca un circuito per vederlo sul muro, tocca di nuovo per aprirlo a schermo intero.</p>` : '');
+      (n ? `<p class="hint" style="text-align:center;margin:8px 0 0;font-size:13px">Tocca un circuito per vederlo sulla foto, tocca la foto per aprirlo a schermo intero.</p>` : '');
     return;
   }
   const filtered = !isSec(w) && (ui.fAngle || ui.fGrade || ui.fFeet) ? ` · filtrati ${n}/${tot}` : '';
@@ -2386,6 +2390,7 @@ function render(){
   $('#app').classList.toggle('grid', bGrid() || ui.home);
   $('#app').classList.toggle('home', !!ui.home);
   $('#app').classList.toggle('over', bOver());
+  $('#app').classList.toggle('ccomp', cCompact());
   renderTop(); renderViewbar(); renderPub(); renderStage(); renderChips(); renderTools(); renderFull(); }
 /* ordine degli elenchi: circuiti per grado e nome, boulder per difficoltà e numero */
 const circCmp = (x, y) => gradeIdx(x.grade) - gradeIdx(y.grade) || String(x.name).localeCompare(String(y.name));
@@ -2437,12 +2442,37 @@ window.addEventListener('popstate', () => {
 
 /* ---------- pannelli ---------- */
 function openSheet(name){ ui.sheet = name; ui.confirm = null; renderSheet(); }
+/* ricerca su tutti i circuiti della palestra */
+ui.sq = { ang: '', min: '', max: '', sty: '', feet: '' };
+function sqAll(){ return secWalls().filter(w => !isSec(w)).flatMap(w => w.circuits.map(c => ({ w, c }))); }
+function sqSheet(){
+  const all = sqAll(), q = ui.sq;
+  const angles = [...new Set(all.map(x => x.c.angle).filter(x => x != null))].sort((a, b) => a - b);
+  const grades = GRADES.filter(g => g && all.some(x => x.c.grade === g));
+  const styles = STYLES.filter(st => st && all.some(x => x.c.style === st));
+  const chip = (act, v, l, on) => `<button class="fchip ${on ? 'on' : ''}" data-act="${act}" data-v="${v}">${l}</button>`;
+  const gsel = (id, val, l) => `<select id="${id}" class="fsel" aria-label="${l}"><option value="">${l}</option>${grades.map(g => `<option value="${g}" ${val === g ? 'selected' : ''}>${g}</option>`).join('')}</select>`;
+  const res = all.filter(({ c }) => (q.ang === '' || String(c.angle) === q.ang) && (!q.sty || c.style === q.sty) && (!q.feet || c.feet === q.feet) &&
+    (!q.min || (gradeIdx(c.grade) < 999 && gradeIdx(c.grade) >= gradeIdx(q.min))) && (!q.max || gradeIdx(c.grade) <= gradeIdx(q.max)))
+    .sort((a, b) => gradeIdx(a.c.grade) - gradeIdx(b.c.grade) || a.c.name.localeCompare(b.c.name));
+  const any = q.ang !== '' || q.min || q.max || q.sty || q.feet;
+  return `<h2>Cerca un circuito</h2>`+
+    (angles.length > 1 ? `<p class="sqlab">Inclinazione</p><div class="fchips">${chip('sqang', '', 'Tutte', q.ang === '')}${angles.map(a => chip('sqang', a, a + '°', q.ang === String(a))).join('')}</div>` : '')+
+    (grades.length > 1 ? `<p class="sqlab">Grado</p><div class="fchips sqgr">${gsel('sqmin', q.min, 'da')}<span>–</span>${gsel('sqmax', q.max, 'a')}</div>` : '')+
+    (styles.length > 1 ? `<p class="sqlab">Stile</p><div class="fchips">${chip('sqsty', '', 'Tutti', !q.sty)}${styles.map(st => chip('sqsty', st, esc(st), q.sty === st)).join('')}</div>` : '')+
+    (all.some(x => x.c.feet) ? `<p class="sqlab">Piedi</p><div class="fchips">${chip('sqfeet', '', 'Tutti', !q.feet)}${chip('sqfeet', 'liberi', 'Liberi', q.feet === 'liberi')}${chip('sqfeet', 'obbligati', 'Obbligati', q.feet === 'obbligati')}</div>` : '')+
+    `<div class="sqhead"><b>${res.length} ${res.length === 1 ? 'circuito' : 'circuiti'}</b>${any ? `<button class="linklike" data-act="sqreset">Azzera filtri</button>` : ''}</div>`+
+    (res.length ? `<div class="list" style="gap:0;margin:0">` + res.map(({ w, c }) => `<button class="lrow" data-act="sqgo" data-w="${w.id}" data-id="${c.id}"><i class="dot" style="background:${colOf(c)}"></i><span class="ctext" style="flex:1"><b>${esc(c.name)}</b><small>${[esc(w.name), c.angle != null ? c.angle + '°' : '', esc(c.style || ''), c.feet ? 'piedi ' + c.feet : ''].filter(Boolean).join(' · ')}</small></span>${gradeBadge(c.grade)}</button>`).join('') + `</div>`
+      : `<p class="hint">Nessun circuito con questi filtri.</p>`)+
+    `<button class="btn" data-act="close" style="width:100%;margin-top:12px">Chiudi</button>`;
+}
 function renderSheet(){
   const el = $('#sheet'), card = $('#card');
   if(!ui.sheet){ el.hidden = true; card.innerHTML = ''; return; }
   const w = curWall(), c = curCircuit();
   let h = '';
-  if(ui.sheet === 'circ' && c && EDIT && isSec(w)){
+  if(ui.sheet === 'csearch') h = sqSheet();
+  else if(ui.sheet === 'circ' && c && EDIT && isSec(w)){
     const gradeOpt = v => `<option value="${v}" ${(c.grade || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
     const styleOpt = v => `<option value="${v}" ${(c.style || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
     const tags = c.tags || [];
@@ -2792,6 +2822,7 @@ async function publish(){
 }
 
 /* ---------- interazione ---------- */
+$('#box').addEventListener('click', () => { if(cCompact() && curCircuit() && Date.now() - ui.pinchAt > 350) setFull(true); });
 $('#stage').addEventListener('click', async e => {
   const w = curWall(), c = curCircuit();
   if(w && bOver() && Date.now() - ui.pinchAt > 350){
@@ -2881,7 +2912,7 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
+const PUBLIC_ACTS = ['csearch','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
 const MGR_ACTS = ['wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
@@ -3148,6 +3179,18 @@ document.addEventListener('click', e => {
       if(BO()) ui.bLevel = 'sectors';
       ui.sel = null; ui.sheet = null; ui.confirm = null; touch(); render(); renderSheet(); toast(BO() ? 'Settore eliminato. Ricordati di pubblicare.' : 'Muro eliminato. Ricordati di pubblicare.'); break;
     case 'close': ui.sheet = null; ui.confirm = null; renderSheet(); break;
+    case 'csearch': openSheet('csearch'); break;
+    case 'sqang': ui.sq.ang = b.dataset.v; renderSheet(); break;
+    case 'sqsty': ui.sq.sty = b.dataset.v; renderSheet(); break;
+    case 'sqfeet': ui.sq.feet = b.dataset.v; renderSheet(); break;
+    case 'sqreset': ui.sq = { ang: '', min: '', max: '', sty: '', feet: '' }; renderSheet(); break;
+    case 'sqgo': {
+      const tw = S.walls.find(x => x.id === b.dataset.w); if(!tw) break;
+      S.active = tw.id; tw.activeCircuit = b.dataset.id; ui.lastSec.circ = tw.id; saveBUI();
+      ui.fAngle = ''; ui.fGrade = ''; ui.fFeet = ''; saveCF();
+      ui.bLevel = 'sector'; ui.zoom = 1; ui.sel = null; ui.sheet = null; renderSheet();
+      try{ history.pushState({ sec: 1 }, ''); }catch(e){} render(); break;
+    }
     case 'install': ui.sheet = null; renderSheet(); doInstall(); break;
   }
 });
@@ -3155,6 +3198,7 @@ document.addEventListener('click', e => {
 document.addEventListener('input', e => {
   const c = curCircuit(), w = curWall();
   if(e.target.id === 'lemail'){ ui.loginEmail = e.target.value.trim(); return; }
+  if(e.target.id === 'sqmin' || e.target.id === 'sqmax'){ ui.sq[e.target.id === 'sqmin' ? 'min' : 'max'] = e.target.value; renderSheet(); return; }
   if(e.target.id === 'fgrade' || e.target.id === 'ffeet'){
     if(e.target.id === 'ffeet') ui.fFeet = e.target.value; else ui.fGrade = e.target.value;
     saveCF(); afterFilter(); return;
