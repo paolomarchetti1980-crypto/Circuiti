@@ -16,7 +16,7 @@ const BODY = `
       <svg id="chev" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 5l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
     <button class="btn" id="instBtn" data-act="install" hidden>Installa app</button>
-    <button class="btn prevbtn" id="prevBtn" data-act="preview" hidden aria-label="Anteprima: vedi l'app come un cliente"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M1.5 12S5.5 4.5 12 4.5 22.5 12 22.5 12 18.5 19.5 12 19.5 1.5 12 1.5 12Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg><span>Anteprima</span></button>
+    <button class="menubtn" id="prevBtn" data-act="preview" hidden></button>
     <button class="menubtn" id="menuBtn" data-act="menu" aria-label="Altro: stampa, condividi, installa">&#8942;</button>
   </header>
   <div class="viewbar" id="viewbar" hidden></div>
@@ -2045,12 +2045,20 @@ function renderTop(){
   $('#chev').toggleAttribute('hidden', $('#wallBtn').disabled);
   $('#backBtn').hidden = !(bLv() && !bGrid() && (multi || (EDIT && isMgr())));
   /* lo staff lavora sempre in modalità tracciatura; l'anteprima mostra l'app esattamente come la vede un cliente */
-  $('#prevBtn').hidden = !REAL_EDIT || !!ui.viewAs;
+  /* occhio = guarda come un cliente; chiave inglese = torna a lavorare */
+  const pb = $('#prevBtn'), inPrev = ui.viewAs === 'cliente';
+  pb.hidden = !REAL_EDIT || ui.viewAs === 'tracciatore';
+  pb.innerHTML = inPrev ? WRENCH_SVG : EYE_SVG;
+  pb.setAttribute('aria-label', inPrev ? 'Torna a tracciare' : 'Anteprima: vedi l\'app come un cliente');
+  pb.title = inPrev ? 'Torna a tracciare' : 'Anteprima cliente';
+  pb.classList.toggle('on', inPrev);
   $('#instBtn').hidden = REAL_EDIT || !canInstall();
 }
+const EYE_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M1.5 12S5.5 4.5 12 4.5 22.5 12 22.5 12 18.5 19.5 12 19.5 1.5 12 1.5 12Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg>';
+const WRENCH_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4.5 4.5 0 0 1 5.9-1.1l-3 3 .3 2.2 2.2.3 3-3a4.5 4.5 0 0 1-6 5.9L8.5 22.2a2.1 2.1 0 0 1-3-3l8.6-8.6a4.5 4.5 0 0 1 .6-4.3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
 function renderViewbar(){
   const el = $('#viewbar'); if(!el) return;
-  if(!REAL_EDIT || !ui.viewAs){ el.hidden = true; return; }
+  if(!REAL_EDIT || !ui.viewAs || ui.viewAs === 'cliente'){ el.hidden = true; return; }
   el.hidden = false;
   el.innerHTML = `<span>Stai vedendo come <b>${ui.viewAs}</b>${ui.viewAs === 'cliente' && dirtyReal() ? ' (con le tue modifiche non pubblicate)' : ''}</span><button class="btn" data-act="viewas" data-v="${ME.role}">Torna ${ME.role}</button>`;
 }
@@ -2694,7 +2702,7 @@ function setViewAs(v){
   S.mode = EDIT ? 'edit' : 'view';
   ui.sel = null; ui.csel = null; ui.move = false; ui.full = false; ui.draft = []; ui.bdraw = false; ui.sheet = null;
   renderSheet(); render();
-  if(ui.viewAs) toast(v === 'cliente' ? 'Vedi l\'app come un cliente.' : 'Vedi l\'app come un tracciatore.');
+  if(ui.viewAs) toast(v === 'cliente' ? 'Anteprima: l\'app come la vede un cliente. Tocca la chiave inglese per tornare a lavorare.' : 'Vedi l\'app come un tracciatore.');
 }
 async function publish(){
   if(!EDIT || !SB || ui.publishing || !dirty()) return;
@@ -2928,7 +2936,7 @@ document.addEventListener('click', e => {
     case 'img': makeImage(); break;
     case 'menu': openSheet('menu'); break;
     case 'viewas': setViewAs(b.dataset.v); break;
-    case 'preview': setViewAs('cliente'); break;
+    case 'preview': setViewAs(ui.viewAs === 'cliente' ? ME.role : 'cliente'); break;
     case 'wallmode': if(EDIT && isMgr() && w && !isSec(w) && !ui.scan){ S.mode = 'wall'; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.redraw = null; ui.tool = 'detect'; ui.sheet = null; renderSheet(); render(); } break;
     case 'printone': printBlocks(false); break;
     case 'printall': printBlocks(true); break;
