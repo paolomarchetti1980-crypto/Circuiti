@@ -2,8 +2,8 @@
    - pagina, codice e dati pubblicati: prima la rete (così gli aggiornamenti arrivano subito), se manca la rete l'ultima copia salvata
    - foto dei muri: subito dalla copia salvata, aggiornata in sottofondo
    - modello di riconoscimento e librerie: scaricati una volta sola */
-const CACHE = 'circuiti-v83';
-const CORE = ['./', './index.html', './app.js', './namegen.js', './config.js', './manifest.webmanifest', './icon-192-g3.png', './icon-512-g3.png', './icon-maskable-512-g3.png', './apple-touch-icon-g3.png'];
+const CACHE = 'circuiti-v84';
+const CORE = ['./', './index.html', './app.js?v=84', './namegen.js', './config.js', './manifest.webmanifest', './icon-192-g3.png', './icon-512-g3.png', './icon-maskable-512-g3.png', './apple-touch-icon-g3.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).catch(() => {}));
@@ -17,10 +17,11 @@ self.addEventListener('activate', e => {
   })());
 });
 
-async function networkFirst(req){
+async function networkFirst(req, fresh){
   const c = await caches.open(CACHE);
   try{
-    const r = await fetch(req);
+    /* fresh: chiede sempre al server se il file è cambiato, così pagina e codice arrivano della stessa versione */
+    const r = await fetch(fresh ? new Request(req.url, { cache: 'no-cache', credentials: 'same-origin' }) : req);
     if(r && r.ok) c.put(req, r.clone());
     return r;
   }catch(e){
@@ -53,7 +54,7 @@ self.addEventListener('fetch', e => {
   if(u.origin === self.location.origin){
     if(u.pathname.includes('/models/')) return e.respondWith(cacheFirst(req));
     if(u.pathname.includes('/img/')) return e.respondWith(staleWhileRevalidate(req));
-    return e.respondWith(networkFirst(req));
+    return e.respondWith(networkFirst(req, true));
   }
   if(u.hostname.endsWith('.supabase.co')){
     if(u.pathname.startsWith('/rest/v1/app_state')) return e.respondWith(networkFirst(req));
