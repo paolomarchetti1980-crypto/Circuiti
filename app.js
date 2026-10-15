@@ -1974,13 +1974,6 @@ function overviewSVG(w){
   });
   return s + tags;
 }
-/* miniatura della griglia: le linee dei boulder in parete, senza numeri */
-function thumbSVG(w){
-  if(!isSec(w)) return '';
-  const on = w.circuits.filter(c => !isOff(c)).sort(bouldCmp).reverse();
-  const s = on.map(c => lineSVG(bPts(c, w), w.w, colOf(c), null, 2.4)).join('');
-  return s ? `<svg viewBox="0 0 ${w.w} ${w.h}" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${s}</svg>` : '';
-}
 function traceBoulder(w, id){
   w.activeCircuit = id; ui.secOver = false; ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.bline = false; ui.zoom = 1;
   ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
@@ -2028,7 +2021,7 @@ function sectorGrid(){
       info = `<small>${n ? n + (n === 1 ? ' circuito' : ' circuiti') : 'nessun circuito'}${gs.length ? ' · ' + esc(gs[0]) + (gs.length > 1 && gs[gs.length-1] !== gs[0] ? '–' + esc(gs[gs.length-1]) : '') : ''}</small>`;
       if(EDIT && !w.locked) staff = `<span class="sinfo"><b>prese da preparare</b></span>`;
     }
-    return `<button class="scard" data-act="opensec" data-id="${w.id}"><span class="sph"><img src="${esc(w.img)}" alt="" loading="lazy">${thumbSVG(w)}${mgr ? `<span class="sedit" role="button" data-act="wman" data-id="${w.id}" aria-label="Gestisci ${bo ? 'il settore' : 'il muro'}">Modifica</span>` : ''}</span>`+
+    return `<button class="scard" data-act="opensec" data-id="${w.id}"><span class="sph"><img src="${esc(w.img)}" alt="" loading="lazy">${mgr ? `<span class="sedit" role="button" data-act="wman" data-id="${w.id}" aria-label="Gestisci ${bo ? 'il settore' : 'il muro'}">Modifica</span>` : ''}</span>`+
       `<span class="sname">${esc(w.name)}</span><span class="sdots">${info}</span>${staff}</button>`;
   }).join('') + (mgr ? `<div class="scard sadd"><span class="sname">+ ${bo ? 'Nuovo settore' : 'Nuovo muro'}</span><span class="sinfo">Carica la foto ${bo ? 'del settore' : 'del muro'}</span><div class="sbtns">${PICK_BTNS}</div></div>` : '') + `</div>`+
     (mgr && arch.length ? `<button class="archrow" data-act="archlist">Archiviati (${arch.length})</button>` : '');
