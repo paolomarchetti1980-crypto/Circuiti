@@ -1549,6 +1549,14 @@ function insetPoly(pl, d){
   }
   return out;
 }
+/* tasto sulla presa selezionata: "Accoppia" se è l'ultima presa segnata (il nuovo passaggio viene subito dopo),
+   altrimenti "Secondo passaggio", "Terzo passaggio"… */
+function dupLabel(c, i){
+  if(!c || i == null || !c.holds[i]) return 'Accoppia';
+  if(i === c.holds.length - 1) return 'Accoppia';
+  const h = c.holds[i], same = c.holds.filter(q => q.cid != null && h.cid != null ? q.cid === h.cid : (Math.round(q.x) === Math.round(h.x) && Math.round(q.y) === Math.round(h.y))).length;
+  return (['', 'Secondo', 'Terzo', 'Quarto', 'Quinto'][same] || 'Altro') + ' passaggio';
+}
 function circuitSVG(c, W, alpha, o){
   const segs = [], labels = [];
   const sw = Math.max(2, W*0.0028), hw = sw*0.5;
@@ -1645,8 +1653,15 @@ function circuitSVG(c, W, alpha, o){
     if(marks){ marks.forEach(q => { segs.push(q); s += tack(q, col, tw, 1); }); return; }
     let label = h.role === 'start' ? (starts.length > 1 && !o.boulder ? 'S' + (starts.indexOf(i)+1) : 'S') : h.role === 'top' ? 'T' : '';
     if(!label && o.numbers && h.role === 'hold'){
-      if(gi < g.length - 1) return; /* il numero si mette una sola volta, sull'ultimo passaggio del gruppo */
-      label = g.map(j => seqOf[j]).join(',');
+      if(gi < g.length - 1) return; /* i numeri si mettono una sola volta, sull'ultimo passaggio del gruppo */
+      /* passaggi consecutivi (accoppio) = bolle fuse; passaggi lontani (es. 3 e 22) = bolle separate, ognuna al suo posto */
+      const clusters = [];
+      g.forEach(j => { const last = clusters[clusters.length-1]; if(last && j === last[last.length-1] + 1) last.push(j); else clusters.push([j]); });
+      clusters.forEach(cl => {
+        if(cl.length > 1) labels.push({ h: c.holds[g[0]], label: cl.map(j => seqOf[j]).join(','), col: base, ha: haloOf(base), segs: cl.map(j => ({ n: seqOf[j], col: handCol(c.holds[j]) })) });
+        else { const hc = handCol(c.holds[cl[0]]); labels.push({ h: c.holds[g[0]], label: String(seqOf[cl[0]]), col: hc, ha: haloOf(hc), segs: null }); }
+      });
+      return;
     }
     if(label){
       if(lv && lv.lastSplit){ col = base; ha = haloOf(base); }
@@ -2278,7 +2293,7 @@ function renderTools(){
       `<div class="trow">${roles}${hands}</div>`+
       `<div class="trow"><div class="seg"><button data-act="size" data-d="-1" aria-label="${lbl} più piccolo">${lbl} &minus;</button><button data-act="size" data-d="1" aria-label="${lbl} più grande">${lbl} +</button></div>`+
       `<button class="btn ${ui.move ? 'on' : ''}" data-act="move">Sposta</button>`+
-      (sec ? `<button class="btn" data-act="bdraw">Ridisegna</button>` : `<button class="btn" data-act="dup" title="Aggiunge un passaggio sulla stessa presa con l'altra mano">Accoppia</button>`)+
+      (sec ? `<button class="btn" data-act="bdraw">Ridisegna</button>` : `<button class="btn" data-act="dup" title="${dupLabel(c, ui.sel) === 'Accoppia' ? 'Aggiunge un passaggio sulla stessa presa con l\'altra mano' : 'Aggiunge un nuovo passaggio su questa presa, come prossimo movimento'}">${dupLabel(c, ui.sel)}</button>`)+
       (sec && isStart(h) && (h.marks || []).length ? `<button class="btn" data-act="clrmarks">Togli i segni (${h.marks.length})</button>` : '')+
       `<button class="btn danger" data-act="del">Elimina</button>`+
       `<button class="btn primary" data-act="desel">Fatto</button></div>`;
@@ -2975,7 +2990,9 @@ document.addEventListener('click', e => {
     case 'dup': {
       const h = c && ui.sel != null ? c.holds[ui.sel] : null;
       if(h){
-        const nh = h.hand === 'L' ? 'R' : h.hand === 'R' ? 'L' : (ui.nextHand || 'L');
+        /* accoppio (presa appena segnata): l'altra mano; passaggio successivo più avanti: la mano che tocca adesso */
+        const consec = ui.sel === c.holds.length - 1;
+        const nh = consec ? (h.hand === 'L' ? 'R' : h.hand === 'R' ? 'L' : (ui.nextHand || 'L')) : (ui.nextHand || (h.hand === 'L' ? 'R' : 'L'));
         const copy = Object.assign({}, h, { role: 'hold' });
         if(h.poly) copy.poly = h.poly.slice();
         if(nh) copy.hand = nh; else delete copy.hand;
