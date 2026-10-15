@@ -109,7 +109,7 @@ let REAL_EDIT = false;
 const isMgr = () => !ME || (ME.role === 'gestore' && ui.viewAs !== 'tracciatore' && ui.viewAs !== 'cliente');
 const ui = { bline:false, lineDraft:[], view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:null, csel:null, busy:false, sel:null, move:false, nextRole:'start', zoom:1, sheet:null, confirm:null, imgUrl:null, ready:false, publishing:false, saveWarned:false, scan:null, nextHand:'L', crop:null };
 try{ const f = JSON.parse(localStorage.getItem('circ-filters') || '{}'); ui.fAngle = f.a || ''; ui.fGrade = f.g || ''; ui.fFeet = f.f || ''; }catch(e){}
-ui.section = 'circ'; ui.home = true; ui.bLevel = 'sectors'; ui.bShow = 'on'; ui.bColor = ''; ui.lastSec = {};
+ui.section = 'circ'; ui.home = true; ui.secOver = true; ui.bLevel = 'sectors'; ui.bShow = 'on'; ui.bColor = ''; ui.lastSec = {};
 try{ const f = JSON.parse(localStorage.getItem('boulder-ui') || '{}'); if(f.sec === 'boulder') ui.section = 'boulder'; ui.bShow = f.show || 'on'; ui.bColor = f.c || ''; ui.lastSec = f.last || {}; }catch(e){}
 if(!DIFFS.some(d => d[0] === ui.bColor)) ui.bColor = '';
 /* dopo Pubblica o il login la pagina si ricarica: si torna dove si era invece che alla schermata iniziale */
@@ -146,7 +146,8 @@ const bView = () => BO() && (!EDIT || S.mode === 'view');
 const bLv = () => !ui.home && !ui.full && !(EDIT && S.mode === 'wall' && ui.bLevel === 'sector');
 /* si passa sempre dalla griglia, anche con un solo muro o settore */
 const bGrid = () => bLv() && ui.bLevel === 'sectors' && secWalls().length > 0;
-const bOver = () => bView() && !ui.full && !bGrid();
+/* foto d'insieme con tutte le linee: il cliente la vede sempre, lo staff appena entra nel settore (poi tocca un boulder per tracciarlo) */
+const bOver = () => BO() && !ui.home && !ui.full && !bGrid() && (bView() || (EDIT && ui.secOver && !ui.scan));
 const todayISO = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); };
 const isOff = c => !!(c && c.dateRemoved && c.dateRemoved <= todayISO());
 const fmtDate = d => { if(!d) return ''; const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d); return m ? (+m[3]) + '/' + (+m[2]) + '/' + m[1].slice(2) : d; };
@@ -1973,6 +1974,19 @@ function overviewSVG(w){
   });
   return s + tags;
 }
+/* miniatura della griglia: le linee dei boulder in parete, senza numeri */
+function thumbSVG(w){
+  if(!isSec(w)) return '';
+  const on = w.circuits.filter(c => !isOff(c)).sort(bouldCmp).reverse();
+  const s = on.map(c => lineSVG(bPts(c, w), w.w, colOf(c), null, 2.4)).join('');
+  return s ? `<svg viewBox="0 0 ${w.w} ${w.h}" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${s}</svg>` : '';
+}
+function traceBoulder(w, id){
+  w.activeCircuit = id; ui.secOver = false; ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.bline = false; ui.zoom = 1;
+  ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
+  try{ history.pushState({ sec: 1, ed: 1 }, ''); }catch(e){}
+  save(); render();
+}
 function overviewHit(w, x, y, tol){
   let best = null, bd = tol;
   sortedVisible(w).forEach(c => {
@@ -2014,7 +2028,7 @@ function sectorGrid(){
       info = `<small>${n ? n + (n === 1 ? ' circuito' : ' circuiti') : 'nessun circuito'}${gs.length ? ' · ' + esc(gs[0]) + (gs.length > 1 && gs[gs.length-1] !== gs[0] ? '–' + esc(gs[gs.length-1]) : '') : ''}</small>`;
       if(EDIT && !w.locked) staff = `<span class="sinfo"><b>prese da preparare</b></span>`;
     }
-    return `<button class="scard" data-act="opensec" data-id="${w.id}"><span class="sph"><img src="${esc(w.img)}" alt="" loading="lazy">${mgr ? `<span class="sedit" role="button" data-act="wman" data-id="${w.id}" aria-label="Gestisci ${bo ? 'il settore' : 'il muro'}">Modifica</span>` : ''}</span>`+
+    return `<button class="scard" data-act="opensec" data-id="${w.id}"><span class="sph"><img src="${esc(w.img)}" alt="" loading="lazy">${thumbSVG(w)}${mgr ? `<span class="sedit" role="button" data-act="wman" data-id="${w.id}" aria-label="Gestisci ${bo ? 'il settore' : 'il muro'}">Modifica</span>` : ''}</span>`+
       `<span class="sname">${esc(w.name)}</span><span class="sdots">${info}</span>${staff}</button>`;
   }).join('') + (mgr ? `<div class="scard sadd"><span class="sname">+ ${bo ? 'Nuovo settore' : 'Nuovo muro'}</span><span class="sinfo">Carica la foto ${bo ? 'del settore' : 'del muro'}</span><div class="sbtns">${PICK_BTNS}</div></div>` : '') + `</div>`+
     (mgr && arch.length ? `<button class="archrow" data-act="archlist">Archiviati (${arch.length})</button>` : '');
@@ -2203,9 +2217,11 @@ function renderChips(){
   const w = curWall(), el = $('#chips');
   if(!w || (EDIT && S.mode === 'wall')){ el.innerHTML = ''; return; }
   const act = curCircuit(), n = visibleCircuits(w).length, tot = w.circuits.length;
-  if(isSec(w) && (!EDIT || S.mode === 'view')){
-    el.innerHTML = (tot ? bFilters(w) : '') + bRows(w, 'lrow') +
-      (n ? `<p class="hint" style="text-align:center;margin:8px 0 0;font-size:13px">Tocca una linea sulla foto, o un boulder qui, per aprirlo.</p>` : '');
+  if(isSec(w) && (!EDIT || S.mode === 'view' || bOver())){
+    const staff = EDIT && S.mode !== 'view';
+    el.innerHTML = (staff ? `<button class="btn primary" data-act="addc" style="width:100%;margin-bottom:10px">+ Nuovo boulder</button>` : '') +
+      (tot ? bFilters(w) : '') + bRows(w, 'lrow') +
+      (n ? `<p class="hint" style="text-align:center;margin:8px 0 0;font-size:13px">${staff ? 'Tocca una linea sulla foto, o un boulder qui, per tracciarlo.' : 'Tocca una linea sulla foto, o un boulder qui, per aprirlo.'}</p>` : '');
     return;
   }
   if(!EDIT || S.mode === 'view'){
@@ -2290,6 +2306,7 @@ function renderTools(){
     el.innerHTML = h;
     return;
   }
+  if(EDIT && S.mode !== 'view' && bOver()){ el.innerHTML = ''; return; }   /* foto d'insieme dello staff: si sceglie il boulder dall'elenco */
   if(!EDIT || S.mode === 'view'){
     const p = S.prefs;
     el.innerHTML = c ? `<div class="mini">`+
@@ -2420,6 +2437,7 @@ function focusCircuit(){
 window.addEventListener('popstate', () => {
   const st = history.state || {};
   if(ui.full){ ui.full = false; ui.zoom = 1; render(); }
+  else if(!ui.scan && EDIT && BO() && ui.bLevel === 'sector' && !ui.secOver && st.sec && !st.ed){ ui.secOver = true; ui.sel = null; ui.zoom = 1; render(); }
   else if(!ui.scan && ui.bLevel === 'sector' && !st.sec){ ui.bLevel = 'sectors'; ui.zoom = 1; render(); }
   else if(!ui.scan && !ui.home && !st.grid && !st.sec){ ui.home = true; ui.zoom = 1; render(); }
 });
@@ -2786,7 +2804,7 @@ $('#stage').addEventListener('click', async e => {
   if(w && bOver() && Date.now() - ui.pinchAt > 350){
     const r = e.currentTarget.getBoundingClientRect(), k = w.w / r.width;
     const hit = overviewHit(w, (e.clientX - r.left)*k, (e.clientY - r.top)*k, Math.min(22*k, w.w*0.06));
-    if(hit){ w.activeCircuit = hit.id; save(); setFull(true); }
+    if(hit){ if(EDIT && S.mode !== 'view') traceBoulder(w, hit.id); else { w.activeCircuit = hit.id; save(); setFull(true); } }
     return;
   }
   if(!EDIT || !w || S.mode === 'view' || ui.busy || ui.scan || ui.bline || Date.now() - ui.pinchAt < 350) return;
@@ -3007,10 +3025,11 @@ document.addEventListener('click', e => {
       if(ui.confirm !== 'wdel:' + id){ ui.confirm = 'wdel:' + id; renderSheet(); break; }
       S.walls = S.walls.filter(q => q.id !== id); ui.confirm = null; if(!archWalls().length) ui.sheet = null; touch(); renderSheet(); render(); toast('Eliminato. Ricordati di pubblicare.'); break;
     }
-    case 'opensec': if(EDIT && !ui.scan) S.mode = 'edit'; S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.bLevel = 'sector'; ui.zoom = 1; ui.sel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save(); try{ history.pushState({ sec: 1 }, ''); }catch(e){} render(); $('#box').scrollTop = 0; break;
+    case 'opensec': if(EDIT && !ui.scan) S.mode = 'edit'; S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.bLevel = 'sector'; ui.secOver = true; ui.zoom = 1; ui.sel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save(); try{ history.pushState({ sec: 1 }, ''); }catch(e){} render(); $('#box').scrollTop = 0; break;
     case 'bback':
       if(ui.scan) break;
-      if(ui.bLevel === 'sector' && !bGrid() && curWall()){ if(history.state && history.state.sec){ try{ history.back(); }catch(e){} } ui.bLevel = 'sectors'; }
+      if(EDIT && BO() && ui.bLevel === 'sector' && !bGrid() && curWall() && !ui.secOver && S.mode !== 'view'){ if(history.state && history.state.ed){ try{ history.back(); }catch(e){} } ui.secOver = true; ui.sel = null; ui.zoom = 1; }
+      else if(ui.bLevel === 'sector' && !bGrid() && curWall()){ if(history.state && history.state.sec){ try{ history.back(); }catch(e){} } ui.bLevel = 'sectors'; }
       else { if(history.state && history.state.grid){ try{ history.back(); }catch(e){} } ui.home = true; ui.bLevel = 'sectors'; }
       ui.zoom = 1; render(); break;
     case 'pickhome': {
@@ -3036,6 +3055,7 @@ document.addEventListener('click', e => {
     case 'cedit': if(c && EDIT) openSheet('circ'); break;
     case 'pickc': {
       if(!w) break;
+      if(bOver() && EDIT && S.mode !== 'view'){ ui.sheet = null; renderSheet(); traceBoulder(w, b.dataset.id); break; }
       const again = w.activeCircuit === b.dataset.id && b.classList.contains('lrow');
       w.activeCircuit = b.dataset.id; ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.bline = false; $('#stage').classList.remove('linedraw'); ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
       ui.sheet = null; save(); renderSheet();
@@ -3052,6 +3072,7 @@ document.addEventListener('click', e => {
     case 'addc': {
       if(!w) break;
       const n = newCircuit(w); w.circuits.push(n); w.activeCircuit = n.id;
+      if(isSec(w) && ui.secOver){ ui.secOver = false; try{ history.pushState({ sec: 1, ed: 1 }, ''); }catch(e){} }
       ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.nextRole = 'start'; ui.nextHand = 'L'; S.mode = 'edit'; touch(); render(); openSheet('circ'); break;
     }
     case 'hand': {
@@ -3205,7 +3226,7 @@ async function finishCrop0(cr){
   const w = { id: uid(), name: pre + wn, w: cw, h: ch, img, circuits: [], activeCircuit: null };
   if(bo){ w.kind = 'sector'; w.locked = true; w.holds = []; }
   const circ = newCircuit(w); w.circuits.push(circ); w.activeCircuit = circ.id;
-  S.walls.push(w); S.active = w.id; S.mode = 'edit'; ui.bLevel = 'sector';
+  S.walls.push(w); S.active = w.id; S.mode = 'edit'; ui.bLevel = 'sector'; ui.secOver = false;
   ui.sel = null; ui.move = false; ui.zoom = 1; ui.nextRole = 'start'; ui.crop = null; ui.sheet = null;
   touch(); render(); renderSheet();
 }
