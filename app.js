@@ -2145,8 +2145,11 @@ function renderStage(){
   sv.innerHTML = overlay(w, { over: bOver(), numbers: editing || S.prefs.numbers, lines: S.prefs.lines, others: S.prefs.others, edit: editing, dim: dimOn(editing), wall: EDIT && S.mode === 'wall' });
   fit();
 }
+/* il cliente vede solo i boulder in parete: gli smontati servono allo staff */
+const bShowEff = () => EDIT ? ui.bShow : 'on';
 function visibleCircuits(w){
-  if(isSec(w)) return w.circuits.filter(c => (ui.bShow === 'all' || (ui.bShow === 'off') === isOff(c)) && (!ui.bColor || c.diff === ui.bColor));
+  const show = bShowEff();
+  if(isSec(w)) return w.circuits.filter(c => (show === 'all' || (show === 'off') === isOff(c)) && (!ui.bColor || c.diff === ui.bColor));
   return w.circuits.filter(c => (!ui.fAngle || String(c.angle) === String(ui.fAngle)) && (!ui.fGrade || c.grade === ui.fGrade) && (!ui.fFeet || c.feet === ui.fFeet));
 }
 const gradeBand = g => { const i = GRADES.indexOf(g || ''); if(i <= 0) return '#5b6068'; if(i <= GRADES.indexOf('5c')) return '#7bd389'; if(i <= GRADES.indexOf('6b+')) return '#ffd166'; if(i <= GRADES.indexOf('7a+')) return '#ff9a3d'; return '#ef476f'; };
@@ -2168,9 +2171,9 @@ function circMeta(c){
 }
 /* filtri dei boulder: stato (in parete / smontati / tutti), grado, colore delle prese */
 function bFilters(w){
-  const ds = DIFFS.filter(d => w.circuits.some(x => x.diff === d[0]));
+  const ds = DIFFS.filter(d => w.circuits.some(x => x.diff === d[0] && (EDIT || !isOff(x))));
   const st = (v, l) => `<button class="fchip ${ui.bShow === v ? 'on' : ''}" data-act="bshow" data-v="${v}">${l}</button>`;
-  return `<div class="fchips">${st('on','In parete')}${st('off','Smontati')}${st('all','Tutti')}</div>`+
+  return (EDIT ? `<div class="fchips">${st('on','In parete')}${st('off','Smontati')}${st('all','Tutti')}</div>` : '')+
     (ds.length > 1 ? `<div class="fchips">${ds.map(d => `<button class="fdot ${ui.bColor === d[0] ? 'on' : ''}" data-act="bcolor" data-v="${d[0]}" aria-label="${d[1]}" aria-pressed="${ui.bColor === d[0]}" style="background:${d[2]}"></button>`).join('')}</div>` : '');
 }
 function bRows(w, cls){
