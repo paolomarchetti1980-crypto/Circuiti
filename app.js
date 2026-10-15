@@ -108,7 +108,9 @@ let EDIT = false, SB = null, BASE = null, ME = null;
 let REAL_EDIT = false;
 const isMgr = () => !ME || (ME.role === 'gestore' && ui.viewAs !== 'tracciatore' && ui.viewAs !== 'cliente');
 const ui = { bline:false, lineDraft:[], view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:null, csel:null, busy:false, sel:null, move:false, nextRole:'start', zoom:1, sheet:null, confirm:null, imgUrl:null, ready:false, publishing:false, saveWarned:false, scan:null, nextHand:'L', crop:null };
-try{ const f = JSON.parse(localStorage.getItem('circ-filters') || '{}'); ui.fAngle = f.a || ''; ui.fGrade = f.g || ''; ui.fFeet = f.f || ''; }catch(e){}
+/* filtri dei circuiti: gli stessi per tutti i muri e per la ricerca in palestra */
+ui.sq = { ang: '', min: '', max: '', sty: '', feet: '' };
+try{ const f = JSON.parse(localStorage.getItem('circ-filters2') || '{}'); for(const k in ui.sq) if(typeof f[k] === 'string') ui.sq[k] = f[k]; }catch(e){}
 ui.section = 'circ'; ui.home = true; ui.secOver = true; ui.bLevel = 'sectors'; ui.bShow = 'on'; ui.bColor = ''; ui.lastSec = {};
 try{ const f = JSON.parse(localStorage.getItem('boulder-ui') || '{}'); if(f.sec === 'boulder') ui.section = 'boulder'; ui.bShow = f.show || 'on'; ui.bColor = f.c || ''; ui.lastSec = f.last || {}; }catch(e){}
 if(!DIFFS.some(d => d[0] === ui.bColor)) ui.bColor = '';
@@ -118,7 +120,10 @@ try{ const r = JSON.parse(sessionStorage.getItem('mr-resume') || 'null'); sessio
     try{ history.pushState({ grid: 1 }, ''); if(ui.bLevel === 'sector') history.pushState({ sec: 1 }, ''); }catch(e){} } }catch(e){}
 function rememberPlace(){ try{ if(!ui.home) sessionStorage.setItem('mr-resume', JSON.stringify({ sec: ui.section, lvl: ui.bLevel, t: Date.now() })); }catch(e){} }
 function saveBUI(){ try{ localStorage.setItem('boulder-ui', JSON.stringify({ sec: ui.section, show: ui.bShow, c: ui.bColor, last: ui.lastSec })); }catch(e){} }
-function saveCF(){ try{ localStorage.setItem('circ-filters', JSON.stringify({ a: ui.fAngle || '', g: ui.fGrade || '', f: ui.fFeet || '' })); }catch(e){} }
+function saveCF(){ try{ localStorage.setItem('circ-filters2', JSON.stringify(ui.sq)); }catch(e){} }
+const cMatch = c => { const q = ui.sq; return (q.ang === '' || String(c.angle) === q.ang) && (!q.sty || c.style === q.sty) && (!q.feet || c.feet === q.feet) &&
+  (!q.min || (gradeIdx(c.grade) < 999 && gradeIdx(c.grade) >= gradeIdx(q.min))) && (!q.max || gradeIdx(c.grade) <= gradeIdx(q.max)); };
+const sqCount = () => { const q = ui.sq; return (q.ang !== '' ? 1 : 0) + (q.min || q.max ? 1 : 0) + (q.sty ? 1 : 0) + (q.feet ? 1 : 0); };
 /* dopo un cambio di filtro: se il blocco attivo non è più in elenco, si passa al primo visibile */
 function afterFilter(){
   const w = curWall(); if(!w) return;
@@ -2161,7 +2166,7 @@ const bShowEff = () => EDIT ? ui.bShow : 'on';
 function visibleCircuits(w){
   const show = bShowEff();
   if(isSec(w)) return w.circuits.filter(c => (show === 'all' || (show === 'off') === isOff(c)) && (!ui.bColor || c.diff === ui.bColor));
-  return w.circuits.filter(c => (!ui.fAngle || String(c.angle) === String(ui.fAngle)) && (!ui.fGrade || c.grade === ui.fGrade) && (!ui.fFeet || c.feet === ui.fFeet));
+  return w.circuits.filter(cMatch);
 }
 const gradeBand = g => { const i = GRADES.indexOf(g || ''); if(i <= 0) return '#5b6068'; if(i <= GRADES.indexOf('5c')) return '#7bd389'; if(i <= GRADES.indexOf('6b+')) return '#ffd166'; if(i <= GRADES.indexOf('7a+')) return '#ff9a3d'; return '#ef476f'; };
 const gradeBadge = g => `<span class="gb" style="background:${gradeBand(g)}">${esc(g || '–')}</span>`;
@@ -2192,23 +2197,23 @@ function bRows(w, cls){
   if(!vis.length) return `<p class="hint" style="padding:6px 2px">${w.circuits.length ? 'Nessun boulder con questi filtri.' : 'Ancora nessun boulder su questo settore.'}</p>`;
   return `<div class="list" style="gap:${cls === 'crow' ? 6 : 0}px;margin:0">` + vis.map(x => `<button class="${cls} ${act && x.id === act.id ? 'active' : ''} ${isOff(x) ? 'off' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext" style="flex:1"><b>${bTitleHtml(x)}</b><small>${[x.style ? esc(x.style) : '', bMeta(x)].filter(Boolean).join(' · ')}</small></span></button>`).join('') + `</div>`;
 }
+/* riga rapida sopra l'elenco: inclinazioni a portata di dito, tutto il resto in "Filtri" */
 function circFilters(w){
-  if(w.circuits.length <= 3 && !ui.fAngle && !ui.fGrade && !ui.fFeet) return '';   /* con pochi circuiti la lista si legge a colpo d'occhio */
-  const angles = [...new Set(w.circuits.map(x => x.angle).filter(x => x != null))].sort((x, y) => x - y);
-  const grades = GRADES.filter(g => g && w.circuits.some(x => x.grade === g));
-  const fa = v => `<button class="fchip ${String(ui.fAngle || '') === String(v) ? 'on' : ''}" data-act="fang" data-v="${v}">${v === '' ? 'Tutti' : v + '°'}</button>`;
-  const inner = (angles.length ? fa('') + angles.map(fa).join('') : '')+
-    (grades.length ? `<select id="fgrade" class="fsel" aria-label="Grado"><option value="">Tutti i gradi</option>${grades.map(g => `<option value="${g}" ${ui.fGrade === g ? 'selected' : ''}>${g}</option>`).join('')}</select>` : '')+feetSel(w);
-  return inner ? `<div class="fchips">${inner}</div>` : '';
+  const all = sqAll(); if(all.length < 2) return '';
+  const angles = [...new Set(all.map(x => x.c.angle).filter(x => x != null))].sort((a, b) => a - b), q = ui.sq;
+  const other = (q.min || q.max ? 1 : 0) + (q.sty ? 1 : 0) + (q.feet ? 1 : 0);
+  const chip = (v, l) => `<button class="fchip ${q.ang === String(v) ? 'on' : ''}" data-act="sqang" data-v="${v}">${l}</button>`;
+  const n = visibleCircuits(w).length, tot = w.circuits.length;
+  return `<div class="fchips">`+
+    `<button class="fchip fbtn ${other ? 'on' : ''}" data-act="cfilt"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M1 3h12M3 7h8M5 11h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Filtri${other ? ' · ' + other : ''}</button>`+
+    (angles.length > 1 ? chip('', 'Tutte') + angles.map(a => chip(a, a + '°')).join('') : '')+
+    `</div>`+
+    (sqCount() ? `<div class="sqhead" style="margin:0 0 4px"><small>${n} di ${tot} circuiti su questo muro</small><button class="linklike" data-act="sqreset">Azzera filtri</button></div>` : '');
 }
 function circRows(w, cls){
   const act = curCircuit(), vis = sortedVisible(w);
   if(!vis.length) return `<p class="hint" style="padding:6px 2px">${w.circuits.length ? 'Nessun circuito con questi filtri.' : 'Ancora nessun circuito su questo muro.'}</p>`;
   return `<div class="list" style="gap:${cls === 'crow' ? 6 : 0}px;margin:0">` + vis.map(x => `<button class="${cls} ${act && x.id === act.id ? 'active' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${colOf(x)}"></i><span class="ctext" style="flex:1"><b>${esc(x.name)}</b><small>${circMeta(x)}</small></span>${gradeBadge(x.grade)}</button>`).join('') + `</div>`;
-}
-function feetSel(w){
-  if(!w.circuits.some(x => x.feet)) return '';
-  return `<select id="ffeet" class="fsel" aria-label="Piedi"><option value="">Tutti i piedi</option>${[['liberi','Piedi liberi'],['obbligati','Piedi obbligati']].map(o => `<option value="${o[0]}" ${ui.fFeet === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>`;
 }
 function renderChips(){
   const w = curWall(), el = $('#chips');
@@ -2226,7 +2231,7 @@ function renderChips(){
       (n ? `<p class="hint" style="text-align:center;margin:8px 0 0;font-size:13px">Tocca un circuito per vederlo sulla foto, tocca la foto per aprirlo a schermo intero.</p>` : '');
     return;
   }
-  const filtered = !isSec(w) && (ui.fAngle || ui.fGrade || ui.fFeet) ? ` · filtrati ${n}/${tot}` : '';
+  const filtered = !isSec(w) && sqCount() ? ` · filtrati ${n}/${tot}` : '';
   if(!act){
     el.innerHTML = `<div class="curbar"><span class="cinfo"><b>${isSec(w) ? 'Nessun boulder su questo settore' : 'Nessun circuito su questo muro'}</b></span>${EDIT ? `<button class="btn primary" data-act="addc">${isSec(w) ? '+ Nuovo boulder' : '+ Nuovo circuito'}</button>` : ''}</div>`;
     return;
@@ -2443,24 +2448,29 @@ window.addEventListener('popstate', () => {
 /* ---------- pannelli ---------- */
 function openSheet(name){ ui.sheet = name; ui.confirm = null; renderSheet(); }
 /* ricerca su tutti i circuiti della palestra */
-ui.sq = { ang: '', min: '', max: '', sty: '', feet: '' };
 function sqAll(){ return secWalls().filter(w => !isSec(w)).flatMap(w => w.circuits.map(c => ({ w, c }))); }
-function sqSheet(){
+function sqSheet(mode){
   const all = sqAll(), q = ui.sq;
   const angles = [...new Set(all.map(x => x.c.angle).filter(x => x != null))].sort((a, b) => a - b);
   const grades = GRADES.filter(g => g && all.some(x => x.c.grade === g));
   const styles = STYLES.filter(st => st && all.some(x => x.c.style === st));
   const chip = (act, v, l, on) => `<button class="fchip ${on ? 'on' : ''}" data-act="${act}" data-v="${v}">${l}</button>`;
   const gsel = (id, val, l) => `<select id="${id}" class="fsel" aria-label="${l}"><option value="">${l}</option>${grades.map(g => `<option value="${g}" ${val === g ? 'selected' : ''}>${g}</option>`).join('')}</select>`;
-  const res = all.filter(({ c }) => (q.ang === '' || String(c.angle) === q.ang) && (!q.sty || c.style === q.sty) && (!q.feet || c.feet === q.feet) &&
-    (!q.min || (gradeIdx(c.grade) < 999 && gradeIdx(c.grade) >= gradeIdx(q.min))) && (!q.max || gradeIdx(c.grade) <= gradeIdx(q.max)))
+  const res = all.filter(({ c }) => cMatch(c))
     .sort((a, b) => gradeIdx(a.c.grade) - gradeIdx(b.c.grade) || a.c.name.localeCompare(b.c.name));
-  const any = q.ang !== '' || q.min || q.max || q.sty || q.feet;
-  return `<h2>Cerca un circuito</h2>`+
+  const any = sqCount() > 0;
+  const filters = 
     (angles.length > 1 ? `<p class="sqlab">Inclinazione</p><div class="fchips">${chip('sqang', '', 'Tutte', q.ang === '')}${angles.map(a => chip('sqang', a, a + '°', q.ang === String(a))).join('')}</div>` : '')+
     (grades.length > 1 ? `<p class="sqlab">Grado</p><div class="fchips sqgr">${gsel('sqmin', q.min, 'da')}<span>–</span>${gsel('sqmax', q.max, 'a')}</div>` : '')+
     (styles.length > 1 ? `<p class="sqlab">Stile</p><div class="fchips">${chip('sqsty', '', 'Tutti', !q.sty)}${styles.map(st => chip('sqsty', st, esc(st), q.sty === st)).join('')}</div>` : '')+
-    (all.some(x => x.c.feet) ? `<p class="sqlab">Piedi</p><div class="fchips">${chip('sqfeet', '', 'Tutti', !q.feet)}${chip('sqfeet', 'liberi', 'Liberi', q.feet === 'liberi')}${chip('sqfeet', 'obbligati', 'Obbligati', q.feet === 'obbligati')}</div>` : '')+
+    (all.some(x => x.c.feet) ? `<p class="sqlab">Piedi</p><div class="fchips">${chip('sqfeet', '', 'Tutti', !q.feet)}${chip('sqfeet', 'liberi', 'Liberi', q.feet === 'liberi')}${chip('sqfeet', 'obbligati', 'Obbligati', q.feet === 'obbligati')}</div>` : '');
+  if(mode === 'wall'){
+    const w = curWall(), n = w ? visibleCircuits(w).length : 0;
+    return `<h2>Filtri</h2><p class="hint" style="margin:0">Valgono su tutti i muri e nella ricerca.</p>` + filters +
+      (any ? `<div class="sqhead"><span></span><button class="linklike" data-act="sqreset">Azzera filtri</button></div>` : '') +
+      `<button class="btn primary" data-act="close" style="width:100%;margin-top:14px">Mostra ${n} ${n === 1 ? 'circuito' : 'circuiti'}</button>`;
+  }
+  return `<h2>Cerca un circuito</h2>` + filters +
     `<div class="sqhead"><b>${res.length} ${res.length === 1 ? 'circuito' : 'circuiti'}</b>${any ? `<button class="linklike" data-act="sqreset">Azzera filtri</button>` : ''}</div>`+
     (res.length ? `<div class="list" style="gap:0;margin:0">` + res.map(({ w, c }) => `<button class="lrow" data-act="sqgo" data-w="${w.id}" data-id="${c.id}"><i class="dot" style="background:${colOf(c)}"></i><span class="ctext" style="flex:1"><b>${esc(c.name)}</b><small>${[esc(w.name), c.angle != null ? c.angle + '°' : '', esc(c.style || ''), c.feet ? 'piedi ' + c.feet : ''].filter(Boolean).join(' · ')}</small></span>${gradeBadge(c.grade)}</button>`).join('') + `</div>`
       : `<p class="hint">Nessun circuito con questi filtri.</p>`)+
@@ -2472,6 +2482,7 @@ function renderSheet(){
   const w = curWall(), c = curCircuit();
   let h = '';
   if(ui.sheet === 'csearch') h = sqSheet();
+  else if(ui.sheet === 'cfilt') h = sqSheet('wall');
   else if(ui.sheet === 'circ' && c && EDIT && isSec(w)){
     const gradeOpt = v => `<option value="${v}" ${(c.grade || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
     const styleOpt = v => `<option value="${v}" ${(c.style || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
@@ -2912,7 +2923,7 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['csearch','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
+const PUBLIC_ACTS = ['csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
 const MGR_ACTS = ['wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
@@ -3075,7 +3086,6 @@ document.addEventListener('click', e => {
     case 'pref': S.prefs[b.dataset.k] = !S.prefs[b.dataset.k]; saveViewPrefs(); render(); break;
     case 'zoom': { const bx = $('#box').getBoundingClientRect(); applyZoom(ui.zoom * Math.pow(1.4, +b.dataset.d), bx.left + bx.width/2, bx.top + bx.height/2); break; }
     case 'clist': ui.confirm = null; openSheet('clist'); break;
-    case 'fang': ui.fAngle = b.dataset.v; saveCF(); afterFilter(); break;
     case 'cedit': if(c && EDIT) openSheet('circ'); break;
     case 'pickc': {
       if(!w) break;
@@ -3180,14 +3190,14 @@ document.addEventListener('click', e => {
       ui.sel = null; ui.sheet = null; ui.confirm = null; touch(); render(); renderSheet(); toast(BO() ? 'Settore eliminato. Ricordati di pubblicare.' : 'Muro eliminato. Ricordati di pubblicare.'); break;
     case 'close': ui.sheet = null; ui.confirm = null; renderSheet(); break;
     case 'csearch': openSheet('csearch'); break;
-    case 'sqang': ui.sq.ang = b.dataset.v; renderSheet(); break;
-    case 'sqsty': ui.sq.sty = b.dataset.v; renderSheet(); break;
-    case 'sqfeet': ui.sq.feet = b.dataset.v; renderSheet(); break;
-    case 'sqreset': ui.sq = { ang: '', min: '', max: '', sty: '', feet: '' }; renderSheet(); break;
+    case 'sqang': ui.sq.ang = b.dataset.v; saveCF(); afterFilter(); renderSheet(); break;
+    case 'sqsty': ui.sq.sty = b.dataset.v; saveCF(); afterFilter(); renderSheet(); break;
+    case 'sqfeet': ui.sq.feet = b.dataset.v; saveCF(); afterFilter(); renderSheet(); break;
+    case 'sqreset': ui.sq = { ang: '', min: '', max: '', sty: '', feet: '' }; saveCF(); afterFilter(); renderSheet(); break;
+    case 'cfilt': openSheet('cfilt'); break;
     case 'sqgo': {
       const tw = S.walls.find(x => x.id === b.dataset.w); if(!tw) break;
       S.active = tw.id; tw.activeCircuit = b.dataset.id; ui.lastSec.circ = tw.id; saveBUI();
-      ui.fAngle = ''; ui.fGrade = ''; ui.fFeet = ''; saveCF();
       ui.bLevel = 'sector'; ui.zoom = 1; ui.sel = null; ui.sheet = null; renderSheet();
       try{ history.pushState({ sec: 1 }, ''); }catch(e){} render(); break;
     }
@@ -3198,11 +3208,7 @@ document.addEventListener('click', e => {
 document.addEventListener('input', e => {
   const c = curCircuit(), w = curWall();
   if(e.target.id === 'lemail'){ ui.loginEmail = e.target.value.trim(); return; }
-  if(e.target.id === 'sqmin' || e.target.id === 'sqmax'){ ui.sq[e.target.id === 'sqmin' ? 'min' : 'max'] = e.target.value; renderSheet(); return; }
-  if(e.target.id === 'fgrade' || e.target.id === 'ffeet'){
-    if(e.target.id === 'ffeet') ui.fFeet = e.target.value; else ui.fGrade = e.target.value;
-    saveCF(); afterFilter(); return;
-  }
+  if(e.target.id === 'sqmin' || e.target.id === 'sqmax'){ ui.sq[e.target.id === 'sqmin' ? 'min' : 'max'] = e.target.value; saveCF(); afterFilter(); renderSheet(); return; }
   if(!EDIT) return;
   if(e.target.id === 'bsetter' && c){ const v = e.target.value.trim(); if(v) c.setter = v; else delete c.setter; try{ localStorage.setItem('boulder-setter', v); }catch(err){} renderChips(); touch(); }
   if(e.target.id === 'bdset' && c){ if(e.target.value) c.dateSet = e.target.value; else delete c.dateSet; renderChips(); touch(); }
