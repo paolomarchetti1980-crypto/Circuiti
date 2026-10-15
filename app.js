@@ -2142,7 +2142,7 @@ function renderStage(){
   const sv = $('#ov');
   sv.setAttribute('viewBox', `0 0 ${w.w} ${w.h}`);
   const editing = EDIT && S.mode === 'edit';
-  sv.innerHTML = overlay(w, { over: bOver(), numbers: editing || S.prefs.numbers, lines: S.prefs.lines, others: S.prefs.others, edit: editing, dim: dimOn(editing), wall: EDIT && S.mode === 'wall' });
+  sv.innerHTML = overlay(w, { over: bOver(), numbers: editing || S.prefs.numbers, lines: S.prefs.lines, others: EDIT && S.prefs.others, edit: editing, dim: dimOn(editing), wall: EDIT && S.mode === 'wall' });
   fit();
 }
 /* il cliente vede solo i boulder in parete: gli smontati servono allo staff */
@@ -2295,7 +2295,7 @@ function renderTools(){
     el.innerHTML = c ? `<div class="mini">`+
       (isSec(w) ? '' : `<button class="btn ${p.numbers ? 'on' : ''}" data-act="pref" data-k="numbers">Numeri</button>`+
       `<button class="btn ${p.lines ? 'on' : ''}" data-act="pref" data-k="lines">Linee</button>`)+
-      `<button class="btn ${p.others ? 'on' : ''}" data-act="pref" data-k="others">${isSec(w) ? 'Altri boulder' : 'Altri circuiti'}</button>`+
+      (EDIT ? `<button class="btn ${p.others ? 'on' : ''}" data-act="pref" data-k="others">${isSec(w) ? 'Altri boulder' : 'Altri circuiti'}</button>` : '')+
       `<button class="btn ${p.dim ? 'on' : ''}" data-act="pref" data-k="dim">${isSec(w) ? 'Oscura settore' : 'Oscura muro'}</button>`+
       `</div>` : '';
     return;
@@ -2581,7 +2581,7 @@ async function composeBlock(w, c, o){
   const keep = w.activeCircuit; w.activeCircuit = c.id;
   try{
     const photo = await loadImg(w.img);
-    const inner = overlay(w, Object.assign({ numbers: S.prefs.numbers, lines: S.prefs.lines, others: S.prefs.others, edit: false, dim: S.prefs.dim }, o || {}));
+    const inner = overlay(w, Object.assign({ numbers: S.prefs.numbers, lines: S.prefs.lines, others: EDIT && S.prefs.others, edit: false, dim: S.prefs.dim }, o || {}));
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w.w}" height="${w.h}" viewBox="0 0 ${w.w} ${w.h}">${inner}</svg>`;
     const ov = await loadImg('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg));
     const cv = document.createElement('canvas'); cv.width = w.w; cv.height = w.h;
