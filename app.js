@@ -960,7 +960,9 @@ async function samSegment(w, x, y, ts, strict, auto){
     /* la maschera di SAM è a bassa risoluzione: si aggancia il contorno ai bordi veri della presa nella foto */
     let EM = null; try{ EM = await edgeMap(w); }catch(e){ EM = null; }
     const raw = tr.pts.map(p => [(p[0] + 0.5)*k, (p[1] + 0.5)*k]);
-    op = rdpPts(EM ? snapContour(raw, EM, k) : raw, EM ? 0.7/EM.es : 0.9*k);
+    /* niente scalini: si ammorbidisce la maschera prima di agganciarla ai bordi e il risultato dopo */
+    const sm = smoothClosed(raw, 2);
+    op = rdpPts(smoothClosed(EM ? snapContour(sm, EM, k) : sm, 2), EM ? 0.6/EM.es : 0.8*k);
   }
   if(op.length < 3) return null;
   const flat = []; op.forEach(p => { flat.push(Math.round(p[0]), Math.round(p[1])); });
@@ -999,6 +1001,17 @@ async function edgeMap(w){
 }
 /* ogni punto del contorno si sposta lungo la perpendicolare fino al bordo più netto lì vicino (entro la precisione della maschera);
    gli spostamenti si ammorbidiscono con quelli dei vicini, così il contorno resta pulito */
+/* media mobile lungo un contorno chiuso (due passate ≈ curva gaussiana): toglie la scalettatura dei pixel */
+function smoothClosed(p, r){
+  const n = p.length; if(n < 2*r + 3) return p;
+  let cur = p;
+  for(let pass = 0; pass < 2; pass++){
+    const out = new Array(n);
+    for(let i = 0; i < n; i++){ let sx = 0, sy = 0; for(let j = -r; j <= r; j++){ const q = cur[(i + j + n) % n]; sx += q[0]; sy += q[1]; } out[i] = [sx/(2*r + 1), sy/(2*r + 1)]; }
+    cur = out;
+  }
+  return cur;
+}
 function snapContour(pts, EM, k){
   const n = pts.length; if(n < 8) return pts;
   const R = Math.max(2, Math.round(1.6*k*EM.es)), off = new Float32Array(n);
