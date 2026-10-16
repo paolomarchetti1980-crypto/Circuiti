@@ -861,13 +861,14 @@ function rdpPts(p, eps){
 /* volumi e prese spigolose: se il contorno si descrive bene con pochi lati dritti (scarto massimo ~3,5% della misura),
    lo si sostituisce con un poligono a lati netti; gli angoli nascono dall'incrocio delle rette che seguono ogni lato */
 function straightPoly(pts, nPix){
-  const r = straightCore(pts, nPix);
+  const fits = r => { if(!r) return null; let A = 0; r.forEach((p, i) => { const q = r[(i+1) % r.length]; A += p[0]*q[1] - q[0]*p[1]; }); return Math.abs(A)/2 <= nPix*1.12 ? r : null; };
+  const r = fits(straightCore(pts, nPix));
   if(r) return r;
   /* volumi con prese montate sul bordo: si prova sull'involucro convesso, se la forma è quasi convessa */
   const h = hullPts(pts);
   if(h.length < 3) return null;
   let HA = 0; h.forEach((q, i) => { const n2 = h[(i+1) % h.length]; HA += q[0]*n2[1] - n2[0]*q[1]; }); HA = Math.abs(HA)/2;
-  if(!HA || nPix/HA < 0.72) return null;
+  if(!HA || nPix/HA < 0.85) return null;   /* solo forme quasi convesse: niente mezzelune "chiuse" in un triangolo */
   const dense = [];
   h.forEach((q, i) => { const n2 = h[(i+1) % h.length], L = Math.max(1, Math.round(Math.hypot(n2[0]-q[0], n2[1]-q[1]))); for(let t=0; t<L; t++) dense.push([q[0] + (n2[0]-q[0])*t/L, q[1] + (n2[1]-q[1])*t/L]); });
   return straightCore(dense, HA);
@@ -1001,14 +1002,18 @@ async function samSegment(w, x, y, ts, strict, auto){
   let tr = trace(pick);
   if(!tr || tr.pts.length < 3) return null;
   if(strict && !tr.inside) return null;
-  let st = straightPoly(tr.pts, tr.n);
+  /* lati dritti solo per i volumi e le prese grandi: sulle prese normali la seconda passata ad alta risoluzione
+     segue già bene gli spigoli, e "raddrizzare" una presa tondeggiante o a mezzaluna la trasformava in un poligono
+     che copriva anche il pannello */
+  const bigShape = n => n >= 0.01*N;
+  let st = bigShape(tr.n) ? straightPoly(tr.pts, tr.n) : null;
   /* volume con due facce di luce diversa: la maschera scelta ne prende solo un pezzo frastagliato.
      Se una maschera più grande (fino a 5 volte) contiene il tocco ed è un poligono netto, si usa quella. */
   if(!st && !strict && !auto && (!ts || ts === 1)){
     for(let j = pi + 1; j < ok.length; j++){
       if(ok[j].a > pick.a*5) break;
       const t2 = trace(ok[j]); if(!t2 || !t2.inside) continue;
-      const s2 = straightPoly(t2.pts, t2.n);
+      const s2 = bigShape(t2.n) ? straightPoly(t2.pts, t2.n) : null;
       if(s2){ tr = t2; st = s2; pick = ok[j]; break; }
     }
   }
