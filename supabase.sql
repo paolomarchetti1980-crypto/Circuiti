@@ -53,3 +53,32 @@ create policy "staff legge" on public.editors for select using (public.is_editor
 create policy "gestore aggiunge" on public.editors for insert with check (public.is_manager());
 create policy "gestore modifica" on public.editors for update using (public.is_manager()) with check (public.is_manager());
 create policy "gestore toglie" on public.editors for delete using (public.is_manager() and lower(email) <> lower(auth.jwt() ->> 'email'));
+
+-- ===== Aggiornamento: storico delle pubblicazioni (copia di sicurezza automatica) =====
+-- A ogni Pubblica la versione precedente viene salvata qui; si tengono le ultime 60.
+create table if not exists public.app_state_history (
+  id bigserial primary key,
+  saved_at timestamptz not null default now(),
+  saved_by text,
+  rev bigint,
+  data jsonb not null
+);
+alter table public.app_state_history enable row level security;
+drop policy if exists "gestore legge storico" on public.app_state_history;
+create policy "gestore legge storico" on public.app_state_history for select using (public.is_manager());
+create or replace function public.keep_history() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.app_state_history (saved_by, rev, data) values (auth.jwt() ->> 'email', old.rev, old.data);
+  delete from public.app_state_history where id not in (select id from public.app_state_history order by id desc limit 60);
+  return new;
+end $$;
+drop trigger if exists app_state_keep on public.app_state;
+create trigger app_state_keep before update on public.app_state for each row execute function public.keep_history();
+
+-- Controllo: regole di accesso attive (il risultato si può incollare a Claude)
+select c.relname as tabella, c.relrowsecurity as protezione_attiva,
+  (select string_agg(p.policyname || ' [' || p.cmd || ']', ', ' order by p.policyname) from pg_policies p where p.schemaname = n.nspname and p.tablename = c.relname) as regole
+from pg_class c join pg_namespace n on n.oid = c.relnamespace
+where (n.nspname = 'public' and c.relname in ('app_state', 'editors', 'app_state_history')) or (n.nspname = 'storage' and c.relname = 'objects')
+order by 1;
