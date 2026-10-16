@@ -2572,6 +2572,7 @@ function renderSheet(){
       `</div><h3 class="mhead">Account</h3><div class="list">`+
       (SB && !REAL_EDIT ? row('login', 'Accesso staff', 'per gestore e tracciatori') : '')+
       (SB && REAL_EDIT && ME.role === 'gestore' ? row('staff', 'Staff', 'chi può tracciare e pubblicare') : '')+
+      (SB && REAL_EDIT && ME.role === 'gestore' ? row('hist', 'Versioni precedenti', 'le ultime pubblicazioni, da ripristinare') : '')+
       (SB && REAL_EDIT ? row('setpass', 'Imposta password', 'per entrare senza aspettare l\'email') : '')+
       (SB && REAL_EDIT ? row('logout', 'Esci', ME ? esc(ME.email) + ' · ' + (ME.role === 'gestore' ? 'gestore' : 'tracciatore') : '') : '')+
       `</div>`+
@@ -2594,7 +2595,21 @@ function renderSheet(){
        `<div class="list">${list.map(p => `<div class="wrow"><span>${esc(p.email)}<br><small>${p.role === 'gestore' ? 'gestore' : 'tracciatore'}</small></span>${ME && p.email.toLowerCase() === ME.email.toLowerCase() ? '<small>tu</small>' : `<button class="btn danger" data-act="staffdel" data-email="${esc(p.email)}">${ui.confirm === 'staffdel:' + p.email ? 'Conferma' : 'Togli'}</button>`}</div>`).join('')}</div>`)+
       `<label class="field">Aggiungi tracciatore (email)<input id="semail" type="email" inputmode="email" autocomplete="off"></label>`+
       `<div class="row"><button class="btn primary" data-act="staffadd">Aggiungi</button><button class="btn" data-act="close">Chiudi</button></div>`+
-      `<p class="note">Poi manda il link dell'app alla persona: tocca il nome del muro → <b>Accedi (staff)</b> → <b>Non ho la password: mandami un link</b>; una volta dentro, <b>Imposta password</b>.</p>`;
+      `<p class="note">Poi manda il link dell'app alla persona: menu ⋮ → <b>Accesso staff</b> → <b>Non ho la password: mandami un link</b>; una volta dentro, menu ⋮ → <b>Imposta password</b>.</p>`;
+  } else if(ui.sheet === 'hist'){
+    const list = ui.hist, sel = ui.histSel, info = ui.histInfo;
+    const when = t => { const d = new Date(t); return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) + ' alle ' + d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }); };
+    const who = e => e ? esc(String(e).split('@')[0]) : 'qualcuno';
+    const sum = x => `${x.walls} ${x.walls === 1 ? 'muro' : 'muri'} · ${x.circ} ${x.circ === 1 ? 'circuito' : 'circuiti'} · ${x.sectors} ${x.sectors === 1 ? 'settore' : 'settori'} · ${x.boulders} boulder`;
+    h = `<h2>Versioni precedenti</h2><p class="note" style="margin:0 0 12px">A ogni Pubblica la versione di prima viene messa da parte. Tocca una versione per vedere cosa conteneva e, se serve, ripristinarla. Anche il ripristino si può annullare: la versione attuale finisce qui.</p>`+
+      (list === null ? `<p>Carico…</p>` : list === 'err' ? `<p>Non riesco a leggere le versioni. Hai eseguito in Supabase l'aggiornamento "storico delle pubblicazioni"?</p>` :
+       !list.length ? `<p class="hint">Ancora nessuna versione salvata: compariranno qui dalla prossima pubblicazione.</p>` :
+       `<div class="list">${list.map(v => `<button class="wrow ${v.id === sel ? 'warn' : ''}" data-act="hsel" data-id="${v.id}"><span>${v.rev > 1e12 ? 'Pubblicata il ' + when(v.rev) : 'Versione precedente'}<br><small>sostituita il ${when(v.saved_at)} da ${who(v.saved_by)}</small></span></button>`+
+         (v.id === sel ? `<div class="hinfo">${info === null ? 'Leggo la versione…' : info === 'err' ? 'Non riesco a leggere questa versione.' :
+           `<p style="margin:0 0 4px"><b>Conteneva:</b> ${sum(info)}</p><p style="margin:0 0 10px;color:var(--muted)"><b>Adesso:</b> ${sum(histSum(S.walls))}</p>`+
+           (dirty() ? `<p class="note" style="margin:0 0 10px">Le modifiche non pubblicate su questo telefono andranno perse.</p>` : '')+
+           `<button class="btn ${ui.confirm === 'hrest' ? 'danger' : 'primary'}" data-act="hrest" style="width:100%">${ui.confirm === 'hrest' ? 'Tocca ancora per ripristinare' : 'Ripristina questa versione'}</button>`}</div>` : '')).join('')}</div>`)+
+      `<div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
   } else if(ui.sheet === 'setpass'){
     h = `<h2>Imposta una password</h2><p class="note" style="margin:0 0 12px">Così la prossima volta entri con email e password, senza aspettare l'email.</p>`+
       `<label class="field">Nuova password (almeno 8 caratteri)<input id="npass" type="password" autocomplete="new-password"></label>`+
@@ -2709,6 +2724,43 @@ async function printBlocks(all){
 window.addEventListener('afterprint', () => { const el = $('#print'); if(el) el.innerHTML = ''; });
 
 /* ---------- pubblicazione ---------- */
+/* ---------- versioni precedenti (storico delle pubblicazioni, solo gestore) ---------- */
+function histSum(walls){
+  const ws = (walls || []).filter(w => !w.archived), sec = ws.filter(isSec), circ = ws.filter(w => !isSec(w));
+  return { walls: circ.length, circ: circ.reduce((t, w) => t + (w.circuits || []).length, 0), sectors: sec.length, boulders: sec.reduce((t, w) => t + (w.circuits || []).filter(c => !isOff(c)).length, 0) };
+}
+async function loadHist(){
+  ui.hist = null; ui.histSel = null; ui.histInfo = null; renderSheet();
+  const { data, error } = await SB.from('app_state_history').select('id,saved_at,saved_by,rev').order('id', { ascending: false }).limit(60);
+  ui.hist = error ? 'err' : (data || []);
+  if(ui.sheet === 'hist') renderSheet();
+}
+async function histSelect(id){
+  if(ui.histSel === id){ ui.histSel = null; ui.confirm = null; renderSheet(); return; }
+  ui.histSel = id; ui.histInfo = null; ui.histData = null; ui.confirm = null; renderSheet();
+  const { data, error } = await SB.from('app_state_history').select('data').eq('id', id).maybeSingle();
+  if(ui.histSel !== id) return;
+  if(error || !data || !data.data || !Array.isArray(data.data.walls)){ ui.histInfo = 'err'; }
+  else { ui.histData = data.data; ui.histInfo = histSum(data.data.walls); }
+  if(ui.sheet === 'hist') renderSheet();
+}
+async function histRestore(){
+  if(!ui.histData || ui.publishing) return;
+  if(ui.confirm !== 'hrest'){ ui.confirm = 'hrest'; renderSheet(); return; }
+  ui.confirm = null; ui.publishing = true;
+  busy('Ripristino…');
+  try{
+    const { data: cur } = await SB.from('app_state').select('rev').eq('id', 1).maybeSingle();
+    const rev = Math.max(Date.now(), ((cur && cur.rev) || 0) + 1);
+    const d = Object.assign({}, ui.histData, { rev });
+    const { error } = await SB.from('app_state').upsert({ id: 1, data: d, rev, updated_at: new Date().toISOString() });
+    if(error) throw error;
+    rememberPlace(); location.reload();
+  }catch(e){
+    busyStack.length = 0; renderBusy(); ui.publishing = false;
+    toast('Ripristino non riuscito: ' + ((e && e.message) || 'riprova.'));
+  }
+}
 async function loadStaff(){
   ui.staff = null; renderSheet();
   const { data, error } = await SB.from('editors').select('email,role').order('email');
@@ -2938,7 +2990,7 @@ $('#stage').addEventListener('click', async e => {
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
 const PUBLIC_ACTS = ['csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
-const MGR_ACTS = ['wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
+const MGR_ACTS = ['hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b || b.disabled) return;
   const a = b.dataset.act, w = curWall(), c = curCircuit();
@@ -2996,6 +3048,9 @@ document.addEventListener('click', e => {
     case 'login': ui.loginSent = false; openSheet('login'); break;
     case 'sendlink': sendLoginLink(); break;
     case 'passlogin': passLogin(); break;
+    case 'hist': if(SB && ME && ME.role === 'gestore'){ ui.confirm = null; ui.hist = null; ui.histSel = null; openSheet('hist'); loadHist(); } break;
+    case 'hsel': if(SB && ME && ME.role === 'gestore') histSelect(+b.dataset.id); break;
+    case 'hrest': if(SB && ME && ME.role === 'gestore') histRestore(); break;
     case 'staff': if(SB && ME && ME.role === 'gestore'){ ui.staff = null; ui.confirm = null; openSheet('staff'); loadStaff(); } break;
     case 'staffadd': staffAdd(); break;
     case 'staffdel': staffDel(b.dataset.email); break;
