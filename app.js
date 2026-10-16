@@ -744,6 +744,65 @@ function samWarm(w){
   if(!w || sam.state === 'failed') return;
   samInit().then(ok => { if(ok) samEmbed(w).catch(() => {}); });
 }
+/* ---------- rifinitura: SAM sulla zona della presa ingrandita ----------
+   La foto intera entra in SAM a 1024 px e la maschera esce a 256: su una foto grande ogni "pixel" della maschera
+   copre una decina di pixel veri. Qui la foto si divide in riquadri (lato = 1/3 della foto, sovrapposti a metà),
+   ognuno studiato a 1024 px quando serve, e la presa si ricalcola nel riquadro che la contiene meglio. */
+sam.tiles = new Map();
+function tileGrid(w){ const L = Math.max(w.w, w.h), T = Math.max(384, Math.round(L/3)), st = Math.round(T/2); return { T, st }; }
+async function tileEmbed(w, tx, ty, T){
+  const key = samKey(w) + '|' + tx + ',' + ty + ',' + T;
+  if(sam.tiles.has(key)){ const v = sam.tiles.get(key); sam.tiles.delete(key); sam.tiles.set(key, v); return v.e ? v : v.pending; }
+  const pending = (async () => {
+    const im = await loadImg(w.img), s = 1024 / T;
+    const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 1024;
+    const g = cv.getContext('2d', { willReadFrequently: true });
+    g.fillStyle = '#000'; g.fillRect(0, 0, 1024, 1024);
+    g.drawImage(im, tx, ty, T, T, 0, 0, 1024, 1024);
+    const d = g.getImageData(0, 0, 1024, 1024).data, P = 1024*1024, t = new Float32Array(3*P);
+    for(let j = 0; j < P; j++){ const i = j*4; t[j] = (d[i] - 123.675)/58.395; t[P+j] = (d[i+1] - 116.28)/57.12; t[2*P+j] = (d[i+2] - 103.53)/57.375; }
+    const out = await sam.enc.run({ image: new ort.Tensor('float32', t, [1,3,1024,1024]) });
+    return { e: true, ed: new Float32Array(out.embeddings.data), edims: out.embeddings.dims.slice(), s, tx, ty };
+  })();
+  sam.tiles.set(key, { pending });
+  try{ const r = await pending; sam.tiles.set(key, r); while(sam.tiles.size > 8) sam.tiles.delete(sam.tiles.keys().next().value); return r; }
+  catch(e){ sam.tiles.delete(key); throw e; }
+}
+async function samRefine(w, op, x, y){
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9, A0 = 0;
+  op.forEach((p, i) => { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); const q = op[(i+1) % op.length]; A0 += p[0]*q[1] - q[0]*p[1]; });
+  A0 = Math.abs(A0)/2;
+  const { T, st } = tileGrid(w), bw = x1 - x0, bh = y1 - y0;
+  if(Math.max(bw, bh) > T*0.7 || A0 < 4) return null;   /* prese grandi o volumi: la prima passata basta */
+  /* riquadro della griglia che contiene la presa con più margine */
+  const pos = (a0, a1, L) => { const max = Math.max(0, L - T); let best = 0, bm = -1e9; for(let t = 0; t <= max + st - 1; t += st){ const v = Math.min(t, max), m = Math.min(a0 - v, v + T - a1); if(m > bm){ bm = m; best = v; } } return best; };
+  const tx = pos(x0, x1, w.w), ty = pos(y0, y1, w.h);
+  const E = await tileEmbed(w, tx, ty, T), s = E.s;
+  const px = (x - tx)*s, py = (y - ty)*s, m = 0.12;
+  const box = [(x0 - bw*m - tx)*s, (y0 - bh*m - ty)*s, (x1 + bw*m - tx)*s, (y1 + bh*m - ty)*s];
+  const r = await sam.dec.run({
+    image_embeddings: new ort.Tensor('float32', E.ed.slice(), E.edims),
+    point_coords: new ort.Tensor('float32', new Float32Array([px, py, box[0], box[1], box[2], box[3]]), [1,3,2]),
+    point_labels: new ort.Tensor('float32', new Float32Array([1, 2, 3]), [1,3]),
+    mask_input: new ort.Tensor('float32', new Float32Array(256*256), [1,1,256,256]),
+    has_mask_input: new ort.Tensor('float32', new Float32Array([0]), [1]),
+    orig_im_size: new ort.Tensor('float32', new Float32Array([1024, 1024]), [2])
+  });
+  const md = r.masks.data, iou = r.iou_predictions.data, nm = r.masks.dims[1], N = 1024*1024;
+  let best = null;
+  for(let k = 0; k < nm; k++){
+    let a = 0; const off = k*N; for(let i = 0; i < N; i++) if(md[off+i] > 0) a++;
+    const ap = a/(s*s);   /* area in pixel della foto */
+    if(ap < A0*0.6 || ap > A0*1.6) continue;   /* deve restare la stessa presa */
+    if(!best || iou[k] > best.q) best = { k, q: iou[k] };
+  }
+  if(!best) return null;
+  const mk = new Uint8Array(N), off = best.k*N; for(let i = 0; i < N; i++) mk[i] = md[off+i] > 0 ? 1 : 0;
+  const tr = maskToPoly(mk, 1024, 1024, px, py);
+  if(!tr || tr.pts.length < 8) return null;
+  const k = 1/s, pts = tr.pts.map(p => [tx + (p[0] + 0.5)*k, ty + (p[1] + 0.5)*k]);
+  return rdpPts(smoothClosed(pts, 2), Math.max(0.5, 0.7*k));
+}
 const SDIRS = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
 function maskToPoly(m, W, H, tx, ty){
   /* componente connessa che contiene il tocco (o la più vicina) */
@@ -963,6 +1022,8 @@ async function samSegment(w, x, y, ts, strict, auto){
     /* niente scalini: si ammorbidisce la maschera prima di agganciarla ai bordi e il risultato dopo */
     const sm = smoothClosed(raw, 2);
     op = rdpPts(smoothClosed(EM ? snapContour(sm, EM, k) : sm, 2), EM ? 0.6/EM.es : 0.8*k);
+    /* seconda passata ad alta risoluzione: SAM riguarda solo la zona attorno alla presa, ingrandita */
+    try{ const rf = await samRefine(w, op, x, y); if(rf) op = rf; }catch(e){ console.warn('rifinitura', e); }
   }
   if(op.length < 3) return null;
   const flat = []; op.forEach(p => { flat.push(Math.round(p[0]), Math.round(p[1])); });
