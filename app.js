@@ -780,6 +780,40 @@ function polyIoU(a, b){
   for(let i = 0; i < d.length; i += 4){ const ra = d[i] > 127, gb = d[i+1] > 127; if(ra || gb) U++; if(ra && gb) I++; }
   return U ? I/U : 0;
 }
+/* seconda passata ad alta risoluzione + scelta tra contorno fedele e lati dritti */
+async function refineContour(w, op0, so, x, y){
+  let op = op0, trusted = false;
+  try{
+    const rf = await samRefine(w, op0, x, y);
+    /* la seconda passata deve confermare la stessa forma: se se ne discosta troppo (pezzi di pannello, una faccia sola del volume) si tiene la prima */
+    if(rf && polyIoU(rf, op0) >= 0.85){ op = rf; trusted = true; }
+  }catch(e){ console.warn('rifinitura', e); }
+  /* lati dritti solo se la forma vera è davvero a lati dritti (volumi): le macro tondeggianti tengono il contorno fedele */
+  if(so && (trusted ? polyIoU(so, op) >= 0.93 : polyIoU(so, op0) >= 0.9)) op = so;
+  return op;
+}
+/* rilevamento automatico, alla fine: rifinitura delle prese trovate, raggruppate per zona della foto */
+async function refineAuto(w, list){
+  if(!list.length || sam.state !== 'ready') return;
+  const { T } = tileGrid(w);
+  list.sort((a, b) => (Math.floor(a.y/T) - Math.floor(b.y/T)) || (a.x - b.x));
+  ui.scan.refine = true; ui.scan.i = 0; ui.scan.total = list.length; renderTools();
+  for(const h of list){
+    if(ui.scan.stop) break;
+    const op0 = []; for(let i = 0; i < h.poly.length; i += 2) op0.push([h.poly[i], h.poly[i+1]]);
+    const op = await refineContour(w, op0, h._so || null, h.sx, h.sy);
+    if(op !== op0 && op.length >= 3){
+      h.poly = []; op.forEach(p => h.poly.push(Math.round(p[0]), Math.round(p[1])));
+      let A = 0, cx = 0, cy = 0;
+      for(let i = 0; i < op.length; i++){ const a = op[i], b = op[(i+1) % op.length], c = a[0]*b[1] - b[0]*a[1]; A += c; cx += (a[0]+b[0])*c; cy += (a[1]+b[1])*c; }
+      if(Math.abs(A) > 1){ h.x = cx/(3*A); h.y = cy/(3*A); }
+    }
+    ui.scan.i++;
+    if(ui.scan.i % 2 === 0){ renderTools(); await new Promise(r => setTimeout(r, 0)); }
+    if(ui.scan.i % 40 === 0){ touch(); render(); }
+  }
+  list.forEach(h => { delete h._so; });
+}
 async function samRefine(w, op, x, y){
   let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9, A0 = 0;
   op.forEach((p, i) => { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); const q = op[(i+1) % op.length]; A0 += p[0]*q[1] - q[0]*p[1]; });
@@ -993,7 +1027,7 @@ function rdpIdx(pts, eps){
   }
   return r;
 }
-async function samSegment(w, x, y, ts, strict, auto){
+async function samSegment(w, x, y, ts, strict, auto, defer){
   if(!(await samInit())) return undefined;
   const E = await samEmbed(w);
   const N = E.rw*E.rh;
@@ -1040,7 +1074,7 @@ async function samSegment(w, x, y, ts, strict, auto){
     }
   }
   const k = 1/E.s;
-  let op;   /* contorno nelle coordinate della foto originale */
+  let op, so = null;   /* contorno nelle coordinate della foto originale */
   {
     /* la maschera di SAM è a bassa risoluzione: si aggancia il contorno ai bordi veri della presa nella foto */
     let EM = null; try{ EM = await edgeMap(w); }catch(e){ EM = null; }
@@ -1049,18 +1083,9 @@ async function samSegment(w, x, y, ts, strict, auto){
     const sm = smoothClosed(raw, 2);
     op = rdpPts(smoothClosed(EM ? snapContour(sm, EM, k) : sm, 2), EM ? 0.6/EM.es : 0.8*k);
     /* seconda passata ad alta risoluzione: SAM riguarda solo la zona attorno alla presa, ingrandita */
-    const op0 = op;
-    let trusted = false;
-    try{
-      const rf = await samRefine(w, op, x, y);
-      /* la seconda passata deve confermare la stessa forma: se se ne discosta troppo (pezzi di pannello, una faccia sola del volume) si tiene la prima */
-      if(rf && polyIoU(rf, op0) >= 0.85){ op = rf; trusted = true; }
-    }catch(e){ console.warn('rifinitura', e); }
-    /* lati dritti solo se la forma vera è davvero a lati dritti (volumi): le macro tondeggianti tengono il contorno fedele */
-    if(st){
-      const so = st.map(p => [(p[0] + 0.5)*k, (p[1] + 0.5)*k]);
-      if(trusted ? polyIoU(so, op) >= 0.93 : polyIoU(so, op0) >= 0.9) op = so;
-    }
+    so = st ? st.map(p => [(p[0] + 0.5)*k, (p[1] + 0.5)*k]) : null;
+    /* nel rilevamento automatico la rifinitura si fa alla fine, solo sulle prese accettate (molto più veloce) */
+    if(!defer) op = await refineContour(w, op, so, x, y);
   }
   if(op.length < 3) return null;
   const flat = []; op.forEach(p => { flat.push(Math.round(p[0]), Math.round(p[1])); });
@@ -1071,7 +1096,7 @@ async function samSegment(w, x, y, ts, strict, auto){
   const area = Math.abs(A);
   const solid = Math.abs(A) / (hullAreaFlat(op.flat()) || 1);
   if(strict && solid < 0.6) return null;
-  return { poly: flat, cx, cy, area, solid, score: pick.q, sam: true };
+  return { poly: flat, cx, cy, area, solid, score: pick.q, sam: true, so: defer ? so : undefined };
 }
 /* bordi della foto (intensità del cambio di colore), a risoluzione alta, calcolati una volta per foto */
 const edgeCache = {};
@@ -1311,9 +1336,9 @@ async function samGridPass(w, holds, maxArea, volArea){
     i++; ui.scan.i = i;
     if(!covered(x, y) && !plainPanel(x, y, L/60)){
       let res = null;
-      try{ res = await samSegment(w, x, y, 1, false, true); }catch(e){ res = null; }
+      try{ res = await samSegment(w, x, y, 1, false, true, true); }catch(e){ res = null; }
       if(res && res.area > 60 && res.area < maxArea && res.solid >= 0.45 && inPoly(res.poly, x, y) && autoAccept(w, holds, res, volArea)){
-        holds.push({ id: uid(), poly: res.poly, x: res.cx, y: res.cy, sx: x, sy: y, det: 1 }); ui.scan.found++;
+        holds.push({ id: uid(), poly: res.poly, x: res.cx, y: res.cy, sx: x, sy: y, det: 1, _so: res.so, _new: 1 }); ui.scan.found++;
       }
     }
     if(i % 4 === 0){ renderTools(); await new Promise(r => setTimeout(r, 0)); }
@@ -1331,7 +1356,7 @@ async function samAutoScan(w){
   const inAny = (x, y) => { for(let k = 0; k < holds.length; k++){ const p = holds[k].poly; if(p && polyArea(p) < volArea && inPoly(p, x, y)) return true; } return false; };
   let done = 0;
   await samGridPass(w, holds, maxArea, volArea);
-  if(ui.scan.stop){ const found = ui.scan.found; ui.scan = null; touch(); render(); toast(`Fermato: ${found} nuove prese aggiunte.`); return; }
+  if(ui.scan.stop){ const found = ui.scan.found; holds.forEach(h => { delete h._so; delete h._new; }); ui.scan = null; touch(); render(); toast(`Fermato: ${found} nuove prese aggiunte.`); return; }
   done = ui.scan.i;
   for(let round = 0; round < 4 && !ui.scan.stop; round++){
     const seeds = candSeeds(C);
@@ -1344,10 +1369,10 @@ async function samAutoScan(w){
       if(inAny(X, Y)) ok = true;
       else{
         let res = null;
-        try{ res = await samSegment(w, X, Y, 1, true); }catch(e){ res = null; }
+        try{ res = await samSegment(w, X, Y, 1, true, false, true); }catch(e){ res = null; }
         if(res && res.area > 90 && res.area < maxArea && autoAccept(w, holds, res, volArea)){
           const poly = res.poly;
-          holds.push({ id: uid(), poly, x: res.cx, y: res.cy, sx: X, sy: Y, det: 1 }); ui.scan.found++; ok = true;
+          holds.push({ id: uid(), poly, x: res.cx, y: res.cy, sx: X, sy: Y, det: 1, _so: res.so, _new: 1 }); ui.scan.found++; ok = true;
           let bx0 = 1e9, by0 = 1e9, bx1 = -1, by1 = -1;
           for(let i = 0; i < poly.length; i += 2){ bx0 = Math.min(bx0, poly[i]); bx1 = Math.max(bx1, poly[i]); by0 = Math.min(by0, poly[i+1]); by1 = Math.max(by1, poly[i+1]); }
           candClear(C, Math.floor(bx0*C.S)-1, Math.floor(by0*C.S)-1, Math.ceil(bx1*C.S)+1, Math.ceil(by1*C.S)+1,
@@ -1361,6 +1386,8 @@ async function samAutoScan(w){
       if(done % 60 === 0){ touch(); render(); }
     }
   }
+  if(!ui.scan.stop){ touch(); render(); await refineAuto(w, holds.filter(h => h._new)); }
+  holds.forEach(h => { delete h._so; delete h._new; });
   const stopped = ui.scan.stop, found = ui.scan.found;
   ui.scan = null; touch(); render();
   toast(stopped ? `Fermato: ${found} nuove prese aggiunte (riconoscimento intelligente).` : `Fatto con il riconoscimento intelligente: ${found} nuove prese. Controlla e aggiungi a mano quelle mancanti.`);
@@ -2369,7 +2396,7 @@ function renderTools(){
     const n = (w.holds || []).length;
     if(ui.scan){
       const s = ui.scan, pct = Math.round(100 * s.i / s.total);
-      el.innerHTML = `<p class="hint">${s.prep ? 'Preparo il riconoscimento intelligente…' : `Rilevamento automatico in corso${s.round ? ` (giro ${s.round})` : ''}: ${pct}% — ${s.found} nuove prese trovate finora. Può volerci qualche minuto: puoi fermarlo quando vuoi.`}</p>`+
+      el.innerHTML = `<p class="hint">${s.prep ? 'Preparo il riconoscimento intelligente…' : s.refine ? `Rifinisco i contorni ad alta risoluzione: ${pct}% (${s.i} di ${s.total} prese). Puoi fermarlo quando vuoi: le prese restano, solo meno precise.` : `Rilevamento automatico in corso${s.round ? ` (giro ${s.round})` : ''}: ${pct}% — ${s.found} nuove prese trovate finora. Può volerci qualche minuto: puoi fermarlo quando vuoi.`}</p>`+
         `<button class="btn primary" data-act="stopauto">Ferma</button>`;
       return;
     }
