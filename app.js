@@ -1800,9 +1800,9 @@ function circuitSVG(c, W, alpha, o){
       lv = { n: li, split: levels[li].split, first: levels[li].idx[0] === i, lastSplit: levels[levels.length-1].split };
     }
     const split = !!(lv && lv.split);
-    /* contorni dei passaggi successivi: rientrano di una distanza fissa (poco più di due spessori di linea),
+    /* contorni dei passaggi successivi: rientrano di una distanza fissa (uno spessore e mezzo: le linee colorate restano separate solo dal bordino),
        così restano vicini al primo anche sulle prese grandi e sui volumi */
-    const lvN = lv ? lv.n : gi, inset = lvN > 0 ? lvN*sw*2.6 : 0;
+    const lvN = lv ? lv.n : gi, inset = lvN > 0 ? lvN*sw*1.5 : 0;
     const sc = (pl) => inset ? insetPoly(pl, inset) : pl;
     const rIn = rr0 => Math.max(rr0*0.5, rr0 - inset);
     /* boulder: tacche di partenza attaccate al contorno, come il manico di una lente.
