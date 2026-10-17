@@ -768,16 +768,38 @@ async function tileEmbed(w, tx, ty, T){
   try{ const r = await pending; sam.tiles.set(key, r); while(sam.tiles.size > 8) sam.tiles.delete(sam.tiles.keys().next().value); return r; }
   catch(e){ sam.tiles.delete(key); throw e; }
 }
+/* quanto due contorni coincidono (area comune / area totale), disegnandoli su una piccola tela */
+function polyIoU(a, b){
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  a.concat(b).forEach(p => { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); });
+  const S = 160/Math.max(1, x1 - x0, y1 - y0), W = Math.ceil((x1 - x0)*S) + 2, H = Math.ceil((y1 - y0)*S) + 2;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d', { willReadFrequently: true }); g.globalCompositeOperation = 'lighter';
+  [[a, '#ff0000'], [b, '#00ff00']].forEach(([p, col]) => { g.beginPath(); p.forEach((q, i) => { const X = (q[0] - x0)*S + 1, Y = (q[1] - y0)*S + 1; if(i) g.lineTo(X, Y); else g.moveTo(X, Y); }); g.closePath(); g.fillStyle = col; g.fill(); });
+  const d = g.getImageData(0, 0, W, H).data; let I = 0, U = 0;
+  for(let i = 0; i < d.length; i += 4){ const ra = d[i] > 127, gb = d[i+1] > 127; if(ra || gb) U++; if(ra && gb) I++; }
+  return U ? I/U : 0;
+}
 async function samRefine(w, op, x, y){
   let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9, A0 = 0;
   op.forEach((p, i) => { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); const q = op[(i+1) % op.length]; A0 += p[0]*q[1] - q[0]*p[1]; });
   A0 = Math.abs(A0)/2;
   const { T, st } = tileGrid(w), bw = x1 - x0, bh = y1 - y0;
-  if(Math.max(bw, bh) > T*0.7 || A0 < 4) return null;   /* prese grandi o volumi: la prima passata basta */
-  /* riquadro della griglia che contiene la presa con più margine */
-  const pos = (a0, a1, L) => { const max = Math.max(0, L - T); let best = 0, bm = -1e9; for(let t = 0; t <= max + st - 1; t += st){ const v = Math.min(t, max), m = Math.min(a0 - v, v + T - a1); if(m > bm){ bm = m; best = v; } } return best; };
-  const tx = pos(x0, x1, w.w), ty = pos(y0, y1, w.h);
-  const E = await tileEmbed(w, tx, ty, T), s = E.s;
+  if(A0 < 4) return null;
+  let tx, ty, E;
+  if(Math.max(bw, bh) > T*0.7){
+    /* macro e volumi: un riquadro su misura attorno alla forma (se non è quasi tutta la foto, dove non si guadagna niente) */
+    const T2 = Math.round(Math.max(bw, bh)*1.35);
+    if(T2 >= 0.85*Math.max(w.w, w.h)) return null;
+    tx = Math.round(Math.max(0, Math.min((x0 + x1)/2 - T2/2, w.w - T2))); ty = Math.round(Math.max(0, Math.min((y0 + y1)/2 - T2/2, w.h - T2)));
+    E = await tileEmbed(w, tx, ty, T2);
+  } else {
+    /* riquadro della griglia che contiene la presa con più margine */
+    const pos = (a0, a1, L) => { const max = Math.max(0, L - T); let best = 0, bm = -1e9; for(let t = 0; t <= max + st - 1; t += st){ const v = Math.min(t, max), m = Math.min(a0 - v, v + T - a1); if(m > bm){ bm = m; best = v; } } return best; };
+    tx = pos(x0, x1, w.w); ty = pos(y0, y1, w.h);
+    E = await tileEmbed(w, tx, ty, T);
+  }
+  const s = E.s;
   const px = (x - tx)*s, py = (y - ty)*s, m = 0.12;
   const box = [(x0 - bw*m - tx)*s, (y0 - bh*m - ty)*s, (x1 + bw*m - tx)*s, (y1 + bh*m - ty)*s];
   const r = await sam.dec.run({
@@ -1019,8 +1041,7 @@ async function samSegment(w, x, y, ts, strict, auto){
   }
   const k = 1/E.s;
   let op;   /* contorno nelle coordinate della foto originale */
-  if(st) op = st.map(p => [(p[0] + 0.5)*k, (p[1] + 0.5)*k]);
-  else {
+  {
     /* la maschera di SAM è a bassa risoluzione: si aggancia il contorno ai bordi veri della presa nella foto */
     let EM = null; try{ EM = await edgeMap(w); }catch(e){ EM = null; }
     const raw = tr.pts.map(p => [(p[0] + 0.5)*k, (p[1] + 0.5)*k]);
@@ -1028,7 +1049,18 @@ async function samSegment(w, x, y, ts, strict, auto){
     const sm = smoothClosed(raw, 2);
     op = rdpPts(smoothClosed(EM ? snapContour(sm, EM, k) : sm, 2), EM ? 0.6/EM.es : 0.8*k);
     /* seconda passata ad alta risoluzione: SAM riguarda solo la zona attorno alla presa, ingrandita */
-    try{ const rf = await samRefine(w, op, x, y); if(rf) op = rf; }catch(e){ console.warn('rifinitura', e); }
+    const op0 = op;
+    let trusted = false;
+    try{
+      const rf = await samRefine(w, op, x, y);
+      /* la seconda passata deve confermare la stessa forma: se se ne discosta troppo (pezzi di pannello, una faccia sola del volume) si tiene la prima */
+      if(rf && polyIoU(rf, op0) >= 0.85){ op = rf; trusted = true; }
+    }catch(e){ console.warn('rifinitura', e); }
+    /* lati dritti solo se la forma vera è davvero a lati dritti (volumi): le macro tondeggianti tengono il contorno fedele */
+    if(st){
+      const so = st.map(p => [(p[0] + 0.5)*k, (p[1] + 0.5)*k]);
+      if(trusted ? polyIoU(so, op) >= 0.93 : polyIoU(so, op0) >= 0.9) op = so;
+    }
   }
   if(op.length < 3) return null;
   const flat = []; op.forEach(p => { flat.push(Math.round(p[0]), Math.round(p[1])); });
