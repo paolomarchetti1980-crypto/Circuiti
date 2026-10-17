@@ -1497,19 +1497,25 @@ function catSuspects(w){
   const ar = cat.map(h => polyArea(h.poly));
   /* i contorni disegnati a mano (es. i volumi) sono scelti apposta: non si segnalano, e le prese montate sopra non contano come sovrapposizioni */
   const manual = h => h.det !== 1;
+  /* le prese confermate a mano ("Va bene") non si segnalano più */
+  const okd = h => manual(h) || !!h.ok;
   cat.forEach((h,i) => {
-    if(manual(h)) return;
+    if(okd(h)) return;
     const f = ar[i]/W2, bw = bb[i][2]-bb[i][0], bh = bb[i][3]-bb[i][1];
     if(f < 1.2e-4 || f > 0.06) out.add(i);
     else if(Math.max(bw,bh)/Math.max(1,Math.min(bw,bh)) > 3.6) out.add(i);
     else if(ar[i]/(hullAreaFlat(h.poly) || 1) < 0.62) out.add(i);
   });
   for(let i=0;i<cat.length;i++) for(let j=i+1;j<cat.length;j++){
-    if(manual(cat[i]) || manual(cat[j])) continue;
+    if(manual(cat[i]) || manual(cat[j]) || (okd(cat[i]) && okd(cat[j]))) continue;
     if(bb[i][2] < bb[j][0] || bb[j][2] < bb[i][0] || bb[i][3] < bb[j][1] || bb[j][3] < bb[i][1]) continue;
     /* una presa piccola sopra una grande (presa su volume) è normale */
     if(Math.min(ar[i], ar[j]) < Math.max(ar[i], ar[j])*0.35) continue;
-    if(inPoly(cat[i].poly, cat[j].x, cat[j].y) || inPoly(cat[j].poly, cat[i].x, cat[i].y)){ if(ar[i] >= ar[j]) out.add(i); if(ar[j] >= ar[i]) out.add(j); }
+    if(inPoly(cat[i].poly, cat[j].x, cat[j].y) || inPoly(cat[j].poly, cat[i].x, cat[i].y)){
+      /* se una delle due è confermata, il doppione da controllare è l'altra */
+      if(okd(cat[i])) out.add(j); else if(okd(cat[j])) out.add(i);
+      else { if(ar[i] >= ar[j]) out.add(i); if(ar[j] >= ar[i]) out.add(j); }
+    }
   }
   return out;
 }
@@ -2435,6 +2441,7 @@ function renderTools(){
       h += `<button class="btn" data-act="undel" ${ui.trash.length ? '' : 'disabled'}>Ripristina (${ui.trash.length})</button>`+
            `<button class="btn" data-act="susnext" ${nsus ? '' : 'disabled'}>Sospette (${nsus})</button>`;
     } else {
+      if(cs && catSuspects(w).has(ui.csel)) h += `<div class="susbar"><span>Presa sospetta: il contorno è giusto?</span><button class="btn primary" data-act="susok">Va bene</button><button class="btn danger" data-act="susdel">Elimina</button></div>`;
       h += `<div class="seg"><button data-act="size" data-d="-1" aria-label="Contorno più piccolo" ${cs ? '' : 'disabled'}>Contorno &minus;</button>`+
            `<button data-act="size" data-d="1" aria-label="Contorno più grande" ${cs ? '' : 'disabled'}>Contorno +</button></div>`+
            `<button class="btn" data-act="redraw" ${cs ? '' : 'disabled'}>Ridisegna</button>`+
@@ -3115,7 +3122,7 @@ $('#stage').addEventListener('click', async e => {
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
 const PUBLIC_ACTS = ['csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
-const MGR_ACTS = ['hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
+const MGR_ACTS = ['susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b || b.disabled) return;
   const a = b.dataset.act, w = curWall(), c = curCircuit();
@@ -3132,6 +3139,17 @@ document.addEventListener('click', e => {
     case 'unclrall':
       if(w && ui.cleared && ui.cleared.id === w.id){ w.holds = ui.cleared.holds.concat(w.holds || []); ui.cleared = null; touch(); render(); toast('Prese ripristinate.'); } break;
     case 'undel': if(w && ui.trash.length){ const ch = ui.trash.pop(); (w.holds = w.holds || []).push(ch); ui.csel = w.holds.length - 1; touch(); render(); } break;
+    case 'susok': case 'susdel': {
+      if(!w || ui.csel == null || !w.holds[ui.csel]) break;
+      const cur = w.holds[ui.csel], cy = cur.y, cx = cur.x;
+      if(a === 'susok'){ cur.ok = 1; ui.csel = null; touch(); } else delCat(w, ui.csel);
+      /* si passa subito alla sospetta successiva (in ordine di lettura) */
+      const sus = [...catSuspects(w)].sort((p, q) => (w.holds[p].y - w.holds[q].y) || (w.holds[p].x - w.holds[q].x));
+      const nx = sus.find(i => w.holds[i].y > cy || (w.holds[i].y === cy && w.holds[i].x > cx));
+      ui.csel = sus.length ? (nx != null ? nx : sus[0]) : null;
+      render(); if(ui.csel != null) focusCat(w, w.holds[ui.csel]); else toast('Nessuna presa sospetta rimasta.');
+      break;
+    }
     case 'susnext': {
       if(!w) break;
       const sus = [...catSuspects(w)].sort((a,b) => (w.holds[a].y - w.holds[b].y) || (w.holds[a].x - w.holds[b].x));
