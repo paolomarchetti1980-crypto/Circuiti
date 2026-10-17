@@ -153,8 +153,10 @@ const bLv = () => !ui.home && !ui.full && !(EDIT && S.mode === 'wall' && ui.bLev
 const bGrid = () => bLv() && ui.bLevel === 'sectors' && secWalls().length > 0;
 /* foto d'insieme con tutte le linee: il cliente la vede sempre, lo staff appena entra nel settore (poi tocca un boulder per tracciarlo) */
 /* circuiti visti dal cliente: foto piccola in alto, lo spazio va alla scelta del circuito */
+/* il rilevamento automatico gira anche mentre si guarda altro: blocca solo il muro su cui sta lavorando */
+const scanHere = () => !!(ui.scan && curWall() && ui.scan.wid === curWall().id);
 const cCompact = () => !BO() && !ui.home && !ui.full && !bGrid() && (!EDIT || S.mode === 'view') && !!curWall();
-const bOver = () => BO() && !ui.home && !ui.full && !bGrid() && (bView() || (EDIT && ui.secOver && !ui.scan));
+const bOver = () => BO() && !ui.home && !ui.full && !bGrid() && (bView() || (EDIT && ui.secOver && !scanHere()));
 const todayISO = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); };
 const isOff = c => !!(c && c.dateRemoved && c.dateRemoved <= todayISO());
 const fmtDate = d => { if(!d) return ''; const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d); return m ? (+m[3]) + '/' + (+m[2]) + '/' + m[1].slice(2) : d; };
@@ -237,10 +239,30 @@ if('serviceWorker' in navigator && (location.protocol === 'https:' || location.h
 }
 /* ---------- segnale "sto lavorando" ---------- */
 const busyStack = [];
+/* schermo acceso durante il rilevamento: con lo schermo spento il telefono sospende l'app */
+let wakeLock = null;
+async function scanWake(on){
+  try{
+    if(on && !wakeLock && navigator.wakeLock && document.visibilityState === 'visible'){ wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); }
+    if(!on && wakeLock){ const l = wakeLock; wakeLock = null; await l.release(); }
+  }catch(e){ wakeLock = null; }
+}
+document.addEventListener('visibilitychange', () => { if(ui.scan && document.visibilityState === 'visible') scanWake(true); });
+/* toccando l'avviso del rilevamento si torna al muro su cui sta lavorando */
+document.addEventListener('click', e => {
+  if(!e.target.closest || !e.target.closest('#busy.go') || !ui.scan) return;
+  const sw = S.walls.find(x => x.id === ui.scan.wid); if(!sw) return;
+  ui.section = secOf(sw) === 'boulder' ? 'boulder' : 'circ'; ui.home = false; ui.full = false; ui.sheet = null; renderSheet();
+  S.active = sw.id; ui.bLevel = 'sector'; if(EDIT && isMgr()) S.mode = 'wall'; ui.zoom = 1; saveBUI();
+  try{ history.pushState({ sec: 1 }, ''); }catch(err){} render();
+});
+function scanEnd(){ ui.scan = null; scanWake(false); }
 function renderBusy(){
   const el = document.getElementById('busy'); if(!el) return;
   const top = busyStack[busyStack.length - 1];
-  const label = top ? top.label : (ui.scan ? (ui.scan.prep ? 'Preparo il riconoscimento…' : `Rilevamento automatico: ${Math.round(100 * ui.scan.i / Math.max(1, ui.scan.total))}%`) : '');
+  const sw = ui.scan && !scanHere() ? S.walls.find(x => x.id === ui.scan.wid) : null;
+  const label = top ? top.label : (ui.scan ? (ui.scan.prep ? 'Preparo il riconoscimento…' : `Rilevamento automatico${sw ? ' · ' + sw.name : ''}: ${Math.round(100 * ui.scan.i / Math.max(1, ui.scan.total))}%`) : '');
+  el.classList.toggle('go', !top && !!sw);
   el.hidden = !label;
   if(label) el.querySelector('span').textContent = label;
 }
@@ -1349,14 +1371,14 @@ async function samAutoScan(w){
   const holds = (w.holds = w.holds || []);
   /* prese e volumi grandi fino all'8% della foto: sui muri con macro e volumi le prese grandi sono tante */
   const maxArea = w.w * w.h * 0.08, volArea = w.w * w.h * 0.012;
-  ui.scan = { i: 0, total: 1, found: 0, stop: false, prep: true }; renderTools();
-  try{ await samEmbed(w); }catch(e){ ui.scan = null; toast('Non riesco a preparare il riconoscimento su questa foto.'); render(); return; }
+  ui.scan = { i: 0, total: 1, found: 0, stop: false, prep: true, wid: w.id }; scanWake(true); renderTools();
+  try{ await samEmbed(w); }catch(e){ scanEnd(); toast('Non riesco a preparare il riconoscimento su questa foto.'); render(); return; }
   const C = await samCandidates(w);
   /* le prese grandi (volumi) non "coprono" i punti: sopra ci possono essere altre prese */
   const inAny = (x, y) => { for(let k = 0; k < holds.length; k++){ const p = holds[k].poly; if(p && polyArea(p) < volArea && inPoly(p, x, y)) return true; } return false; };
   let done = 0;
   await samGridPass(w, holds, maxArea, volArea);
-  if(ui.scan.stop){ const found = ui.scan.found; holds.forEach(h => { delete h._so; delete h._new; }); ui.scan = null; touch(); render(); toast(`Fermato: ${found} nuove prese aggiunte.`); return; }
+  if(ui.scan.stop){ const found = ui.scan.found; holds.forEach(h => { delete h._so; delete h._new; }); scanEnd(); touch(); render(); toast(`Fermato: ${found} nuove prese aggiunte.`); return; }
   done = ui.scan.i;
   for(let round = 0; round < 4 && !ui.scan.stop; round++){
     const seeds = candSeeds(C);
@@ -1389,7 +1411,7 @@ async function samAutoScan(w){
   if(!ui.scan.stop){ touch(); render(); await refineAuto(w, holds.filter(h => h._new)); }
   holds.forEach(h => { delete h._so; delete h._new; });
   const stopped = ui.scan.stop, found = ui.scan.found;
-  ui.scan = null; touch(); render();
+  scanEnd(); touch(); render();
   toast(stopped ? `Fermato: ${found} nuove prese aggiunte (riconoscimento intelligente).` : `Fatto con il riconoscimento intelligente: ${found} nuove prese. Controlla e aggiungi a mano quelle mancanti.`);
 }
 async function autoDetectAll(w){
@@ -1402,7 +1424,7 @@ async function autoDetectAll(w){
   const total = cols * rows;
   const holds = (w.holds = w.holds || []);
   const maxArea = w.w * w.h * 0.008;
-  ui.scan = { i: 0, total: total * (useSam ? 1 : 2), found: 0, stop: false };
+  ui.scan = { i: 0, total: total * (useSam ? 1 : 2), found: 0, stop: false, wid: w.id }; scanWake(true);
   renderTools();
   let idx = 0;
   /* due passate: 1) tentativo unico, il piu' severo possibile; 2) solo sui buchi rimasti, piu' permissiva (rischia qualche fusione in cambio di piu' prese) */
@@ -1430,7 +1452,7 @@ async function autoDetectAll(w){
     if(ui.scan.stop) break;
   }
   const stopped = ui.scan.stop, found = ui.scan.found;
-  ui.scan = null;
+  scanEnd();
   touch(); render();
   toast(stopped ? `Fermato: ${found} nuove prese aggiunte (metodo semplice).` : `Fatto con il metodo semplice (il riconoscimento intelligente non è disponibile su questo telefono): ${found} nuove prese.`);
 }
@@ -2400,10 +2422,14 @@ function renderTools(){
   if(!w){ el.innerHTML = ''; return; }
   if(EDIT && S.mode === 'wall'){
     const n = (w.holds || []).length;
-    if(ui.scan){
+    if(scanHere()){
       const s = ui.scan, pct = Math.round(100 * s.i / s.total);
-      el.innerHTML = `<p class="hint">${s.prep ? 'Preparo il riconoscimento intelligente…' : s.refine ? `Rifinisco i contorni ad alta risoluzione: ${pct}% (${s.i} di ${s.total} prese). Puoi fermarlo quando vuoi: le prese restano, solo meno precise.` : `Rilevamento automatico in corso${s.round ? ` (giro ${s.round})` : ''}: ${pct}% — ${s.found} nuove prese trovate finora. Può volerci qualche minuto: puoi fermarlo quando vuoi.`}</p>`+
-        `<button class="btn primary" data-act="stopauto">Ferma</button>`;
+      const txt = `${s.prep ? 'Preparo il riconoscimento intelligente…' : s.refine ? `Rifinisco i contorni ad alta risoluzione: ${pct}% (${s.i} di ${s.total} prese). Puoi fermarlo quando vuoi: le prese restano, solo meno precise.` : `Rilevamento automatico in corso${s.round ? ` (giro ${s.round})` : ''}: ${pct}% — ${s.found} nuove prese trovate finora. Può volerci qualche minuto: puoi fermarlo quando vuoi.`}`;
+      /* si aggiorna solo il testo: il tasto Ferma resta lo stesso e il tocco non si perde */
+      const hp = el.querySelector('.scanhint');
+      if(hp && el.querySelector('[data-act=stopauto]')) hp.textContent = txt;
+      else el.innerHTML = `<p class="hint scanhint">${esc(txt)}</p><button class="btn primary" data-act="stopauto">Ferma</button>`;
+      
       return;
     }
     if(w.locked){
@@ -2430,7 +2456,7 @@ function renderTools(){
       (ui.tool === 'panel' ? `<button class="btn primary" data-act="panelDone">Fine campionamento</button>` : '') +
       `<p class="hint">Riferimento colore pannello: ${panelLine}</p>`+
       `<p class="hint">${samStatus(w)}</p>`+
-      `<button class="btn" data-act="autoall">Rileva tutte le prese</button>`+
+      (ui.scan ? `<button class="btn" disabled>Rilevamento in corso su un altro muro</button>` : `<button class="btn" data-act="autoall">Rileva tutte le prese</button>`)+
       (ui.cleared && ui.cleared.id === w.id ? `<button class="btn" data-act="unclrall">Annulla cancellazione (${ui.cleared.holds.length})</button>` :
         `<button class="btn danger" data-act="clrall" ${n ? '' : 'disabled'}>${ui.confirm === 'clrall' ? `Tocca ancora: cancello ${n} prese` : 'Cancella tutte le prese'}</button>`);
     if(drawing){
@@ -2585,9 +2611,9 @@ function focusCircuit(){
 window.addEventListener('popstate', () => {
   const st = history.state || {};
   if(ui.full){ ui.full = false; ui.zoom = 1; render(); }
-  else if(!ui.scan && EDIT && BO() && ui.bLevel === 'sector' && !ui.secOver && st.sec && !st.ed){ ui.secOver = true; ui.sel = null; ui.zoom = 1; render(); }
-  else if(!ui.scan && ui.bLevel === 'sector' && !st.sec){ ui.bLevel = 'sectors'; ui.zoom = 1; render(); }
-  else if(!ui.scan && !ui.home && !st.grid && !st.sec){ ui.home = true; ui.zoom = 1; render(); }
+  else if(EDIT && BO() && ui.bLevel === 'sector' && !ui.secOver && st.sec && !st.ed){ ui.secOver = true; ui.sel = null; ui.zoom = 1; render(); }
+  else if(ui.bLevel === 'sector' && !st.sec){ ui.bLevel = 'sectors'; ui.zoom = 1; render(); }
+  else if(!ui.home && !st.grid && !st.sec){ ui.home = true; ui.zoom = 1; render(); }
 });
 
 /* ---------- pannelli ---------- */
@@ -3016,6 +3042,7 @@ function setViewAs(v){
 }
 async function publish(){
   if(!EDIT || !SB || ui.publishing || !dirty()) return;
+  if(ui.scan){ toast('Prima aspetta la fine del rilevamento automatico, o fermalo: pubblicando l\'app si ricarica e lo interrompe.'); return; }
   ui.publishing = true; renderPub();
   try{
     await saveNow();
@@ -3039,7 +3066,7 @@ $('#stage').addEventListener('click', async e => {
     if(hit){ if(EDIT && S.mode !== 'view') traceBoulder(w, hit.id); else { w.activeCircuit = hit.id; save(); setFull(true); } }
     return;
   }
-  if(!EDIT || !w || S.mode === 'view' || ui.busy || ui.scan || ui.bline || Date.now() - ui.pinchAt < 350) return;
+  if(!EDIT || !w || S.mode === 'view' || ui.busy || scanHere() || ui.bline || Date.now() - ui.pinchAt < 350) return;
   if(S.mode !== 'wall' && !c) return;
   const r = e.currentTarget.getBoundingClientRect();
   const k = w.w / r.width;
@@ -3129,7 +3156,7 @@ document.addEventListener('click', e => {
   if(!EDIT && !PUBLIC_ACTS.includes(a)) return;
   if(!isMgr() && MGR_ACTS.includes(a)) return;
   switch(a){
-    case 'mode': if(EDIT && !ui.scan && !(b.dataset.v === 'wall' && !isMgr())){ S.mode = b.dataset.v; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; $('#stage').classList.remove('linedraw'); ui.redraw = null; ui.tool = 'detect'; render(); } break;
+    case 'mode': if(EDIT && !scanHere() && !(b.dataset.v === 'wall' && !isMgr())){ S.mode = b.dataset.v; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; $('#stage').classList.remove('linedraw'); ui.redraw = null; ui.tool = 'detect'; render(); } break;
     case 'tool': ui.tool = b.dataset.v; ui.draft = []; ui.redraw = null; render(); break;
     case 'clrall':
       if(!w || !(w.holds || []).length) break;
@@ -3204,7 +3231,7 @@ document.addEventListener('click', e => {
     case 'cropAll': finishCrop(true); break;
     case 'sec': {
       const v = b.dataset.v === 'boulder' ? 'boulder' : 'circ';
-      if(v === ui.section || ui.scan) break;
+      if(v === ui.section) break;
       const prev = curWall(); if(prev) ui.lastSec[ui.section] = prev.id;
       ui.section = v; ui.bLevel = 'sectors'; ui.home = false;
       const l = secWalls(), keep = l.find(x => x.id === ui.lastSec[v]) || l[0];
@@ -3271,9 +3298,8 @@ document.addEventListener('click', e => {
       if(ui.confirm !== 'wdel:' + id){ ui.confirm = 'wdel:' + id; renderSheet(); break; }
       S.walls = S.walls.filter(q => q.id !== id); ui.confirm = null; if(!archWalls().length) ui.sheet = null; touch(); renderSheet(); render(); toast('Eliminato. Ricordati di pubblicare.'); break;
     }
-    case 'opensec': if(EDIT && !ui.scan) S.mode = 'edit'; S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.bLevel = 'sector'; ui.secOver = true; ui.zoom = 1; ui.sel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save(); try{ history.pushState({ sec: 1 }, ''); }catch(e){} render(); $('#box').scrollTop = 0; break;
+    case 'opensec': if(EDIT) S.mode = 'edit'; S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.bLevel = 'sector'; ui.secOver = true; ui.zoom = 1; ui.sel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save(); try{ history.pushState({ sec: 1 }, ''); }catch(e){} render(); $('#box').scrollTop = 0; break;
     case 'bback':
-      if(ui.scan) break;
       if(EDIT && BO() && ui.bLevel === 'sector' && !bGrid() && curWall() && !ui.secOver && S.mode !== 'view'){ if(history.state && history.state.ed){ try{ history.back(); }catch(e){} } ui.secOver = true; ui.sel = null; ui.zoom = 1; }
       else if(ui.bLevel === 'sector' && !bGrid() && curWall()){ if(history.state && history.state.sec){ try{ history.back(); }catch(e){} } ui.bLevel = 'sectors'; }
       else { if(history.state && history.state.grid){ try{ history.back(); }catch(e){} } ui.home = true; ui.bLevel = 'sectors'; }
@@ -3290,7 +3316,7 @@ document.addEventListener('click', e => {
     case 'menu': openSheet('menu'); break;
     case 'viewas': setViewAs(b.dataset.v); break;
     case 'preview': setViewAs(ui.viewAs === 'cliente' ? ME.role : 'cliente'); break;
-    case 'wallmode': if(EDIT && isMgr() && w && !isSec(w) && !ui.scan){ S.mode = 'wall'; ui.bLevel = 'sector'; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.redraw = null; ui.tool = 'detect'; ui.sheet = null; renderSheet(); render(); } break;
+    case 'wallmode': if(EDIT && isMgr() && w && !isSec(w)){ S.mode = 'wall'; ui.bLevel = 'sector'; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.redraw = null; ui.tool = 'detect'; ui.sheet = null; renderSheet(); render(); } break;
     case 'printone': printBlocks(false); break;
     case 'printall': printBlocks(true); break;
     case 'publish': publish(); break;
@@ -3391,7 +3417,7 @@ document.addEventListener('click', e => {
       if(!w.circuits.length && !isSec(w)) w.circuits.push(newCircuit(w));
       w.activeCircuit = w.circuits.length ? w.circuits[0].id : null; ui.sel = null; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
       ui.sheet = null; ui.confirm = null; touch(); render(); renderSheet(); break;
-    case 'pickw': if(ui.scan) break; if(EDIT) S.mode = 'edit'; S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.full = false; ui.sel = null; ui.zoom = 1; ui.move = false; ui.sheet = null; save(); render(); renderSheet(); break;
+    case 'pickw': if(EDIT) S.mode = 'edit'; S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.full = false; ui.sel = null; ui.zoom = 1; ui.move = false; ui.sheet = null; save(); render(); renderSheet(); break;
     case 'delw':
       if(!w || !isMgr()) break;
       if(ui.confirm !== 'delw'){ ui.confirm = 'delw'; renderSheet(); break; }
