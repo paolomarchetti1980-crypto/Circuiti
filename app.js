@@ -3000,6 +3000,13 @@ function mergeWall(b, l, r){
 }
 function mergeWalls(base, local, remote){ return mergeList(base, local, remote, mergeWall); }
 async function publishRemote(){
+  /* prima di scrivere: l'accesso deve essere ancora valido (sui telefoni, con l'app in pausa a lungo, può scadere)
+     e l'email deve risultare nello staff anche per il database */
+  let { data: { session } } = await SB.auth.getSession();
+  if(session && session.expires_at && session.expires_at*1000 < Date.now() + 60000){ try{ const r = await SB.auth.refreshSession(); session = r.data.session; }catch(e){} }
+  if(!session) throw new Error('il tuo accesso è scaduto. Le modifiche restano salvate su questo telefono: dal menu ⋮ → Accesso staff rientra con la tua email, poi premi di nuovo Pubblica.');
+  const { data: okEd } = await SB.rpc('is_editor');
+  if(!okEd) throw new Error(`l'account ${(session.user && session.user.email) || ''} non risulta nello staff per il database. Le modifiche restano salvate su questo telefono: chiedi al gestore di controllare l'email nella lista Staff.`);
   const snap = JSON.parse(JSON.stringify(snapshot()));
   if(!isMgr() && BASE){
     /* il tracciatore porta solo i circuiti: muri, foto e prese restano quelli della versione di partenza */
@@ -3052,7 +3059,8 @@ async function publish(){
   }catch(e){
     busyStack.length = 0; renderBusy();
     ui.publishing = false;
-    toast('Pubblicazione non riuscita: ' + ((e && e.message) || 'riprova.'));
+    const m = (e && e.message) || 'riprova.';
+    toast('Pubblicazione non riuscita: ' + (/row-level security|permission denied/i.test(m) ? 'il database non ti riconosce come staff. Le modifiche restano su questo telefono: chiudi e riapri l\'app e riprova; se succede ancora, avvisa il gestore.' : m), 9000);
     renderPub();
   }
 }
