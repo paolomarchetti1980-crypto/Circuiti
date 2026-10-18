@@ -2147,8 +2147,120 @@ function overviewSVG(w){
   });
   return s + tags;
 }
+
+/* ---------- boulder: prese dello stesso colore della partenza ----------
+   Il colore si legge dalle prese di partenza; nella foto si cercano le zone di quella tinta e ben sature
+   (così il crema non passa per giallo), si scartano quelle già usate da altri boulder e si propongono:
+   il tracciatore tocca quelle del suo blocco, o le aggiunge tutte. */
+function rgbHsv(r, g, b){
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let h = 0;
+  if(d){ if(mx === r) h = ((g - b)/d) % 6; else if(mx === g) h = (b - r)/d + 2; else h = (r - g)/d + 4; h *= 60; if(h < 0) h += 360; }
+  return [h, mx ? d/mx*255 : 0, mx];
+}
+const hueDist = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
+async function colorCands(w, c){
+  const starts = c.holds.filter(h => isStart(h) && h.poly);
+  if(!starts.length) return { err: 'Segna prima la presa di partenza (col suo contorno): il colore lo leggo da lì.' };
+  const im = await loadImg(w.img), f = Math.min(1, 1400/Math.max(w.w, w.h));
+  const W = Math.max(1, Math.round(w.w*f)), H = Math.max(1, Math.round(w.h*f));
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0, W, H);
+  const d = g.getImageData(0, 0, W, H).data, N = W*H;
+  const hue = new Float32Array(N), sat = new Uint8Array(N), val = new Uint8Array(N);
+  for(let i = 0; i < N; i++){ const t = rgbHsv(d[i*4], d[i*4+1], d[i*4+2]); hue[i] = t[0]; sat[i] = t[1]; val[i] = t[2]; }
+  /* colore di riferimento: i pixel colorati dentro le partenze (media circolare della tinta, mediana della saturazione) */
+  let sx = 0, sy = 0; const ss = [];
+  for(const h of starts){
+    const bb = holdBox(h, w.w);
+    for(let y = Math.max(0, Math.floor(bb.y0*f)); y <= Math.min(H-1, Math.ceil(bb.y1*f)); y++) for(let x = Math.max(0, Math.floor(bb.x0*f)); x <= Math.min(W-1, Math.ceil(bb.x1*f)); x++){
+      if(!inPoly(h.poly, (x + 0.5)/f, (y + 0.5)/f)) continue;
+      const i = y*W + x; if(sat[i] < 70 || val[i] < 50) continue;
+      sx += Math.cos(hue[i]*Math.PI/180); sy += Math.sin(hue[i]*Math.PI/180); ss.push(sat[i]);
+    }
+  }
+  if(ss.length < 12) return { err: 'Il colore della partenza è poco acceso (bianco, grigio o nero): per queste prese la ricerca non è affidabile, segnale a mano.' };
+  let refH = Math.atan2(sy, sx)*180/Math.PI; if(refH < 0) refH += 360;
+  ss.sort((a, b) => a - b); const refS = ss[ss.length >> 1];
+  if(refS < 100) return { err: 'Il colore della partenza è poco acceso: per queste prese la ricerca non è affidabile, segnale a mano.' };
+  /* zone già occupate: prese di questo blocco e degli altri boulder in parete */
+  const used = []; w.circuits.forEach(x => { if(x === c || !isOff(x)) x.holds.forEach(h => { if(h.poly) used.push(h.poly); }); });
+  const m = new Uint8Array(N);
+  for(let i = 0; i < N; i++) if(hueDist(hue[i], refH) <= 10 && sat[i] >= 110 && val[i] >= 60) m[i] = 1;
+  /* pulizia: via i puntini isolati, chiusi i piccoli buchi */
+  const morph = (src, r, keep) => { const out = new Uint8Array(N), tmp = new Uint8Array(N);
+    for(let y = 0; y < H; y++){ let run = 0; const row = y*W; const cnt = new Int32Array(W + 1); for(let x = 0; x < W; x++) cnt[x+1] = cnt[x] + src[row + x];
+      for(let x = 0; x < W; x++){ const a = Math.max(0, x - r), b = Math.min(W, x + r + 1), n = cnt[b] - cnt[a]; tmp[row + x] = keep ? (n === b - a ? 1 : 0) : (n > 0 ? 1 : 0); } }
+    for(let x = 0; x < W; x++){ const cnt = new Int32Array(H + 1); for(let y = 0; y < H; y++) cnt[y+1] = cnt[y] + tmp[y*W + x];
+      for(let y = 0; y < H; y++){ const a = Math.max(0, y - r), b = Math.min(H, y + r + 1), n = cnt[b] - cnt[a]; out[y*W + x] = keep ? (n === b - a ? 1 : 0) : (n > 0 ? 1 : 0); } }
+    return out; };
+  let mm = morph(morph(m, 1, true), 1, false);          /* apertura */
+  mm = morph(morph(mm, 3, false), 3, true);             /* chiusura */
+  const lab = new Int32Array(N), comps = [], minA = Math.max(30, 150*f*f*(1932*1932)/(w.w*w.w)), maxA = N*0.05;
+  let nl = 0;
+  for(let i0 = 0; i0 < N; i0++){
+    if(!mm[i0] || lab[i0]) continue;
+    nl++; const st = [i0]; lab[i0] = nl; const px = [];
+    while(st.length){ const p = st.pop(); px.push(p); const x = p % W, y = (p - x)/W;
+      if(x > 0 && mm[p-1] && !lab[p-1]){ lab[p-1] = nl; st.push(p-1); } if(x < W-1 && mm[p+1] && !lab[p+1]){ lab[p+1] = nl; st.push(p+1); }
+      if(y > 0 && mm[p-W] && !lab[p-W]){ lab[p-W] = nl; st.push(p-W); } if(y < H-1 && mm[p+W] && !lab[p+W]){ lab[p+W] = nl; st.push(p+W); } }
+    if(px.length < minA || px.length > maxA) continue;
+    const sv = px.map(p => sat[p]).sort((a, b) => a - b);
+    if(sv[sv.length >> 1] < Math.max(140, 0.65*refS)) continue;   /* tinta giusta ma spenta: crema, sabbia, prese sporche */
+    let cx = 0, cy = 0; px.forEach(p => { cx += p % W; cy += Math.floor(p/W); }); cx /= px.length; cy /= px.length;
+    let best = px[0], bd = 1e18; px.forEach(p => { const dd = (p % W - cx)**2 + (Math.floor(p/W) - cy)**2; if(dd < bd){ bd = dd; best = p; } });
+    const X = (best % W + 0.5)/f, Y = (Math.floor(best/W) + 0.5)/f;
+    if(used.some(p => inPoly(p, X, Y))) continue;
+    comps.push({ X, Y, a: px.length/(f*f), px, W, f });
+  }
+  return { comps, refH, refS };
+}
+/* contorno di una zona di colore: involucro convesso dei suoi pixel (se il riconoscimento intelligente non c'è) */
+function compHull(cp){
+  const pts = cp.px.map(p => [(p % cp.W + 0.5)/cp.f, (Math.floor(p/cp.W) + 0.5)/cp.f]);
+  return hullPts(pts).flatMap(q => [Math.round(q[0]), Math.round(q[1])]);
+}
+async function findColor(w, c){
+  if(!w || !c || ui.cand) return;
+  const done = busy('Cerco le prese di questo colore…');
+  try{
+    await nextPaint();
+    const r = await colorCands(w, c);
+    if(r.err){ toast(r.err, 7000); return; }
+    const list = [];
+    const useSam = sam.state !== 'failed' && await samInit();
+    for(const cp of r.comps){
+      let poly = null, so = null;
+      if(useSam){ try{ const s2 = await samSegment(w, cp.X, cp.Y, 1, false, false, true); if(s2 && inPoly(s2.poly, cp.X, cp.Y) && s2.area < cp.a*4 && s2.area > cp.a*0.3){ poly = s2.poly; so = s2.so; } }catch(e){} }
+      if(!poly) poly = compHull(cp);
+      if(poly.length < 6) continue;
+      /* niente doppioni: due zone della stessa presa danno lo stesso contorno */
+      if(list.some(q => inPoly(q.poly, cp.X, cp.Y))) continue;
+      list.push({ x: cp.X, y: cp.Y, poly, so });
+    }
+    if(!list.length){ toast('Non ho trovato altre prese di questo colore.'); return; }
+    ui.cand = { cid: c.id, list };   /* le istruzioni sono già nel suggerimento sopra i tasti */
+  } finally { done(); render(); }
+}
+/* aggiunge una presa proposta al blocco; il contorno si rifinisce ad alta risoluzione in sottofondo */
+function addCand(w, c, k){
+  const q = ui.cand.list[k]; if(!q) return;
+  ui.cand.list.splice(k, 1); if(!ui.cand.list.length) ui.cand = null;
+  let A = 0, cx = 0, cy = 0; const p = q.poly;
+  for(let i = 0, n = p.length/2; i < n; i++){ const j = (i+1) % n, cc = p[2*i]*p[2*j+1] - p[2*j]*p[2*i+1]; A += cc; cx += (p[2*i] + p[2*j])*cc; cy += (p[2*i+1] + p[2*j+1])*cc; }
+  const h = { x: Math.abs(A) > 1 ? cx/(3*A) : q.x, y: Math.abs(A) > 1 ? cy/(3*A) : q.y, sx: q.x, sy: q.y, r: clamp(Math.sqrt(Math.abs(A)/2/Math.PI)/w.w, 0.012, 0.06), role: 'hold', ts: 1, poly: p.slice() };
+  c.holds.push(h);
+  if(sam.state === 'ready'){
+    candRefine = candRefine.then(async () => {
+      const op0 = []; for(let i = 0; i < h.poly.length; i += 2) op0.push([h.poly[i], h.poly[i+1]]);
+      const op = await refineContour(w, op0, q.so || null, q.x, q.y);
+      if(op !== op0 && op.length >= 3 && c.holds.includes(h)){ h.poly = []; op.forEach(t => h.poly.push(Math.round(t[0]), Math.round(t[1]))); touch(); render(); }
+    }).catch(() => {});
+  }
+}
+let candRefine = Promise.resolve();
 function traceBoulder(w, id){
-  w.activeCircuit = id; ui.secOver = false; ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.bline = false; ui.zoom = 1;
+  ui.cand = null; w.activeCircuit = id; ui.secOver = false; ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.bline = false; ui.zoom = 1;
   ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
   try{ history.pushState({ sec: 1, ed: 1 }, ''); }catch(e){}
   save(); render();
@@ -2223,6 +2335,8 @@ function overlay(w, o){
   if(o.others) visibleCircuits(w).forEach(c => { if(c !== act) s += circuitSVG(c, w.w, 0.28, {numbers:false, lines:false, boulder:bo, H: w.h, mk}); });
   if(o.dim && act && act.holds.length){
     let d = `M0,0H${w.w}V${w.h}H0Z`;
+    const cands = o.edit && bo && ui.cand && ui.cand.cid === act.id ? ui.cand.list : [];
+    cands.forEach(q => { d += polyPath(q.poly); });
     act.holds.forEach(h => {
       if(h.poly) d += polyPath(h.poly);
       else { const r = h.r*w.w; d += `M${h.x-r},${h.y}a${r},${r} 0 1,0 ${2*r},0a${r},${r} 0 1,0 ${-2*r},0Z`; }
@@ -2232,6 +2346,11 @@ function overlay(w, o){
   if(act && bo) s += lineSVG(act.line || autoLine(act, w), w.w, colOf(act), act);
   if(bo && ui.bline && ui.lineDraft.length > 1) s += lineSVG(ui.lineDraft, w.w, '#ff3b7a');
   if(act) s += circuitSVG(act, w.w, 1, Object.assign({}, o, { H: w.h, obst: w.holds || [], busy: busyMap(w), mk }));
+  if(o.edit && bo && act && ui.cand && ui.cand.cid === act.id){
+    const t = Math.max(2, w.w*0.0026);
+    ui.cand.list.forEach(q => { const dd = polyPath(q.poly);
+      s += `<path d="${dd}" fill="${colOf(act)}" fill-opacity=".12" stroke="#000" stroke-opacity=".55" stroke-width="${t*2.4}" stroke-linejoin="round"/><path d="${dd}" fill="none" stroke="#fff" stroke-width="${t}" stroke-dasharray="${t*3} ${t*2.2}" stroke-linejoin="round"/>`; });
+  }
   if(o.edit) s += draftSVG(w);
   if(o.edit && act && ui.sel != null && act.holds[ui.sel]){
     const bb = holdBox(act.holds[ui.sel], w.w), pad = w.w*0.012, t = Math.max(2, w.w*0.003);
@@ -2533,10 +2652,14 @@ function renderTools(){
   hint += sec ? ': ne rilevo il contorno.' : '.';
   if(sec && ui.nextRole === 'start') hint = `<!--s-->Punto di partenza: tocca la presa vicino al bordo, dove va il segno. Da 1 a 4 segni (mani e piedi), anche tutti sulla stessa presa${c ? ` · segnati ${startMarks(c)}/4` : ''}. Poi passa a Presa.`;
   if(!first && !hint.startsWith('<!--s-->')) hint += ' Tocca una presa già segnata per modificarla.';
-  if(sec) hint += ` <span style="opacity:.75">${samStatus(w)}</span>`;
+  const candOn = sec && c && ui.cand && ui.cand.cid === c.id;
+  if(candOn) hint = `${ui.cand.list.length} prese proposte (tratteggiate): tocca quelle del blocco per aggiungerle, oppure aggiungile tutte e togli poi quelle che non c'entrano.`;
+  if(sec && !candOn) hint += ` <span style="opacity:.75">${samStatus(w)}</span>`;
   el.innerHTML = `<p class="hint">${hint}</p>`+
     `<div class="trow">${roles}${hands}</div>`+
     `<div class="trow">`+
+    (candOn ? `<button class="btn primary" data-act="candall">Aggiungi tutte (${ui.cand.list.length})</button><button class="btn" data-act="candno">Chiudi proposte</button>` :
+      sec && c && c.holds.some(h => isStart(h) && h.poly) ? `<button class="btn" data-act="candfind">Trova prese di questo colore</button>` : '')+
     (sec ? `<button class="btn" data-act="bdraw" ${c ? '' : 'disabled'}>Disegna a mano</button>` : '')+
     (sec ? `<button class="btn" data-act="bline" ${c ? '' : 'disabled'}>${c && c.line ? 'Rifai linea' : 'Linea'}</button>` : '')+
     (first ? '' : `<button class="btn" data-act="undo">Annulla ultima</button>`)+
@@ -3127,6 +3250,10 @@ $('#stage').addEventListener('click', async e => {
     applySeg(h, await detect(w, x, y, h.ts || 1), x, y, w);
     ui.move = false; ui.busy = false; touch(); render(); return;
   }
+  if(isSec(w) && ui.cand && ui.cand.cid === c.id && ui.sel == null){
+    const k = ui.cand.list.findIndex(q => inPoly(q.poly, x, y));
+    if(k >= 0){ addCand(w, c, k); ui.nextRole = 'hold'; touch(); render(); return; }
+  }
   const hit = hitIndex(c, w.w, x, y, ctol);
   if(hit >= 0 && isSec(w) && ui.nextRole === 'start' && ui.sel == null){ addMark(c, c.holds[hit], x, y); return; }
   if(hit >= 0){ ui.sel = ui.sel === hit ? null : hit; ui.move = false; render(); return; }
@@ -3194,6 +3321,9 @@ document.addEventListener('click', e => {
       ui.csel = sus[(at + 1) % sus.length];
       render(); focusCat(w, w.holds[ui.csel]); break;
     }
+    case 'candfind': if(w && c && isSec(w)) findColor(w, c); break;
+    case 'candall': if(w && c && ui.cand && ui.cand.cid === c.id){ const n = ui.cand.list.length; while(ui.cand && ui.cand.list.length) addCand(w, c, 0); ui.nextRole = 'hold'; touch(); render(); toast(`${n} prese aggiunte. Togli quelle che non sono del blocco (toccala → Elimina) e segna il Top.`); } break;
+    case 'candno': ui.cand = null; render(); break;
     case 'closeDraw': if(w) finishDraw(w); break;
     case 'undoPt': ui.draft.pop(); render(); break;
     case 'cancelDraw': ui.draft = []; ui.redraw = null; render(); break;
