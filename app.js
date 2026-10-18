@@ -273,9 +273,9 @@ function busy(label){
 /* lascia al telefono il tempo di disegnare il segnale prima di un calcolo pesante */
 const nextPaint = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 30)));
 let toastTimer;
-function toast(msg){
+function toast(msg, ms){
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 4500);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, ms || 4500);
 }
 
 /* ---------- foto ---------- */
@@ -2728,7 +2728,8 @@ function renderSheet(){
       (canInstall() ? row('install', "Installa l'app", 'sulla schermata Home') : '')+
       (REAL_EDIT && ME.role === 'gestore' ? (ui.viewAs === 'tracciatore' ? row('viewas" data-v="gestore', 'Torna gestore', 'stai vedendo l\'app come un tracciatore') : row('viewas" data-v="tracciatore', 'Vedi come tracciatore', 'per controllare cosa può fare lo staff')) : '')+
       `</div><h3 class="mhead">Account</h3><div class="list">`+
-      (SB && !REAL_EDIT ? row('login', 'Accesso staff', 'per gestore e tracciatori') : '')+
+      (SB && !REAL_EDIT ? row('login', 'Accesso staff', ui.authEmail ? 'sei entrato come ' + esc(ui.authEmail) + ', che non è nello staff' : 'per gestore e tracciatori') : '')+
+      (SB && !REAL_EDIT && ui.authEmail ? row('logout', 'Esci', esc(ui.authEmail)) : '')+
       (SB && REAL_EDIT && ME.role === 'gestore' ? row('staff', 'Staff', 'chi può tracciare e pubblicare') : '')+
       (SB && REAL_EDIT && ME.role === 'gestore' ? row('hist', 'Versioni precedenti', 'le ultime pubblicazioni, da ripristinare') : '')+
       (SB && REAL_EDIT ? row('setpass', 'Imposta password', 'per entrare senza aspettare l\'email') : '')+
@@ -3646,7 +3647,11 @@ render();
           try{ const r = await SB.rpc('my_role'); if(r && r.data) role = r.data; }catch(e){}
           ME = { email: (session.user && session.user.email) || '', role };
         }
-        else toast('Questo account non ha i permessi di modifica.');
+        else {
+          /* accesso riuscito ma l'email non è nella lista Staff: si dice quale email, così il gestore può controllarla */
+          ui.authEmail = (session.user && session.user.email) || '';
+          toast(`Sei entrato come ${ui.authEmail}, ma questa email non è nello staff. Chiedi al gestore di aggiungere esattamente questo indirizzo (menu ⋮ → Staff), poi riapri l'app.`, 9000);
+        }
       }
     }
   }catch(e){ EDIT = false; }
