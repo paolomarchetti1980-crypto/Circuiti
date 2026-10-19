@@ -303,7 +303,8 @@ const loadImg1 = src => new Promise((res,rej) => { const i = new Image(); if(!/^
 const loadImg = src => loadImg1(src).catch(e => /^data:/.test(src) ? Promise.reject(e) : loadImg1(src + (src.includes('?') ? '&' : '?') + 'px=1'));
 function newCircuit(w){
   if(isSec(w)){
-    let setter = ''; try{ setter = localStorage.getItem('boulder-setter') || ''; }catch(e){}
+    /* il nome dato dal gestore nella lista Staff vale per tutti i telefoni; poi l'ultimo scritto a mano su questo telefono */
+    let setter = (ME && ME.name) || ''; if(!setter){ try{ setter = localStorage.getItem('boulder-setter') || ''; }catch(e){} }
     if(!setter && ME && ME.email) setter = ME.email.split('@')[0];
     return { id: uid(), name: '', color: NODIFF, holds: [], dateSet: todayISO(), ...(setter ? { setter } : {}) };
   }
@@ -2931,7 +2932,8 @@ function renderSheet(){
       `</div>`+
       `<div class="f2"><label class="field">Soprannome (facoltativo)<span style="display:flex;gap:6px;margin-top:4px"><input id="cname" value="${esc(c.name || '')}" maxlength="40" style="margin-top:0;flex:1;min-width:0"><button type="button" class="btn" data-act="cgen" aria-label="Proponi un soprannome" title="Proponi un soprannome" style="flex:none;font-size:18px;padding:6px 10px">🎲</button></span></label>`+
       `<label class="field">Stile<select id="cstyle">${STYLES.map(styleOpt).join('')}</select></label></div>`+
-      `<label class="field">Tracciatore<input id="bsetter" value="${esc(c.setter || '')}" maxlength="40" autocomplete="off"></label>`+
+      `<label class="field">Tracciatore<input id="bsetter" value="${esc(c.setter || '')}" maxlength="40" autocomplete="off" list="bsetlist"></label>`+
+      `<datalist id="bsetlist">${(ui.staffNames || []).map(n => `<option value="${esc(n)}">`).join('')}</datalist>`+
       `<div class="f2"><label class="field">Montato il<input id="bdset" type="date" value="${esc(c.dateSet || '')}"></label>`+
       `<label class="field">Smontato il<input id="bdrem" type="date" value="${esc(c.dateRemoved || '')}"></label></div>`+
       `<p class="field" style="margin-bottom:0">Move, stile e particolarità</p>`+
@@ -3016,8 +3018,10 @@ function renderSheet(){
     const list = ui.staff;
     h = `<h2>Staff</h2><p class="note" style="margin:0 0 12px">Chi è in questo elenco può creare e modificare muri e circuiti e pubblicarli. Solo il gestore gestisce l'elenco.</p>`+
       (list === null ? `<p>Carico…</p>` : list === 'err' ? `<p>Non riesco a leggere l'elenco. Hai eseguito l'ultimo aggiornamento del database?</p>` :
-       `<div class="list">${list.map(p => `<div class="wrow"><span>${esc(p.email)}<br><small>${p.role === 'gestore' ? 'gestore' : 'tracciatore'}</small></span>${ME && p.email.toLowerCase() === ME.email.toLowerCase() ? '<small>tu</small>' : `<button class="btn danger" data-act="staffdel" data-email="${esc(p.email)}">${ui.confirm === 'staffdel:' + p.email ? 'Conferma' : 'Togli'}</button>`}</div>`).join('')}</div>`)+
-      `<label class="field">Aggiungi tracciatore (email)<input id="semail" type="email" inputmode="email" autocomplete="off"></label>`+
+       `<div class="list">${list.map(p => `<div class="wrow"><span style="flex:1;min-width:0"><input class="sname" data-email="${esc(p.email)}" value="${esc(p.name || '')}" placeholder="Nome e cognome" maxlength="40"><small>${esc(p.email)} · ${p.role === 'gestore' ? 'gestore' : 'tracciatore'}</small></span>${ME && p.email.toLowerCase() === ME.email.toLowerCase() ? '<small>tu</small>' : `<button class="btn danger" data-act="staffdel" data-email="${esc(p.email)}">${ui.confirm === 'staffdel:' + p.email ? 'Conferma' : 'Togli'}</button>`}</div>`).join('')}</div>`)+
+      `<p class="note" style="margin:8px 0 0">Il nome compare come tracciatore sui boulder nuovi di quella persona.</p>`+
+      `<label class="field">Aggiungi tracciatore: email<input id="semail" type="email" inputmode="email" autocomplete="off"></label>`+
+      `<label class="field">Nome e cognome<input id="sname" maxlength="40" autocomplete="off"></label>`+
       `<div class="row"><button class="btn primary" data-act="staffadd">Aggiungi</button><button class="btn" data-act="close">Chiudi</button></div>`+
       `<p class="note">Poi manda il link dell'app alla persona: menu ⋮ → <b>Accesso staff</b> → <b>Non ho la password: mandami un link</b>; una volta dentro, menu ⋮ → <b>Imposta password</b>.</p>`;
   } else if(ui.sheet === 'fbnew'){
@@ -3242,16 +3246,26 @@ async function histRestore(){
 }
 async function loadStaff(){
   ui.staff = null; renderSheet();
-  const { data, error } = await SB.from('editors').select('email,role').order('email');
+  const { data, error } = await SB.from('editors').select('email,role,name').order('email');
   ui.staff = error ? 'err' : (data || []);
   if(ui.sheet === 'staff') renderSheet();
 }
 async function staffAdd(){
   const inp = document.getElementById('semail'), email = ((inp && inp.value) || '').trim().toLowerCase();
   if(!/^\S+@\S+\.\S+$/.test(email)){ toast('Scrivi un\'email valida.'); return; }
-  const { error } = await SB.from('editors').insert({ email, role: 'tracciatore' });
+  const ni = document.getElementById('sname'), name = ((ni && ni.value) || '').trim().slice(0, 40);
+  const { error } = await SB.from('editors').insert({ email, role: 'tracciatore', ...(name ? { name } : {}) });
   if(error){ toast(/duplicate/i.test(error.message || '') ? 'È già nello staff.' : 'Non riuscito: ' + error.message); return; }
-  toast(email + ' aggiunto allo staff.'); loadStaff();
+  toast((name || email) + ' aggiunto allo staff.'); if(name) ui.staffNames = [...new Set([...(ui.staffNames || []), name])].sort(); loadStaff();
+}
+async function staffName(email, name){
+  name = (name || '').trim().slice(0, 40);
+  const { error } = await SB.from('editors').update({ name: name || null }).eq('email', email);
+  if(error){ toast('Nome non salvato: ' + error.message); return; }
+  const p = Array.isArray(ui.staff) && ui.staff.find(x => x.email === email); if(p) p.name = name;
+  if(ME && ME.email.toLowerCase() === email.toLowerCase()) ME.name = name || undefined;
+  ui.staffNames = (Array.isArray(ui.staff) ? ui.staff : []).map(x => (x.name || '').trim()).filter(Boolean).sort();
+  toast('Nome salvato: i nuovi boulder di questa persona useranno "' + (name || email.split('@')[0]) + '".');
 }
 async function staffDel(email){
   if(ui.confirm !== 'staffdel:' + email){ ui.confirm = 'staffdel:' + email; renderSheet(); return; }
@@ -3890,6 +3904,7 @@ async function finishCrop0(cr){
   touch(); render(); renderSheet();
 }
 document.addEventListener('change', e => { if(e.target && e.target.matches && e.target.matches('input[data-pick]')) onFile(e); });
+document.addEventListener('change', e => { const t = e.target; if(t && t.classList && t.classList.contains('sname') && SB && ME && ME.role === 'gestore' && t.value.trim() !== ((Array.isArray(ui.staff) && (ui.staff.find(x => x.email === t.dataset.email) || {}).name) || '')) staffName(t.dataset.email, t.value); });
 /* zoom a due dita (e ctrl+rotella su computer), centrato sul punto tra le dita */
 function applyZoom(nz, fx, fy){
   const w = curWall(); if(!w) return;
@@ -4024,6 +4039,9 @@ render();
           let role = 'tracciatore';
           try{ const r = await SB.rpc('my_role'); if(r && r.data) role = r.data; }catch(e){}
           ME = { email: (session.user && session.user.email) || '', role };
+          try{ const { data: st } = await SB.from('editors').select('email,name');
+            if(Array.isArray(st)){ const me = st.find(x => (x.email || '').toLowerCase() === ME.email.toLowerCase()); if(me && me.name) ME.name = me.name;
+              ui.staffNames = st.map(x => (x.name || '').trim()).filter(Boolean).sort(); } }catch(e){}
         }
         else {
           /* accesso riuscito ma l'email non è nella lista Staff: si dice quale email, così il gestore può controllarla */

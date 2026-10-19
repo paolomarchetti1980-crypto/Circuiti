@@ -133,3 +133,7 @@ begin
 end $$;
 drop trigger if exists feedback_notify on public.feedback;
 create trigger feedback_notify after insert on public.feedback for each row execute function public.notify_feedback();
+
+-- ===== Aggiornamento: nome delle persone dello staff =====
+-- Il nome compare come tracciatore sui boulder nuovi di quella persona; il gestore lo modifica dalla lista Staff.
+alter table public.editors add column if not exists name text;
