@@ -2958,7 +2958,7 @@ function renderSheet(){
       (SB && !REAL_EDIT && ui.authEmail ? row('logout', 'Esci', esc(ui.authEmail)) : '')+
       (SB && REAL_EDIT && ME.role === 'gestore' ? row('staff', 'Staff', 'chi può tracciare e pubblicare') : '')+
       (SB && REAL_EDIT && ME.role === 'gestore' ? row('hist', 'Versioni precedenti', 'le ultime pubblicazioni, da ripristinare') : '')+
-      (SB && REAL_EDIT ? row('setpass', 'Imposta password', 'per entrare senza aspettare l\'email') : '')+
+      (SB && (REAL_EDIT || ui.authEmail) ? row('setpass', 'Imposta password', 'per entrare senza aspettare l\'email') : '')+
       (SB && REAL_EDIT ? row('logout', 'Esci', ME ? esc(ME.email) + ' · ' + (ME.role === 'gestore' ? 'gestore' : 'tracciatore') : '') : '')+
       `</div>`+
       `<div class="row"><button class="btn primary" data-act="close">Chiudi</button></div>`;
@@ -2969,10 +2969,11 @@ function renderSheet(){
       `<div class="row"><button class="btn primary" data-act="close">Ok</button></div>`;
   } else if(ui.sheet === 'login'){
     h = `<h2>Accesso staff</h2>`+
-      (ui.loginSent ? `<p>Ti ho mandato un'email con un link. Aprila da questo telefono e tocca il link: tornerai qui già dentro.</p>` :
+      (ui.loginSent ? `<p>Ti ho mandato un'email a <b>${esc(ui.loginEmail || '')}</b>. Se contiene un <b>codice</b>, scrivilo qui sotto: è il modo più sicuro, perché il link a volte si apre in un altro browser e l'accesso resta lì.</p>`+
+        `<label class="field">Codice dell'email<input id="lcode" inputmode="numeric" autocomplete="one-time-code" maxlength="10" style="letter-spacing:4px;font-size:20px"></label>` :
       `<label class="field">La tua email<input id="lemail" type="email" autocomplete="email" inputmode="email" value="${esc(ui.loginEmail || '')}"></label>`+
       `<label class="field">Password<input id="lpass" type="password" autocomplete="current-password"></label>`)+
-      `<div class="row">${ui.loginSent ? '' : `<button class="btn primary" data-act="passlogin">Entra</button><button class="btn" data-act="sendlink">Non ho la password: mandami un link</button>`}<button class="btn" data-act="close">Chiudi</button></div>`;
+      `<div class="row">${ui.loginSent ? `<button class="btn primary" data-act="codelogin">Entra con il codice</button><button class="btn" data-act="loginback">Indietro</button>` : `<button class="btn primary" data-act="passlogin">Entra</button><button class="btn" data-act="sendlink">Non ho la password: mandami un link</button>`}<button class="btn" data-act="close">Chiudi</button></div>`;
   } else if(ui.sheet === 'staff'){
     const list = ui.staff;
     h = `<h2>Staff</h2><p class="note" style="margin:0 0 12px">Chi è in questo elenco può creare e modificare muri e circuiti e pubblicarli. Solo il gestore gestisce l'elenco.</p>`+
@@ -3244,6 +3245,15 @@ async function sendLoginLink(){
   if(error){ toast('Invio non riuscito: ' + (error.message || 'riprova tra poco.')); return; }
   ui.loginSent = true; renderSheet();
 }
+/* accesso con il codice dell'email: la sessione nasce dentro l'app che si sta usando (il link invece si apre spesso nel browser di Gmail) */
+async function codeLogin(){
+  const inp = document.getElementById('lcode'), token = ((inp && inp.value) || '').replace(/\D/g, ''), email = (ui.loginEmail || '').trim();
+  if(!SB || token.length < 6 || !email){ toast('Scrivi il codice che trovi nell\'email.'); return; }
+  let { error } = await SB.auth.verifyOtp({ email, token, type: 'email' });
+  if(error){ const r = await SB.auth.verifyOtp({ email, token, type: 'signup' }); error = r.error; }
+  if(error){ toast(/expired|invalid/i.test(error.message || '') ? 'Codice non valido o scaduto. Controlla di aver usato l\'ultima email ricevuta.' : 'Accesso non riuscito: ' + error.message); return; }
+  rememberPlace(); location.reload();
+}
 /* carica le foto nuove nell'archivio e salva lo stato nel database; poi ricarica la pagina pubblicata */
 
 /* ---------- unione con le pubblicazioni degli altri ----------
@@ -3439,7 +3449,7 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
+const PUBLIC_ACTS = ['fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
 const MGR_ACTS = ['fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
@@ -3513,6 +3523,8 @@ document.addEventListener('click', e => {
     case 'login': ui.loginSent = false; openSheet('login'); break;
     case 'sendlink': sendLoginLink(); break;
     case 'passlogin': passLogin(); break;
+    case 'codelogin': codeLogin(); break;
+    case 'loginback': ui.loginSent = false; renderSheet(); break;
     case 'fbnew': openSheet('fbnew'); setTimeout(() => { const t = document.getElementById('fbtext'); if(t) t.focus(); }, 50); break;
     case 'fbsend': {
       const t = document.getElementById('fbtext'), msg = ((t && t.value) || '').trim();
