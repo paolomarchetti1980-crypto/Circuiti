@@ -2841,6 +2841,43 @@ window.addEventListener('popstate', () => {
 });
 
 /* ---------- pannelli ---------- */
+/* ---------- pannello settori (gestore): età, gradi, chi traccia ---------- */
+const DASH_OLD = 42, DASH_MID = 28;   /* giorni: oltre 6 settimane "da rinnovare", oltre 4 "da tenere d'occhio" */
+function ageDays(d){ if(!d) return null; const t = Date.parse(d + 'T12:00:00'); return isNaN(t) ? null : Math.max(0, Math.round((Date.now() - t) / 864e5)); }
+function dashHtml(){
+  const secs = S.walls.filter(w => isSec(w) && !w.archived);
+  const t = todayISO(), lim = new Date(Date.now() + 7*864e5).toISOString().slice(0,10);
+  const all = [], rows = secs.map(w => {
+    const on = w.circuits.filter(c => !isOff(c)); on.forEach(c => all.push(c));
+    const ages = on.map(c => ageDays(c.dateSet)).filter(a => a !== null);
+    const avg = ages.length ? Math.round(ages.reduce((a, b) => a + b, 0) / ages.length) : null, max = ages.length ? Math.max(...ages) : null;
+    const due = on.filter(c => c.dateRemoved && c.dateRemoved >= t && c.dateRemoved <= lim).length;
+    return { w, on, avg, max, due, miss: DIFFS.filter(d => !on.some(c => c.diff === d[0])), noGrade: on.filter(c => !c.diff).length };
+  }).sort((a, b) => (b.avg ?? -1) - (a.avg ?? -1));
+  const bar = list => { const n = list.length || 1; return `<div class="dbar">${DIFFS.map(d => { const k = list.filter(c => c.diff === d[0]).length; return k ? `<i style="flex:${k};background:${d[2]}" title="${d[1]}: ${k}"></i>` : ''; }).join('')}</div>`+
+    `<div class="sdots" style="padding:0;margin-top:6px">${DIFFS.map(d => { const k = list.filter(c => c.diff === d[0]).length; return `<span class="sdot${k ? '' : ' zero'}"><i style="background:${d[2]}"></i>${k}</span>`; }).join('')}</div>`; };
+  const tag = a => a === null ? '' : a > DASH_OLD ? `<small class="dtag old">da rinnovare</small>` : a > DASH_MID ? `<small class="dtag mid">da tenere d'occhio</small>` : `<small class="dtag ok">fresco</small>`;
+  const allAges = all.map(c => ageDays(c.dateSet)).filter(a => a !== null);
+  const mAvg = allAges.length ? Math.round(allAges.reduce((a, b) => a + b, 0) / allAges.length) : null;
+  /* chi traccia: boulder montati negli ultimi 30 giorni (anche quelli già smontati) */
+  const since = new Date(Date.now() - 30*864e5).toISOString().slice(0,10), by = {};
+  secs.forEach(w => w.circuits.forEach(c => { if(c.dateSet && c.dateSet >= since){ const k = (c.setter || '').trim() || 'senza nome'; by[k] = (by[k] || 0) + 1; } }));
+  const setters = Object.entries(by).sort((a, b) => b[1] - a[1]);
+  return `<h2>Pannello settori</h2>`+
+    `<div class="dsum"><div><b>${all.length}</b><small>boulder in parete</small></div><div><b>${secs.length}</b><small>settori</small></div><div><b>${mAvg === null ? '–' : mAvg + ' gg'}</b><small>età media</small></div></div>`+
+    `<p class="dlab">Gradi in palestra</p>${bar(all)}`+
+    `<p class="dlab">Settori, dal più vecchio</p><div class="list">${rows.map(r => `<button class="wrow drow" data-act="dashsec" data-id="${r.w.id}"><span style="flex:1;min-width:0;text-align:left">`+
+      `<b>${esc(r.w.name)}</b> ${tag(r.avg)}<br>`+
+      `<small>${r.on.length ? `${r.on.length} boulder · età media ${r.avg ?? '–'} gg · il più vecchio ${r.max ?? '–'} gg` : 'nessun boulder in parete'}${r.due ? ` · <b>${r.due} da smontare entro 7 giorni</b>` : ''}</small>`+
+      (r.on.length > r.noGrade ? bar(r.on) : '')+
+      (r.on.length > r.noGrade && r.miss.length ? `<small class="dmiss">Mancano: ${r.miss.map(d => d[1].toLowerCase()).join(', ')}</small>` : '')+
+      (r.noGrade ? `<small class="dmiss">${r.noGrade} senza grado</small>` : '')+
+      `</span></button>`).join('')}</div>`+
+    `<p class="dlab">Chi ha tracciato (ultimi 30 giorni)</p>`+
+    (setters.length ? `<div class="list">${setters.map(([k, n]) => `<div class="wrow"><span style="flex:1">${esc(k)}</span><b>${n}</b></div>`).join('')}</div>` : `<p class="hint">Nessun boulder montato negli ultimi 30 giorni.</p>`)+
+    `<p class="note">"Fresco" fino a ${DASH_MID} giorni di età media, "da tenere d'occhio" fino a ${DASH_OLD}, poi "da rinnovare". Tocca un settore per aprirlo.</p>`+
+    `<div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
+}
 function openSheet(name){ ui.sheet = name; ui.confirm = null; renderSheet(); }
 /* ricerca su tutti i circuiti della palestra */
 function sqAll(){ return secWalls().filter(w => !isSec(w)).flatMap(w => w.circuits.map(c => ({ w, c }))); }
@@ -2957,6 +2994,7 @@ function renderSheet(){
       (SB && !REAL_EDIT ? row('login', 'Accesso staff', ui.authEmail ? 'sei entrato come ' + esc(ui.authEmail) + ', che non è nello staff' : 'per gestore e tracciatori') : '')+
       (SB && !REAL_EDIT && ui.authEmail ? row('logout', 'Esci', esc(ui.authEmail)) : '')+
       (SB && REAL_EDIT && ME.role === 'gestore' ? row('staff', 'Staff', 'chi può tracciare e pubblicare') : '')+
+      (EDIT && isMgr() && S.walls.some(isSec) ? row('dash', 'Pannello settori', 'età dei boulder, gradi presenti e mancanti, chi traccia') : '')+
       (SB && REAL_EDIT && ME.role === 'gestore' ? row('hist', 'Versioni precedenti', 'le ultime pubblicazioni, da ripristinare') : '')+
       (SB && (REAL_EDIT || ui.authEmail) ? row('setpass', 'Imposta password', 'per entrare senza aspettare l\'email') : '')+
       (SB && REAL_EDIT ? row('logout', 'Esci', ME ? esc(ME.email) + ' · ' + (ME.role === 'gestore' ? 'gestore' : 'tracciatore') : '') : '')+
@@ -2988,6 +3026,8 @@ function renderSheet(){
     h = `<h2>Segnala un problema</h2><p class="note" style="margin:0 0 10px">Scrivi cosa non va o cosa miglioreresti. Insieme al messaggio arrivano da sole anche la schermata in cui sei${where ? ` (<b>${esc(where)}</b>)` : ''}, il tipo di telefono e la versione dell'app.</p>`+
       `<label class="field">Messaggio<textarea id="fbtext" rows="5" maxlength="2000" placeholder="Es.: il contorno di questa presa è sbagliato, non trovo il tasto per…" style="width:100%;resize:vertical">${esc(ui.fbDraft || '')}</textarea></label>`+
       `<div class="row"><button class="btn primary" data-act="fbsend">Invia</button><button class="btn" data-act="close">Annulla</button></div>`;
+  } else if(ui.sheet === 'dash'){
+    h = dashHtml();
   } else if(ui.sheet === 'fblist'){
     const list = ui.fb, when = t => { const d = new Date(t); return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) + ' ' + d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }); };
     const shown = Array.isArray(list) ? list.filter(f => ui.fbAll || !f.done) : [];
@@ -3451,7 +3491,7 @@ $('#stage').addEventListener('click', async e => {
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
 const PUBLIC_ACTS = ['fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
-const MGR_ACTS = ['fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
+const MGR_ACTS = ['dash','dashsec','fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b || b.disabled) return;
   const a = b.dataset.act, w = curWall(), c = curCircuit();
@@ -3541,6 +3581,15 @@ document.addEventListener('click', e => {
       const txt = `${f.kind === 'errore' ? 'Errore dell\'app' : 'Segnalazione'} #${f.id} del ${new Date(f.created_at).toLocaleString('it-IT')}${f.email ? ' da ' + f.email : ''}\n\n${f.message}\n\nContesto: ${Object.entries(x).map(([k, v]) => k + ': ' + v).join(' · ')}${st ? '\n\nDettaglio tecnico:\n' + st : ''}`;
       (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Copiata: incollala a Claude'), () => { window.prompt('Copia il testo:', txt); });
       break; }
+    case 'dash': openSheet('dash'); break;
+    case 'dashsec': {
+      const w2 = S.walls.find(x => x.id === b.dataset.id); if(!w2) break;
+      ui.sheet = null; renderSheet();
+      ui.section = 'boulder'; ui.home = false; ui.full = false;
+      if(EDIT) S.mode = 'edit'; S.active = w2.id; ui.lastSec.boulder = w2.id; saveBUI();
+      ui.bLevel = 'sector'; ui.secOver = true; ui.zoom = 1; ui.sel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false;
+      ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save();
+      try{ history.pushState({ grid: 1 }, ''); history.pushState({ sec: 1 }, ''); }catch(e){} render(); $('#box').scrollTop = 0; break; }
     case 'fball': ui.fbAll = b.dataset.v === '1'; renderSheet(); break;
     case 'fbdone': if(SB && ME && ME.role === 'gestore' && Array.isArray(ui.fb)){
       const f = ui.fb.find(x => String(x.id) === b.dataset.id); if(!f) break;
