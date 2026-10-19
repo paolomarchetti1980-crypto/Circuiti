@@ -2490,8 +2490,8 @@ function renderTop(){
   $('#chev').toggleAttribute('hidden', $('#wallBtn').disabled);
   /* indietro: dal muro/settore alla griglia, dalla griglia alla schermata iniziale */
   const inPlace = ui.bLevel === 'sector' && !bGrid() && !!w;
-  $('#backBtn').hidden = ui.home || ui.full;
-  $('#backBtn').setAttribute('aria-label', inPlace ? (BO() ? 'Torna ai settori' : 'Torna ai muri') : 'Torna alla schermata iniziale');
+  $('#backBtn').hidden = ui.home;   /* anche a schermo intero: si torna alla foto del settore o del muro */
+  $('#backBtn').setAttribute('aria-label', ui.full ? 'Torna alla foto' : inPlace ? (BO() ? 'Torna ai settori' : 'Torna ai muri') : 'Torna alla schermata iniziale');
   /* lo staff lavora sempre in modalità tracciatura; l'anteprima mostra l'app esattamente come la vede un cliente */
   /* occhio = guarda come un cliente; chiave inglese = torna a lavorare */
   const pb = $('#prevBtn'), inPrev = ui.viewAs === 'cliente';
@@ -3540,6 +3540,7 @@ document.addEventListener('click', e => {
     }
     case 'opensec': if(EDIT) S.mode = 'edit'; S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.bLevel = 'sector'; ui.secOver = true; ui.zoom = 1; ui.sel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save(); try{ history.pushState({ sec: 1 }, ''); }catch(e){} render(); $('#box').scrollTop = 0; break;
     case 'bback':
+      if(ui.full){ try{ history.back(); }catch(e){} ui.full = false; ui.zoom = 1; render(); break; }
       if(EDIT && BO() && ui.bLevel === 'sector' && !bGrid() && curWall() && !ui.secOver && S.mode !== 'view'){ if(history.state && history.state.ed){ try{ history.back(); }catch(e){} } ui.secOver = true; ui.sel = null; ui.zoom = 1; }
       else if(ui.bLevel === 'sector' && !bGrid() && curWall()){ if(history.state && history.state.sec){ try{ history.back(); }catch(e){} } ui.bLevel = 'sectors'; }
       else { if(history.state && history.state.grid){ try{ history.back(); }catch(e){} } ui.home = true; ui.bLevel = 'sectors'; }
