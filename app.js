@@ -2950,6 +2950,8 @@ function renderSheet(){
       `</div><p class="note" style="margin:0 0 12px">Dalla finestra di stampa puoi anche scegliere "Salva come PDF".</p>`+
       `<h3 class="mhead">App</h3><div class="list">`+
       (canInstall() ? row('install', "Installa l'app", 'sulla schermata Home') : '')+
+      (SB ? row('fbnew', 'Segnala un problema', 'o un suggerimento: arriva al gestore') : '')+
+      (SB && REAL_EDIT && ME.role === 'gestore' ? row('fblist', 'Segnalazioni ricevute', 'problemi segnalati ed errori dell\'app') : '')+
       (REAL_EDIT && ME.role === 'gestore' ? (ui.viewAs === 'tracciatore' ? row('viewas" data-v="gestore', 'Torna gestore', 'stai vedendo l\'app come un tracciatore') : row('viewas" data-v="tracciatore', 'Vedi come tracciatore', 'per controllare cosa può fare lo staff')) : '')+
       `</div><h3 class="mhead">Account</h3><div class="list">`+
       (SB && !REAL_EDIT ? row('login', 'Accesso staff', ui.authEmail ? 'sei entrato come ' + esc(ui.authEmail) + ', che non è nello staff' : 'per gestore e tracciatori') : '')+
@@ -2979,6 +2981,23 @@ function renderSheet(){
       `<label class="field">Aggiungi tracciatore (email)<input id="semail" type="email" inputmode="email" autocomplete="off"></label>`+
       `<div class="row"><button class="btn primary" data-act="staffadd">Aggiungi</button><button class="btn" data-act="close">Chiudi</button></div>`+
       `<p class="note">Poi manda il link dell'app alla persona: menu ⋮ → <b>Accesso staff</b> → <b>Non ho la password: mandami un link</b>; una volta dentro, menu ⋮ → <b>Imposta password</b>.</p>`;
+  } else if(ui.sheet === 'fbnew'){
+    const w2 = curWall(), c2 = curCircuit();
+    const where = ui.home ? 'schermata iniziale' : [w2 ? w2.name : '', c2 && w2 && !bGrid() ? blockTitle(w2, c2) : ''].filter(Boolean).join(' · ');
+    h = `<h2>Segnala un problema</h2><p class="note" style="margin:0 0 10px">Scrivi cosa non va o cosa miglioreresti. Insieme al messaggio arrivano da sole anche la schermata in cui sei${where ? ` (<b>${esc(where)}</b>)` : ''}, il tipo di telefono e la versione dell'app.</p>`+
+      `<label class="field">Messaggio<textarea id="fbtext" rows="5" maxlength="2000" placeholder="Es.: il contorno di questa presa è sbagliato, non trovo il tasto per…" style="width:100%;resize:vertical">${esc(ui.fbDraft || '')}</textarea></label>`+
+      `<div class="row"><button class="btn primary" data-act="fbsend">Invia</button><button class="btn" data-act="close">Annulla</button></div>`;
+  } else if(ui.sheet === 'fblist'){
+    const list = ui.fb, when = t => { const d = new Date(t); return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) + ' ' + d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }); };
+    const shown = Array.isArray(list) ? list.filter(f => ui.fbAll || !f.done) : [];
+    h = `<h2>Segnalazioni ricevute</h2>`+
+      (list === null ? `<p>Carico…</p>` : list === 'err' ? `<p>Non riesco a leggere le segnalazioni. Hai eseguito in Supabase l'aggiornamento "segnalazioni ed errori"?</p>` :
+       `<div class="row" style="margin:0 0 8px"><button class="btn ${ui.fbAll ? '' : 'on'}" data-act="fball" data-v="0">Da vedere (${list.filter(f => !f.done).length})</button><button class="btn ${ui.fbAll ? 'on' : ''}" data-act="fball" data-v="1">Tutte (${list.length})</button></div>`+
+       (shown.length ? `<div class="list">${shown.map(f => { const x = f.ctx || {};
+         return `<div class="wrow fbrow ${f.done ? 'fbdone' : ''}"><span style="flex:1;min-width:0"><small class="fbkind ${f.kind === 'errore' ? 'err' : ''}">${f.kind === 'errore' ? 'Errore dell\'app' : 'Segnalazione'}</small> <small>${when(f.created_at)}${f.email ? ' · ' + esc(String(f.email).split('@')[0]) : ''}</small><br>`+
+           `<span class="fbmsg">${esc(f.message || '')}</span><br><small>${esc([x.where, x.ruolo, x.tel, x.v ? 'v' + x.v : ''].filter(Boolean).join(' · '))}</small></span>`+
+           `<button class="btn" data-act="fbdone" data-id="${f.id}">${f.done ? 'Riapri' : 'Fatto'}</button></div>`; }).join('')}</div>` : `<p class="hint">Nessuna segnalazione da vedere.</p>`))+
+      `<div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
   } else if(ui.sheet === 'hist'){
     const list = ui.hist, sel = ui.histSel, info = ui.histInfo;
     const when = t => { const d = new Date(t); return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) + ' alle ' + d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }); };
@@ -3107,6 +3126,42 @@ async function printBlocks(all){
 window.addEventListener('afterprint', () => { const el = $('#print'); if(el) el.innerHTML = ''; });
 
 /* ---------- pubblicazione ---------- */
+/* ---------- segnalazioni e registro degli errori ---------- */
+const APP_V = (() => { try{ return new URL(document.getElementById('app-js').src).searchParams.get('v') || ''; }catch(e){ return ''; } })();
+function fbCtx(){
+  const w = curWall(), c = curCircuit();
+  const ua = navigator.userAgent, tel = /iPhone|iPad/.test(ua) ? 'iPhone/iPad' : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : 'altro';
+  const br = /Edg\//.test(ua) ? 'Edge' : /CriOS|Chrome\//.test(ua) ? 'Chrome' : /FxiOS|Firefox/.test(ua) ? 'Firefox' : /Safari/.test(ua) ? 'Safari' : '';
+  return {
+    where: ui.home ? 'schermata iniziale' : [ui.section === 'boulder' ? 'Boulder' : 'Circuiti', w ? w.name : '', c && w && !bGrid() ? blockTitle(w, c) : ''].filter(Boolean).join(' · '),
+    ruolo: ME ? ME.role : (EDIT ? 'staff' : 'cliente'), modo: S.mode, tel: tel + (br ? ' · ' + br : ''), schermo: innerWidth + 'x' + innerHeight,
+    v: APP_V, sam: sam.state, ua: ua.slice(0, 200)
+  };
+}
+async function fbSend(kind, message, extra){
+  if(!SB) return false;
+  const email = (ME && ME.email) || ui.authEmail || null;
+  const { error } = await SB.from('feedback').insert({ kind, message: String(message).slice(0, 2000), ctx: Object.assign(fbCtx(), extra || {}), email });
+  return !error;
+}
+/* errori dell'app: si registrano da soli (al massimo 5 per sessione, senza doppioni) */
+const errSeen = new Set();
+function logErr(msg, stack){
+  try{
+    msg = String(msg || 'errore').slice(0, 300);
+    if(errSeen.has(msg) || errSeen.size >= 5 || /ResizeObserver|Script error/i.test(msg)) return;
+    errSeen.add(msg);
+    fbSend('errore', msg, { stack: String(stack || '').slice(0, 1500) }).catch(() => {});
+  }catch(e){}
+}
+window.addEventListener('error', e => logErr(e.message, e.error && e.error.stack));
+window.addEventListener('unhandledrejection', e => { const r = e.reason; logErr(r && r.message ? r.message : String(r), r && r.stack); });
+async function loadFb(){
+  ui.fb = null; renderSheet();
+  const { data, error } = await SB.from('feedback').select('id,created_at,kind,message,ctx,email,done').order('id', { ascending: false }).limit(200);
+  ui.fb = error ? 'err' : (data || []);
+  if(ui.sheet === 'fblist') renderSheet();
+}
 /* ---------- versioni precedenti (storico delle pubblicazioni, solo gestore) ---------- */
 function histSum(walls){
   const ws = (walls || []).filter(w => !w.archived), sec = ws.filter(isSec), circ = ws.filter(w => !isSec(w));
@@ -3384,9 +3439,9 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
+const PUBLIC_ACTS = ['fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
-const MGR_ACTS = ['susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
+const MGR_ACTS = ['fblist','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b || b.disabled) return;
   const a = b.dataset.act, w = curWall(), c = curCircuit();
@@ -3458,6 +3513,20 @@ document.addEventListener('click', e => {
     case 'login': ui.loginSent = false; openSheet('login'); break;
     case 'sendlink': sendLoginLink(); break;
     case 'passlogin': passLogin(); break;
+    case 'fbnew': openSheet('fbnew'); setTimeout(() => { const t = document.getElementById('fbtext'); if(t) t.focus(); }, 50); break;
+    case 'fbsend': {
+      const t = document.getElementById('fbtext'), msg = ((t && t.value) || '').trim();
+      if(msg.length < 3){ toast('Scrivi due parole su cosa non va.'); break; }
+      b.disabled = true;
+      fbSend('segnalazione', msg).then(ok => { if(ok){ ui.fbDraft = ''; ui.sheet = null; renderSheet(); toast('Grazie! Segnalazione inviata.'); } else { b.disabled = false; toast('Non riesco a inviarla adesso: riprova tra poco.'); } });
+      break;
+    }
+    case 'fblist': if(SB && ME && ME.role === 'gestore'){ ui.fbAll = false; ui.fb = null; openSheet('fblist'); loadFb(); } break;
+    case 'fball': ui.fbAll = b.dataset.v === '1'; renderSheet(); break;
+    case 'fbdone': if(SB && ME && ME.role === 'gestore' && Array.isArray(ui.fb)){
+      const f = ui.fb.find(x => String(x.id) === b.dataset.id); if(!f) break;
+      const nd = !f.done; SB.from('feedback').update({ done: nd }).eq('id', f.id).then(({ error }) => { if(error) toast('Non riuscito: ' + error.message); else { f.done = nd; renderSheet(); } });
+      break; }
     case 'hist': if(SB && ME && ME.role === 'gestore'){ ui.confirm = null; ui.hist = null; ui.histSel = null; openSheet('hist'); loadHist(); } break;
     case 'hsel': if(SB && ME && ME.role === 'gestore') histSelect(+b.dataset.id); break;
     case 'hrest': if(SB && ME && ME.role === 'gestore') histRestore(); break;
@@ -3686,6 +3755,7 @@ document.addEventListener('click', e => {
 document.addEventListener('input', e => {
   const c = curCircuit(), w = curWall();
   if(e.target.id === 'lemail'){ ui.loginEmail = e.target.value.trim(); return; }
+  if(e.target.id === 'fbtext'){ ui.fbDraft = e.target.value; return; }
   if(e.target.id === 'sqmin' || e.target.id === 'sqmax'){ ui.sq[e.target.id === 'sqmin' ? 'min' : 'max'] = e.target.value; saveCF(); afterFilter(); renderSheet(); return; }
   if(!EDIT) return;
   if(e.target.id === 'bsetter' && c){ const v = e.target.value.trim(); if(v) c.setter = v; else delete c.setter; try{ localStorage.setItem('boulder-setter', v); }catch(err){} renderChips(); touch(); }

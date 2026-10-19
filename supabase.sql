@@ -82,3 +82,23 @@ select c.relname as tabella, c.relrowsecurity as protezione_attiva,
 from pg_class c join pg_namespace n on n.oid = c.relnamespace
 where (n.nspname = 'public' and c.relname in ('app_state', 'editors', 'app_state_history')) or (n.nspname = 'storage' and c.relname = 'objects')
 order by 1;
+
+-- ===== Aggiornamento: segnalazioni ed errori dell'app =====
+-- Chiunque usi l'app può inviare una segnalazione (o l'app registra da sola un errore); solo il gestore le legge.
+create table if not exists public.feedback (
+  id bigserial primary key,
+  created_at timestamptz not null default now(),
+  kind text not null,
+  message text not null,
+  ctx jsonb,
+  email text,
+  done boolean not null default false
+);
+alter table public.feedback enable row level security;
+drop policy if exists "chiunque segnala" on public.feedback;
+drop policy if exists "gestore legge segnalazioni" on public.feedback;
+drop policy if exists "gestore aggiorna segnalazioni" on public.feedback;
+create policy "chiunque segnala" on public.feedback for insert to anon, authenticated
+  with check (kind in ('segnalazione', 'errore') and char_length(message) <= 2000 and done = false);
+create policy "gestore legge segnalazioni" on public.feedback for select using (public.is_manager());
+create policy "gestore aggiorna segnalazioni" on public.feedback for update using (public.is_manager()) with check (public.is_manager());
