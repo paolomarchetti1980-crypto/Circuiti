@@ -102,3 +102,28 @@ create policy "chiunque segnala" on public.feedback for insert to anon, authenti
   with check (kind in ('segnalazione', 'errore') and char_length(message) <= 2000 and done = false);
 create policy "gestore legge segnalazioni" on public.feedback for select using (public.is_manager());
 create policy "gestore aggiorna segnalazioni" on public.feedback for update using (public.is_manager()) with check (public.is_manager());
+
+-- ===== Aggiornamento: notifica sul telefono a ogni nuova segnalazione =====
+-- Manda una notifica all'app gratuita "ntfy" (canale segreto qui sotto). Toccandola si apre l'elenco delle segnalazioni.
+create extension if not exists pg_net;
+create or replace function public.notify_feedback() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  begin
+    perform net.http_post(
+      url := 'https://ntfy.sh',
+      body := jsonb_build_object(
+        'topic', 'mr-segnalazioni-fd52ac4e95a2',
+        'title', case when new.kind = 'errore' then 'Errore dell''app' else 'Nuova segnalazione' end,
+        'message', left(new.message, 300) || coalesce(' — ' || (new.ctx->>'where'), ''),
+        'tags', case when new.kind = 'errore' then jsonb_build_array('warning') else jsonb_build_array('speech_balloon') end,
+        'priority', case when new.kind = 'errore' then 3 else 4 end,
+        'click', 'https://paolomarchetti1980-crypto.github.io/Circuiti/#segnalazioni'
+      )
+    );
+  exception when others then null; -- se la notifica non parte, la segnalazione resta comunque salvata
+  end;
+  return new;
+end $$;
+drop trigger if exists feedback_notify on public.feedback;
+create trigger feedback_notify after insert on public.feedback for each row execute function public.notify_feedback();

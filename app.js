@@ -2996,7 +2996,7 @@ function renderSheet(){
        (shown.length ? `<div class="list">${shown.map(f => { const x = f.ctx || {};
          return `<div class="wrow fbrow ${f.done ? 'fbdone' : ''}"><span style="flex:1;min-width:0"><small class="fbkind ${f.kind === 'errore' ? 'err' : ''}">${f.kind === 'errore' ? 'Errore dell\'app' : 'Segnalazione'}</small> <small>${when(f.created_at)}${f.email ? ' · ' + esc(String(f.email).split('@')[0]) : ''}</small><br>`+
            `<span class="fbmsg">${esc(f.message || '')}</span><br><small>${esc([x.where, x.ruolo, x.tel, x.v ? 'v' + x.v : ''].filter(Boolean).join(' · '))}</small></span>`+
-           `<button class="btn" data-act="fbdone" data-id="${f.id}">${f.done ? 'Riapri' : 'Fatto'}</button></div>`; }).join('')}</div>` : `<p class="hint">Nessuna segnalazione da vedere.</p>`))+
+           `<span class="fbbtns"><button class="btn" data-act="fbcopy" data-id="${f.id}">Copia</button><button class="btn" data-act="fbdone" data-id="${f.id}">${f.done ? 'Riapri' : 'Fatto'}</button></span></div>`; }).join('')}</div>` : `<p class="hint">Nessuna segnalazione da vedere.</p>`))+
       `<div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
   } else if(ui.sheet === 'hist'){
     const list = ui.hist, sel = ui.histSel, info = ui.histInfo;
@@ -3441,7 +3441,7 @@ $('#stage').addEventListener('click', async e => {
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
 const PUBLIC_ACTS = ['fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
-const MGR_ACTS = ['fblist','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
+const MGR_ACTS = ['fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b || b.disabled) return;
   const a = b.dataset.act, w = curWall(), c = curCircuit();
@@ -3522,6 +3522,13 @@ document.addEventListener('click', e => {
       break;
     }
     case 'fblist': if(SB && ME && ME.role === 'gestore'){ ui.fbAll = false; ui.fb = null; openSheet('fblist'); loadFb(); } break;
+    case 'fbcopy': if(Array.isArray(ui.fb)){
+      /* testo completo (messaggio, contesto, dettaglio tecnico) da incollare a Claude per farla sistemare */
+      const f = ui.fb.find(x => String(x.id) === b.dataset.id); if(!f) break;
+      const x = Object.assign({}, f.ctx || {}), st = x.stack; delete x.stack;
+      const txt = `${f.kind === 'errore' ? 'Errore dell\'app' : 'Segnalazione'} #${f.id} del ${new Date(f.created_at).toLocaleString('it-IT')}${f.email ? ' da ' + f.email : ''}\n\n${f.message}\n\nContesto: ${Object.entries(x).map(([k, v]) => k + ': ' + v).join(' · ')}${st ? '\n\nDettaglio tecnico:\n' + st : ''}`;
+      (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Copiata: incollala a Claude'), () => { window.prompt('Copia il testo:', txt); });
+      break; }
     case 'fball': ui.fbAll = b.dataset.v === '1'; renderSheet(); break;
     case 'fbdone': if(SB && ME && ME.role === 'gestore' && Array.isArray(ui.fb)){
       const f = ui.fb.find(x => String(x.id) === b.dataset.id); if(!f) break;
@@ -3969,5 +3976,8 @@ render();
   ui.ready = true;
   ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
   render();
+  /* aperta dalla notifica di una nuova segnalazione: il gestore va dritto all'elenco */
+  if(/segnalazioni/.test(location.hash)){ history.replaceState(null, '', location.pathname + location.search);
+    if(SB && ME && ME.role === 'gestore'){ ui.fbAll = false; ui.fb = null; openSheet('fblist'); loadFb(); } }
 })();
 })();
