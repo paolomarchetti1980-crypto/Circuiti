@@ -773,7 +773,12 @@ function samWarm(w){
    copre una decina di pixel veri. Qui la foto si divide in riquadri (lato = 1/3 della foto, sovrapposti a metà),
    ognuno studiato a 1024 px quando serve, e la presa si ricalcola nel riquadro che la contiene meglio. */
 sam.tiles = new Map();
-function tileGrid(w){ const L = Math.max(w.w, w.h), T = Math.max(384, Math.round(L/3)), st = Math.round(T/2); return { T, st }; }
+/* griglia fissa di riquadri (lato 40% della foto, sovrapposti un po'): pochi, così si possono studiare in anticipo */
+function tileGrid(w){
+  const L = Math.max(w.w, w.h), T = Math.max(384, Math.round(L*0.4));
+  const axis = D => { if(D <= T) return [0]; const n = Math.ceil((D - T)/(L*0.3)) + 1; return Array.from({ length: n }, (_, i) => Math.round((D - T)*i/(n - 1))); };
+  return { T, xs: axis(w.w), ys: axis(w.h) };
+}
 async function tileEmbed(w, tx, ty, T){
   const key = samKey(w) + '|' + tx + ',' + ty + ',' + T;
   if(sam.tiles.has(key)){ const v = sam.tiles.get(key); sam.tiles.delete(key); sam.tiles.set(key, v); return v.e ? v : v.pending; }
@@ -789,7 +794,7 @@ async function tileEmbed(w, tx, ty, T){
     return { e: true, ed: new Float32Array(out.embeddings.data), edims: out.embeddings.dims.slice(), s, tx, ty };
   })();
   sam.tiles.set(key, { pending });
-  try{ const r = await pending; sam.tiles.set(key, r); while(sam.tiles.size > 8) sam.tiles.delete(sam.tiles.keys().next().value); return r; }
+  try{ const r = await pending; sam.tiles.set(key, r); while(sam.tiles.size > 12) sam.tiles.delete(sam.tiles.keys().next().value); return r; }
   catch(e){ sam.tiles.delete(key); throw e; }
 }
 /* quanto due contorni coincidono (area comune / area totale), disegnandoli su una piccola tela */
@@ -838,23 +843,42 @@ async function refineAuto(w, list){
   }
   list.forEach(h => { delete h._so; });
 }
+/* studio preliminare: appena la foto è pronta, si studiano in sottofondo anche i riquadri della griglia,
+   così la seconda passata ad alta risoluzione non fa aspettare al tocco */
+async function preStudy(w){
+  const key = samKey(w);
+  if(sam.pre && sam.pre.key === key) return;
+  const { T, xs, ys } = tileGrid(w), list = [];
+  ys.forEach(ty => xs.forEach(tx => list.push([tx, ty])));
+  sam.pre = { key, done: 0, total: list.length };
+  await new Promise(r => setTimeout(r, 600));
+  for(const [tx, ty] of list){
+    const cw = curWall();
+    if(!cw || samKey(cw) !== key || !needsSam(cw) || sam.state !== 'ready'){ sam.pre = null; return; }   /* si riprende quando si torna */
+    try{ await tileEmbed(w, tx, ty, T); }catch(e){ sam.pre = null; return; }
+    if(sam.pre && sam.pre.key === key){ sam.pre.done++; renderTools(); }
+  }
+}
 async function samRefine(w, op, x, y){
   let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9, A0 = 0;
   op.forEach((p, i) => { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); const q = op[(i+1) % op.length]; A0 += p[0]*q[1] - q[0]*p[1]; });
   A0 = Math.abs(A0)/2;
-  const { T, st } = tileGrid(w), bw = x1 - x0, bh = y1 - y0;
+  const { T, xs, ys } = tileGrid(w), bw = x1 - x0, bh = y1 - y0;
   if(A0 < 4) return null;
   let tx, ty, E;
-  if(Math.max(bw, bh) > T*0.7){
+  /* riquadro della griglia che contiene la presa con più margine (se ci sta tutta) */
+  const bestPos = (a0, a1, P) => { let b = P[0], bm = -1e9; P.forEach(v => { const m = Math.min(a0 - v, v + T - a1); if(m > bm){ bm = m; b = v; } }); return [b, bm]; };
+  const [gx, mx] = bestPos(x0, x1, xs), [gy, my] = bestPos(y0, y1, ys);
+  if(Math.min(mx, my) >= 4){ tx = gx; ty = gy; E = await tileEmbed(w, tx, ty, T); }
+  else if(Math.max(bw, bh) > T*0.7){
     /* macro e volumi: un riquadro su misura attorno alla forma (se non è quasi tutta la foto, dove non si guadagna niente) */
     const T2 = Math.round(Math.max(bw, bh)*1.35);
     if(T2 >= 0.85*Math.max(w.w, w.h)) return null;
     tx = Math.round(Math.max(0, Math.min((x0 + x1)/2 - T2/2, w.w - T2))); ty = Math.round(Math.max(0, Math.min((y0 + y1)/2 - T2/2, w.h - T2)));
     E = await tileEmbed(w, tx, ty, T2);
   } else {
-    /* riquadro della griglia che contiene la presa con più margine */
-    const pos = (a0, a1, L) => { const max = Math.max(0, L - T); let best = 0, bm = -1e9; for(let t = 0; t <= max + st - 1; t += st){ const v = Math.min(t, max), m = Math.min(a0 - v, v + T - a1); if(m > bm){ bm = m; best = v; } } return best; };
-    tx = pos(x0, x1, w.w); ty = pos(y0, y1, w.h);
+    /* a cavallo tra due riquadri: uno su misura centrato sulla presa */
+    tx = Math.round(Math.max(0, Math.min((x0 + x1)/2 - T/2, w.w - T))); ty = Math.round(Math.max(0, Math.min((y0 + y1)/2 - T/2, w.h - T)));
     E = await tileEmbed(w, tx, ty, T);
   }
   const s = E.s;
@@ -1085,7 +1109,7 @@ async function samSegment(w, x, y, ts, strict, auto, defer){
   /* lati dritti solo per i volumi e le prese grandi: sulle prese normali la seconda passata ad alta risoluzione
      segue già bene gli spigoli, e "raddrizzare" una presa tondeggiante o a mezzaluna la trasformava in un poligono
      che copriva anche il pannello */
-  const bigShape = n => n >= 0.01*N;
+  const bigShape = n => n >= 0.004*N;   /* il confronto con il contorno fedele decide poi se tenere i lati dritti */
   let st = bigShape(tr.n) ? straightPoly(tr.pts, tr.n) : null;
   /* volume con due facce di luce diversa: la maschera scelta ne prende solo un pezzo frastagliato.
      Se una maschera più grande (fino a 5 volte) contiene il tocco ed è un poligono netto, si usa quella. */
@@ -2261,6 +2285,73 @@ function addCand(w, c, k){
   }
 }
 let candRefine = Promise.resolve();
+
+/* ---------- volumi del blocco: prese d'altro colore montate sopra ----------
+   Dentro un volume (o una presa grande) del blocco si trova il colore dominante; le zone di colore ben diverso
+   sono prese di altri blocchi e si oscurano come il resto della foto. Calcolo una volta per presa, in sottofondo. */
+const fmCache = new Map();
+function foreignMask(w, c, h){
+  if(!h.poly || polyArea(h.poly) < w.w*w.h*0.004) return null;
+  const key = w.id + '|' + samKey(w) + '|' + h.poly.length + ':' + h.poly.slice(0, 8).join(',') + '|' + c.holds.length;
+  const v = fmCache.get(key);
+  if(v) return v.url ? v : null;
+  fmCache.set(key, { pending: true });
+  computeForeign(w, c, h).then(r => { fmCache.set(key, r || { none: true }); if(r) render(); }).catch(() => fmCache.set(key, { none: true }));
+  return null;
+}
+async function computeForeign(w, c, h){
+  const bb = holdBox(h, w.w), im = await loadImg(w.img);
+  const bw = bb.x1 - bb.x0, bh = bb.y1 - bb.y0, k = Math.min(1, 420/Math.max(bw, bh));
+  const W = Math.max(8, Math.round(bw*k)), H = Math.max(8, Math.round(bh*k));
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d', { willReadFrequently: true });
+  g.filter = 'blur(1px)'; g.drawImage(im, bb.x0, bb.y0, bw, bh, 0, 0, W, H); g.filter = 'none';
+  const d = g.getImageData(0, 0, W, H).data, N = W*H;
+  /* dentro il volume, lontano dal bordo (ombre e spigoli) e fuori dalle altre prese del blocco */
+  const P = h.poly.map((v, i) => i % 2 ? (v - bb.y0)*k : (v - bb.x0)*k);
+  const inside = new Uint8Array(N), m2 = document.createElement('canvas'); m2.width = W; m2.height = H;
+  const g2 = m2.getContext('2d', { willReadFrequently: true });
+  g2.fillStyle = '#fff'; g2.beginPath(); for(let i = 0; i < P.length; i += 2) i ? g2.lineTo(P[i], P[i+1]) : g2.moveTo(P[i], P[i+1]); g2.closePath(); g2.fill();
+  g2.strokeStyle = '#000'; g2.lineWidth = Math.max(4, Math.min(W, H)*0.04); g2.stroke();
+  g2.fillStyle = '#000';
+  c.holds.forEach(q => { if(q === h || !q.poly) return; const Q = q.poly.map((v, i) => i % 2 ? (v - bb.y0)*k : (v - bb.x0)*k); g2.beginPath(); for(let i = 0; i < Q.length; i += 2) i ? g2.lineTo(Q[i], Q[i+1]) : g2.moveTo(Q[i], Q[i+1]); g2.closePath(); g2.fill(); });
+  const md = g2.getImageData(0, 0, W, H).data; for(let i = 0; i < N; i++) inside[i] = md[i*4] > 127 ? 1 : 0;
+  /* colore in Lab approssimato (a, b danno la tinta) */
+  const L = new Float32Array(N), A = new Float32Array(N), B = new Float32Array(N), lin = u => { u /= 255; return u <= 0.04045 ? u/12.92 : Math.pow((u + 0.055)/1.055, 2.4); };
+  for(let i = 0; i < N; i++){
+    const r = lin(d[i*4]), gg = lin(d[i*4+1]), b = lin(d[i*4+2]);
+    const X = (0.4124*r + 0.3576*gg + 0.1805*b)/0.9505, Y = 0.2126*r + 0.7152*gg + 0.0722*b, Z = (0.0193*r + 0.1192*gg + 0.9505*b)/1.089;
+    const f = t => t > 0.008856 ? Math.cbrt(t) : 7.787*t + 16/116, fy = f(Y);
+    L[i] = 116*fy - 16; A[i] = 500*(f(X) - fy); B[i] = 200*(fy - f(Z));
+  }
+  const med = arr => { const v = []; for(let i = 0; i < N; i++) if(inside[i]) v.push(arr[i]); v.sort((p, q) => p - q); return v.length ? v[v.length >> 1] : 0; };
+  let cnt = 0; for(let i = 0; i < N; i++) cnt += inside[i]; if(cnt < 200) return null;
+  const mL = med(L), mA = med(A), mB = med(B);
+  /* diverso dal volume soprattutto per tinta (la luce e la magnesite cambiano la chiarezza, non il colore) */
+  const fg = new Uint8Array(N);
+  for(let i = 0; i < N; i++){ if(!inside[i]) continue; const dd = Math.hypot((L[i] - mL)*0.45, A[i] - mA, B[i] - mB); if(dd > 24) fg[i] = 1; }
+  /* via i puntini (viti, sporco): restano solo le zone grandi abbastanza da essere prese */
+  const lab = new Int32Array(N), keep = new Uint8Array(N), minA = Math.max(25, cnt*0.002);
+  let nl = 0, any = false;
+  for(let i0 = 0; i0 < N; i0++){
+    if(!fg[i0] || lab[i0]) continue;
+    nl++; const st = [i0], px = []; lab[i0] = nl;
+    while(st.length){ const p = st.pop(); px.push(p); const x = p % W, y = (p - x)/W;
+      if(x > 0 && fg[p-1] && !lab[p-1]){ lab[p-1] = nl; st.push(p-1); } if(x < W-1 && fg[p+1] && !lab[p+1]){ lab[p+1] = nl; st.push(p+1); }
+      if(y > 0 && fg[p-W] && !lab[p-W]){ lab[p-W] = nl; st.push(p-W); } if(y < H-1 && fg[p+W] && !lab[p+W]){ lab[p+W] = nl; st.push(p+W); } }
+    if(px.length >= minA && px.length < cnt*0.5){ px.forEach(p => keep[p] = 1); any = true; }
+  }
+  if(!any) return null;
+  /* immagine: nero semitrasparente sulle prese estranee, bordi un po' allargati e sfumati */
+  const out = document.createElement('canvas'); out.width = W; out.height = H;
+  const go = out.getContext('2d'), img = go.createImageData(W, H);
+  for(let i = 0; i < N; i++) if(keep[i]){ img.data[i*4+3] = 255; }
+  go.putImageData(img, 0, 0);
+  const o2 = document.createElement('canvas'); o2.width = W; o2.height = H;
+  const g3 = o2.getContext('2d'); g3.filter = 'blur(1.5px)'; for(let t = 0; t < 2; t++) g3.drawImage(out, 0, 0); g3.filter = 'none';
+  g3.globalCompositeOperation = 'source-in'; g3.fillStyle = 'rgba(0,0,0,0.62)'; g3.fillRect(0, 0, W, H);
+  return { url: o2.toDataURL('image/png'), x: bb.x0, y: bb.y0, w: bw, h: bh };
+}
 function traceBoulder(w, id){
   ui.cand = null; w.activeCircuit = id; ui.secOver = false; ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.bline = false; ui.zoom = 1;
   ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
@@ -2336,14 +2427,20 @@ function overlay(w, o){
   const mk = bo ? wallMarks(w) : null;
   if(o.others) visibleCircuits(w).forEach(c => { if(c !== act) s += circuitSVG(c, w.w, 0.28, {numbers:false, lines:false, boulder:bo, H: w.h, mk}); });
   if(o.dim && act && act.holds.length){
-    let d = `M0,0H${w.w}V${w.h}H0Z`;
+    /* foto oscurata tranne le prese del blocco: una maschera (e non un tracciato pari/dispari),
+       così una presa montata su un volume del blocco resta chiara anche lei */
+    let d = '';
     const cands = o.edit && bo && ui.cand && ui.cand.cid === act.id ? ui.cand.list : [];
     cands.forEach(q => { d += polyPath(q.poly); });
     act.holds.forEach(h => {
       if(h.poly) d += polyPath(h.poly);
       else { const r = h.r*w.w; d += `M${h.x-r},${h.y}a${r},${r} 0 1,0 ${2*r},0a${r},${r} 0 1,0 ${-2*r},0Z`; }
     });
-    s += `<path d="${d}" fill="#000" fill-opacity="${o.edit ? .5 : .62}" fill-rule="evenodd"/>`;
+    const mid = 'dm' + String(act.id).replace(/[^\w-]/g, '') + (o.edit ? 'e' : 'v'), op = o.edit ? .5 : .62;
+    s += `<defs><mask id="${mid}" maskUnits="userSpaceOnUse" x="0" y="0" width="${w.w}" height="${w.h}"><rect x="0" y="0" width="${w.w}" height="${w.h}" fill="#fff"/><path d="${d}" fill="#000"/></mask></defs>`+
+         `<rect x="0" y="0" width="${w.w}" height="${w.h}" fill="#000" fill-opacity="${op}" mask="url(#${mid})"/>`;
+    /* boulder: sui volumi e sulle prese grandi del blocco si oscurano anche le prese d'altro colore montate sopra */
+    if(bo) act.holds.forEach(h => { const fm = foreignMask(w, act, h); if(fm) s += `<image href="${fm.url}" xlink:href="${fm.url}" x="${fm.x}" y="${fm.y}" width="${fm.w}" height="${fm.h}" preserveAspectRatio="none" opacity="${(op/0.62).toFixed(2)}"/>`; });
   }
   if(act && bo) s += lineSVG(act.line || autoLine(act, w), w.w, colOf(act), act);
   if(bo && ui.bline && ui.lineDraft.length > 1) s += lineSVG(ui.lineDraft, w.w, '#ff3b7a');
@@ -2534,6 +2631,7 @@ function samStatus(w){
   if(sam.state === 'failed') return sam.noWasm ? 'Riconoscimento intelligente non disponibile su questo telefono: uso il metodo semplice.' : 'Non sono riuscito a scaricare il riconoscimento intelligente (rete debole?): per ora uso il metodo semplice, riprovo al prossimo tocco.';
   if(sam.state === 'loading') return 'Scarico il riconoscimento intelligente (circa 33 MB, solo la prima volta)…';
   if(sam.state === 'ready' && e && !e.e) return 'Studio la foto del muro (qualche secondo)…';
+  if(sam.state === 'ready' && e && e.e && sam.pre && sam.pre.key === samKey(w) && sam.pre.done < sam.pre.total) return `Riconoscimento intelligente pronto: tocca una presa (sto studiando i dettagli della foto, ${sam.pre.done}/${sam.pre.total}).`;
   if(sam.state === 'ready' && e && e.e) return 'Riconoscimento intelligente pronto: tocca una presa.';
   return 'Riconoscimento intelligente: si attiva al primo uso.';
 }
@@ -2684,6 +2782,7 @@ function render(){
   const w = curWall();
   normalizeMode(w);
   if(needsSam(w) && samMaybe() && !(sam.emb[w.id] && sam.emb[w.id].key === samKey(w))) samWarm(w);
+  else if(needsSam(w) && sam.state === 'ready' && sam.emb[w.id] && sam.emb[w.id].e && !(sam.pre && sam.pre.key === samKey(w))) preStudy(w);
   const viewing = !EDIT || S.mode === 'view';
   if(viewing && w && isSec(w)){ const v = sortedVisible(w); if(v.length && !v.some(x => x.id === w.activeCircuit)) w.activeCircuit = v[0].id; }
   if(ui.full && (!viewing || !curCircuit())) ui.full = false;
