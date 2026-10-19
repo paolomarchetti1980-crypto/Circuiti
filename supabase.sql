@@ -103,22 +103,28 @@ create policy "chiunque segnala" on public.feedback for insert to anon, authenti
 create policy "gestore legge segnalazioni" on public.feedback for select using (public.is_manager());
 create policy "gestore aggiorna segnalazioni" on public.feedback for update using (public.is_manager()) with check (public.is_manager());
 
--- ===== Aggiornamento: notifica sul telefono a ogni nuova segnalazione =====
--- Manda una notifica all'app gratuita "ntfy" (canale segreto qui sotto). Toccandola si apre l'elenco delle segnalazioni.
+-- ===== Aggiornamento: notifica su Telegram a ogni nuova segnalazione =====
+-- (prima era ntfy.sh, ma il suo server gratuito rifiuta i messaggi che partono da Supabase: limite giornaliero condiviso)
+-- Sostituire le due righe INCOLLA_QUI con il token del bot (da @BotFather) e il numero della chat.
 create extension if not exists pg_net;
 create or replace function public.notify_feedback() returns trigger
 language plpgsql security definer set search_path = public as $$
+declare
+  tg_token text := 'INCOLLA_QUI_IL_TOKEN';
+  tg_chat  text := 'INCOLLA_QUI_IL_NUMERO';
 begin
   begin
     perform net.http_post(
-      url := 'https://ntfy.sh',
+      url := 'https://api.telegram.org/bot' || tg_token || '/sendMessage',
       body := jsonb_build_object(
-        'topic', 'mr-segnalazioni-fd52ac4e95a2',
-        'title', case when new.kind = 'errore' then 'Errore dell''app' else 'Nuova segnalazione' end,
-        'message', left(new.message, 300) || coalesce(' — ' || (new.ctx->>'where'), ''),
-        'tags', case when new.kind = 'errore' then jsonb_build_array('warning') else jsonb_build_array('speech_balloon') end,
-        'priority', case when new.kind = 'errore' then 3 else 4 end,
-        'click', 'https://paolomarchetti1980-crypto.github.io/Circuiti/#segnalazioni'
+        'chat_id', tg_chat,
+        'text', case when new.kind = 'errore' then '⚠️ Errore dell''app' else '💬 Nuova segnalazione' end
+                || E'\n\n' || left(new.message, 500)
+                || coalesce(E'\n\n📍 ' || (new.ctx->>'where'), '')
+                || coalesce(E'\n👤 ' || split_part(new.email, '@', 1), ''),
+        'disable_web_page_preview', true,
+        'reply_markup', jsonb_build_object('inline_keyboard', jsonb_build_array(jsonb_build_array(
+          jsonb_build_object('text', 'Apri le segnalazioni', 'url', 'https://paolomarchetti1980-crypto.github.io/Circuiti/#segnalazioni'))))
       )
     );
   exception when others then null; -- se la notifica non parte, la segnalazione resta comunque salvata
