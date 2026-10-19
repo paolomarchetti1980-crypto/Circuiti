@@ -192,8 +192,10 @@ button,label.btn{cursor:pointer}
 .susbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;width:100%;padding:10px 12px;margin:0 0 4px;border:1px solid #ff7a00;border-radius:12px;background:#2a1d10;color:#ffd2ad;font-size:14px}
 .susbar span{flex:1 1 100%}
 .busy.go{pointer-events:auto;cursor:pointer}
+/* computer (mouse): il pannello in basso copre gli ultimi 16px della foto, dove sta la barra di scorrimento orizzontale */
+@media (pointer:fine){#box{bottom:16px}.zoom{bottom:26px}}
 </style></head><body><div id="root"></div>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="namegen.js"></script><script id="app-js" src="app.js?v=99"></script>
+<script src="namegen.js"></script><script id="app-js" src="app.js?v=100"></script>
 </body></html>
