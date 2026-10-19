@@ -72,7 +72,10 @@ function colOf(c){
 const diffOf = c => DIFFS.find(d => d[0] === (c && c.diff)) || null;
 const diffIdx = c => { const i = DIFFS.findIndex(d => d[0] === (c && c.diff)); return i < 0 ? 99 : i; };
 const bTitle = c => { const d = diffOf(c); return d ? d[1] + ' ' + (c.num || 1) : 'Nuovo boulder'; };
-const bTitleHtml = c => esc(bTitle(c)) + (c.name && diffOf(c) ? ` <span style="font-weight:600;color:var(--muted)">· ${esc(c.name)}</span>` : '');
+const bTitleHtml = c => esc(bTitle(c)) + (c.name && diffOf(c) ? ` <span style="font-weight:600;color:var(--muted)">· ${esc(c.name)}</span>` : '') + (isNew(c) ? ' <span class="newb">Nuovo</span>' : '');
+/* "Nuovo": boulder in parete montato da non più di una settimana */
+const NEW_DAYS = 7;
+const isNew = c => !!(c && c.diff && c.dateSet && !isOff(c) && c.dateSet <= todayISO() && (Date.now() - Date.parse(c.dateSet + 'T00:00:00')) < (NEW_DAYS + 1) * 864e5);
 /* numero: il più piccolo libero tra i boulder in parete della stessa difficoltà nel settore */
 function assignNum(w, c){
   if(!diffOf(c)) { delete c.num; return; }
@@ -2375,7 +2378,8 @@ function homeScreen(){
     const ws = S.walls.filter(w => secOf(w) === sec && !w.archived), bo = sec === 'boulder';
     const n = ws.reduce((t, w) => t + (bo ? w.circuits.filter(c => !isOff(c)).length : w.circuits.length), 0);
     const img = ws[0] ? `<img src="${esc(ws[0].img)}" alt="">` : '';
-    const sub = ws.length ? `${ws.length} ${bo ? (ws.length === 1 ? 'settore' : 'settori') : (ws.length === 1 ? 'muro' : 'muri')} · ${n} ${bo ? 'boulder' : (n === 1 ? 'circuito' : 'circuiti')}` : (bo ? 'nessun settore ancora' : 'nessun muro ancora');
+    const nn = bo ? ws.reduce((t, w) => t + w.circuits.filter(isNew).length, 0) : 0;
+    const sub = ws.length ? `${ws.length} ${bo ? (ws.length === 1 ? 'settore' : 'settori') : (ws.length === 1 ? 'muro' : 'muri')} · ${n} ${bo ? 'boulder' : (n === 1 ? 'circuito' : 'circuiti')}${nn ? ` · <span class="hnew">${nn} ${nn === 1 ? 'nuovo' : 'nuovi'}</span>` : ''}` : (bo ? 'nessun settore ancora' : 'nessun muro ancora');
     return `<button class="htile" data-act="pickhome" data-v="${sec}">${img}<span class="hlab"><b>${bo ? 'Boulder' : 'Circuiti'}</b><small>${sub}</small></span></button>`;
   };
   return `<div class="home">${tile('boulder')}${tile('circ')}</div>`;
@@ -2389,7 +2393,8 @@ function sectorGrid(){
     let info, staff = '';
     if(bo){
       const dots = DIFFS.map(d => { const n = on.filter(c => c.diff === d[0]).length; return n ? `<span class="sdot"><i style="background:${d[2]}"></i>${n}</span>` : ''; }).join('');
-      info = dots || '<small>nessun boulder</small>';
+      const nn = on.filter(isNew).length;
+      info = (dots || '<small>nessun boulder</small>') + (nn ? `<span class="snew">${nn} ${nn === 1 ? 'nuovo' : 'nuovi'}</span>` : '');
       if(EDIT){
         const last = on.map(c => c.dateSet || '').sort().pop();
         const t = todayISO(), lim = new Date(Date.now() + 7*864e5).toISOString().slice(0,10);
@@ -2550,7 +2555,7 @@ function renderStage(){
 const bShowEff = () => EDIT ? ui.bShow : 'on';
 function visibleCircuits(w){
   const show = bShowEff();
-  if(isSec(w)) return w.circuits.filter(c => (show === 'all' || (show === 'off') === isOff(c)) && (!ui.bColor || c.diff === ui.bColor));
+  if(isSec(w)) return w.circuits.filter(c => (show === 'all' || (show === 'off') === isOff(c)) && (!ui.bColor || c.diff === ui.bColor) && (!ui.bNew || isNew(c)));
   return w.circuits.filter(cMatch);
 }
 const gradeBand = g => { const i = GRADES.indexOf(g || ''); if(i <= 0) return '#5b6068'; if(i <= GRADES.indexOf('5c')) return '#7bd389'; if(i <= GRADES.indexOf('6b+')) return '#ffd166'; if(i <= GRADES.indexOf('7a+')) return '#ff9a3d'; return '#ef476f'; };
@@ -2574,7 +2579,9 @@ function circMeta(c){
 function bFilters(w){
   const ds = DIFFS.filter(d => w.circuits.some(x => x.diff === d[0] && (EDIT || !isOff(x))));
   const st = (v, l) => `<button class="fchip ${ui.bShow === v ? 'on' : ''}" data-act="bshow" data-v="${v}">${l}</button>`;
-  return (EDIT ? `<div class="fchips">${st('on','In parete')}${st('off','Smontati')}${st('all','Tutti')}</div>` : '')+
+  const nNew = w.circuits.filter(isNew).length;
+  const nw = nNew ? `<button class="fchip ${ui.bNew ? 'on' : ''}" data-act="bnew">Nuovi · ${nNew}</button>` : '';
+  return (EDIT ? `<div class="fchips">${st('on','In parete')}${st('off','Smontati')}${st('all','Tutti')}${nw}</div>` : nw ? `<div class="fchips">${nw}</div>` : '')+
     (ds.length > 1 ? `<div class="fchips">${ds.map(d => `<button class="fdot ${ui.bColor === d[0] ? 'on' : ''}" data-act="bcolor" data-v="${d[0]}" aria-label="${d[1]}" aria-pressed="${ui.bColor === d[0]}" style="background:${d[2]}"></button>`).join('')}</div>` : '');
 }
 function bRows(w, cls){
@@ -2842,6 +2849,57 @@ window.addEventListener('popstate', () => {
 });
 
 /* ---------- pannelli ---------- */
+/* ---------- QR code da attaccare ai muri ---------- */
+const appBase = () => location.origin + location.pathname.replace(/index\.html$/, '');
+const wallLink = w => appBase() + (w ? '#m=' + encodeURIComponent(w.id) : '');
+let qrLib = null;
+function loadQR(){ return qrLib || (qrLib = new Promise((res, rej) => { if(window.qrcode) return res(); const sc = document.createElement('script'); sc.src = 'vendor/qrcode.js'; sc.onload = () => res(); sc.onerror = () => { qrLib = null; rej(new Error('qr')); }; document.head.appendChild(sc); })); }
+function qrSvg(text, px){
+  if(!window.qrcode) return '';
+  const q = window.qrcode(0, 'M'); q.addData(text); q.make();
+  const n = q.getModuleCount(), m = 2, sz = n + m * 2; let d = '';
+  for(let r = 0; r < n; r++) for(let c = 0; c < n; c++) if(q.isDark(r, c)) d += `M${c + m} ${r + m}h1v1h-1z`;
+  return `<svg class="qrsvg" viewBox="0 0 ${sz} ${sz}" width="${px}" height="${px}" shape-rendering="crispEdges" aria-hidden="true"><rect width="${sz}" height="${sz}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+}
+const qrItems = () => [{ id: '', name: 'Pagina iniziale', sub: 'tutta l\'app: boulder e circuiti' }]
+  .concat(S.walls.filter(w => isSec(w) && !w.archived).map(w => ({ id: w.id, name: w.name, sub: 'boulder di questo settore', w })))
+  .concat(S.walls.filter(w => !isSec(w) && !w.archived).map(w => ({ id: w.id, name: w.name, sub: 'circuiti di questo muro', w })));
+function qrHtml(){
+  if(!window.qrcode){ loadQR().then(() => { if(ui.sheet === 'qr') renderSheet(); }, () => toast('Non riesco a caricare il generatore di QR: controlla la connessione.')); return `<h2>QR code</h2><p>Carico…</p>`; }
+  const items = qrItems();
+  return `<h2>QR code</h2><p class="note" style="margin:0 0 12px">Stampali e attaccali vicino a ogni settore o muro: inquadrandoli con la fotocamera del telefono si apre l'app direttamente lì. Il QR resta valido anche quando cambi i boulder: si rifà solo se crei un settore nuovo.</p>`+
+    `<div class="row" style="margin:0 0 10px"><button class="btn primary" data-act="qrprint" data-id="*">Stampa tutti (${items.length})</button></div>`+
+    `<div class="list">${items.map(it => `<div class="wrow qrrow">${qrSvg(wallLink(it.w), 64)}<span style="flex:1;min-width:0"><b>${esc(it.name)}</b><br><small>${esc(it.sub)}</small></span>`+
+      `<span class="fbbtns"><button class="btn" data-act="qrprint" data-id="${esc(it.id)}">Stampa</button><button class="btn" data-act="qrcopy" data-id="${esc(it.id)}">Copia link</button></span></div>`).join('')}</div>`+
+    `<div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
+}
+async function qrPrint(id){
+  try{ await loadQR(); }catch(e){ toast('Non riesco a caricare il generatore di QR.'); return; }
+  const items = qrItems().filter(it => id === '*' || it.id === id); if(!items.length) return;
+  ui.sheet = null; renderSheet();
+  const card = it => `<div class="pqr"><header><span>Monkey Island Roma</span><span>Monkey Roads</span></header>`+
+    `<h1>${esc(it.name)}</h1><p class="pqsub">${it.w ? (isSec(it.w) ? 'Inquadra per vedere i boulder di questo settore' : 'Inquadra per vedere i circuiti di questo muro') : 'Inquadra per aprire boulder e circuiti della palestra'}</p>`+
+    qrSvg(wallLink(it.w), 300)+`<p class="pqurl">${esc(wallLink(it.w))}</p></div>`;
+  let html = '';
+  for(let i = 0; i < items.length; i += 2) html += `<section class="ppage pqpage">${card(items[i])}${items[i + 1] ? card(items[i + 1]) : ''}</section>`;
+  $('#print').innerHTML = html;
+  setTimeout(() => { try{ window.print(); }catch(e){ toast('Stampa non disponibile su questo dispositivo.'); } }, 80);
+}
+/* aperta da un QR: si va dritti a quel settore o muro */
+function openFromLink(){
+  const m = /[#&]m=([^&]+)/.exec(location.hash); if(!m) return false;
+  const id = decodeURIComponent(m[1]); try{ history.replaceState(null, '', location.pathname + location.search); }catch(e){}
+  const w = S.walls.find(x => x.id === id && !x.archived);
+  if(!w){ toast('Questo settore non c\'è più: ecco la pagina iniziale.'); return false; }
+  ui.sheet = null; renderSheet();
+  ui.section = secOf(w); ui.home = false; ui.full = false; S.active = w.id; ui.lastSec[ui.section] = w.id; saveBUI();
+  if(EDIT) S.mode = 'edit';
+  ui.bLevel = 'sector'; ui.secOver = true; ui.zoom = 1; ui.sel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false;
+  ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save();
+  try{ history.pushState({ grid: 1 }, ''); history.pushState({ sec: 1 }, ''); }catch(e){} render(); $('#box').scrollTop = 0;
+  return true;
+}
+window.addEventListener('hashchange', () => { if(ui.ready && /[#&]m=/.test(location.hash)) openFromLink(); });
 /* ---------- pannello settori (gestore): età, gradi, chi traccia ---------- */
 const DASH_OLD = 42, DASH_MID = 28;   /* giorni: oltre 6 settimane "da rinnovare", oltre 4 "da tenere d'occhio" */
 function ageDays(d){ if(!d) return null; const t = Date.parse(d + 'T12:00:00'); return isNaN(t) ? null : Math.max(0, Math.round((Date.now() - t) / 864e5)); }
@@ -2996,6 +3054,7 @@ function renderSheet(){
       (SB && !REAL_EDIT ? row('login', 'Accesso staff', ui.authEmail ? 'sei entrato come ' + esc(ui.authEmail) + ', che non è nello staff' : 'per gestore e tracciatori') : '')+
       (SB && !REAL_EDIT && ui.authEmail ? row('logout', 'Esci', esc(ui.authEmail)) : '')+
       (SB && REAL_EDIT && ME.role === 'gestore' ? row('staff', 'Staff', 'chi può tracciare e pubblicare') : '')+
+      (EDIT && isMgr() && S.walls.some(w => !w.archived) ? row('qr', 'QR code', 'da attaccare ai muri: chi li inquadra apre quel settore') : '')+
       (EDIT && isMgr() && S.walls.some(isSec) ? row('dash', 'Pannello settori', 'età dei boulder, gradi presenti e mancanti, chi traccia') : '')+
       (SB && REAL_EDIT && ME.role === 'gestore' ? row('hist', 'Versioni precedenti', 'le ultime pubblicazioni, da ripristinare') : '')+
       (SB && (REAL_EDIT || ui.authEmail) ? row('setpass', 'Imposta password', 'per entrare senza aspettare l\'email') : '')+
@@ -3030,6 +3089,8 @@ function renderSheet(){
     h = `<h2>Segnala un problema</h2><p class="note" style="margin:0 0 10px">Scrivi cosa non va o cosa miglioreresti. Insieme al messaggio arrivano da sole anche la schermata in cui sei${where ? ` (<b>${esc(where)}</b>)` : ''}, il tipo di telefono e la versione dell'app.</p>`+
       `<label class="field">Messaggio<textarea id="fbtext" rows="5" maxlength="2000" placeholder="Es.: il contorno di questa presa è sbagliato, non trovo il tasto per…" style="width:100%;resize:vertical">${esc(ui.fbDraft || '')}</textarea></label>`+
       `<div class="row"><button class="btn primary" data-act="fbsend">Invia</button><button class="btn" data-act="close">Annulla</button></div>`;
+  } else if(ui.sheet === 'qr'){
+    h = qrHtml();
   } else if(ui.sheet === 'dash'){
     h = dashHtml();
   } else if(ui.sheet === 'fblist'){
@@ -3503,9 +3564,9 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
+const PUBLIC_ACTS = ['bnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
-const MGR_ACTS = ['dash','dashsec','fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
+const MGR_ACTS = ['qr','qrprint','qrcopy','dash','dashsec','fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b || b.disabled) return;
   const a = b.dataset.act, w = curWall(), c = curCircuit();
@@ -3596,6 +3657,10 @@ document.addEventListener('click', e => {
       (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Copiata: incollala a Claude'), () => { window.prompt('Copia il testo:', txt); });
       break; }
     case 'dash': openSheet('dash'); break;
+    case 'qr': openSheet('qr'); break;
+    case 'qrprint': qrPrint(b.dataset.id); break;
+    case 'qrcopy': { const it = qrItems().find(x => x.id === b.dataset.id); if(!it) break; const u = wallLink(it.w);
+      (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(() => toast('Link copiato'), () => window.prompt('Copia il link:', u)); break; }
     case 'dashsec': {
       const w2 = S.walls.find(x => x.id === b.dataset.id); if(!w2) break;
       ui.sheet = null; renderSheet();
@@ -3631,6 +3696,7 @@ document.addEventListener('click', e => {
       if(EDIT && S.mode === 'wall' && v === 'boulder') S.mode = 'edit';
       ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); saveBUI(); render(); break;
     }
+    case 'bnew': ui.bNew = !ui.bNew; if(ui.bNew && EDIT) ui.bShow = 'on'; afterFilter(); break;
     case 'bshow': case 'bcolor':
       if(a === 'bshow') ui.bShow = b.dataset.v; else ui.bColor = ui.bColor === b.dataset.v ? '' : b.dataset.v;
       saveBUI(); afterFilter(); break;
@@ -4055,6 +4121,7 @@ render();
   ui.ready = true;
   ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
   render();
+  openFromLink();
   /* aperta dalla notifica di una nuova segnalazione: il gestore va dritto all'elenco */
   if(/segnalazioni/.test(location.hash)){ history.replaceState(null, '', location.pathname + location.search);
     if(SB && ME && ME.role === 'gestore'){ ui.fbAll = false; ui.fb = null; openSheet('fblist'); loadFb(); } }

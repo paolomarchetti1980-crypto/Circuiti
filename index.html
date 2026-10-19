@@ -172,6 +172,13 @@ button,label.btn{cursor:pointer}
   .ppage h1 b{margin-left:auto;font-size:20pt;border:.5mm solid #111;border-radius:2mm;padding:0 3mm}
   .pmeta{margin:0;font-size:11pt;color:#333}
   .pnotes{margin:0;font-size:11pt;font-style:italic}
+  .pqpage{justify-content:space-between;height:270mm;gap:0}
+  .pqr{height:132mm;border:.4mm dashed #bbb;border-radius:4mm;padding:6mm 8mm;display:flex;flex-direction:column;align-items:center;box-sizing:border-box}
+  .pqr header{align-self:stretch;display:flex;justify-content:space-between;font:600 10pt Barlow,Arial,sans-serif;color:#555;border-bottom:.4mm solid #ff7a1a;padding-bottom:2mm}
+  .pqr h1{margin:4mm 0 1mm;font:700 26pt "Barlow Semi Condensed",Arial,sans-serif;text-align:center}
+  .pqsub{margin:0 0 3mm;font-size:12pt;color:#333}
+  .pqr .qrsvg{width:72mm;height:72mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .pqurl{margin:2mm 0 0;font-size:8pt;color:#777;word-break:break-all;text-align:center}
   .ppage img{width:100%;max-height:205mm;object-fit:contain;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .ppage footer{margin-top:auto;font-size:8pt;color:#777}
 }
@@ -210,6 +217,10 @@ button,label.btn{cursor:pointer}
 .dmiss{display:block;margin-top:5px;color:var(--muted)}
 .sname{display:block;width:100%;background:transparent;border:1px solid transparent;border-radius:8px;color:var(--ink);font:inherit;font-weight:600;padding:4px 6px;margin:0 0 2px -6px}
 .sname:focus,.sname:placeholder-shown{border-color:rgba(255,255,255,.18);outline:none}
+.newb{display:inline-block;vertical-align:2px;background:#ff7a1a;color:#111;font-size:11px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;border-radius:5px;padding:1px 5px;margin-left:4px}
+.snew{display:inline-block;margin-left:6px;background:#ff7a1a;color:#111;font-size:12px;font-weight:700;border-radius:6px;padding:0 6px}
+.hnew{color:#ff9a4d;font-weight:700}
+.qrrow{align-items:center;gap:12px}.qrrow .qrsvg{flex:none;border-radius:6px}
 .fbbtns{display:flex;flex-direction:column;gap:6px;flex:none}
 .fbkind{display:inline-block;padding:1px 7px;border-radius:999px;background:#24384f;color:#bcd7ff;font-weight:700}
 .fbkind.err{background:#4a1f1f;color:#ffb3b3}
@@ -217,5 +228,5 @@ button,label.btn{cursor:pointer}
 </style></head><body><div id="root"></div>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="namegen.js"></script><script id="app-js" src="app.js?v=107"></script>
+<script src="namegen.js"></script><script id="app-js" src="app.js?v=108"></script>
 </body></html>
