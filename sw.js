@@ -2,8 +2,10 @@
    - pagina, codice e dati pubblicati: prima la rete (così gli aggiornamenti arrivano subito), se manca la rete l'ultima copia salvata
    - foto dei muri: subito dalla copia salvata, aggiornata in sottofondo
    - modello di riconoscimento e librerie: scaricati una volta sola */
-const CACHE = 'circuiti-v98';
-const CORE = ['./', './index.html', './app.js?v=98', './namegen.js', './config.js', './manifest.webmanifest', './icon-192-g3.png', './icon-512-g3.png', './icon-maskable-512-g3.png', './apple-touch-icon-g3.png'];
+const CACHE = 'circuiti-v99';
+/* modello di riconoscimento e librerie (decine di MB): in una cache a parte che NON si svuota a ogni aggiornamento dell'app */
+const MODELS = 'circuiti-modelli';
+const CORE = ['./', './index.html', './app.js?v=99', './namegen.js', './config.js', './manifest.webmanifest', './icon-192-g3.png', './icon-512-g3.png', './icon-maskable-512-g3.png', './apple-touch-icon-g3.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).catch(() => {}));
@@ -12,7 +14,7 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)));
+    await Promise.all(keys.filter(k => k !== CACHE && k !== MODELS).map(k => caches.delete(k)));
     await self.clients.claim();
   })());
 });
@@ -31,8 +33,8 @@ async function networkFirst(req, fresh){
     throw e;
   }
 }
-async function cacheFirst(req){
-  const c = await caches.open(CACHE);
+async function cacheFirst(req, name){
+  const c = await caches.open(name || CACHE);
   const hit = await c.match(req);
   if(hit && hit.type !== 'opaque') return hit;
   const r = await fetch(req);
@@ -52,7 +54,7 @@ self.addEventListener('fetch', e => {
   if(req.method !== 'GET') return;
   const u = new URL(req.url);
   if(u.origin === self.location.origin){
-    if(u.pathname.includes('/models/')) return e.respondWith(cacheFirst(req));
+    if(u.pathname.includes('/models/')) return e.respondWith(cacheFirst(req, MODELS));
     if(u.pathname.includes('/img/')) return e.respondWith(staleWhileRevalidate(req));
     return e.respondWith(networkFirst(req, true));
   }
@@ -61,5 +63,6 @@ self.addEventListener('fetch', e => {
     if(u.pathname.startsWith('/storage/v1/object/public/')) return e.respondWith(cacheFirst(req));
     return; /* accesso, login, caricamenti: sempre dalla rete */
   }
-  if(u.hostname === 'cdn.jsdelivr.net' || u.hostname === 'fonts.googleapis.com' || u.hostname === 'fonts.gstatic.com') return e.respondWith(cacheFirst(req));
+  if(u.hostname === 'cdn.jsdelivr.net') return e.respondWith(cacheFirst(req, MODELS));
+  if(u.hostname === 'fonts.googleapis.com' || u.hostname === 'fonts.gstatic.com') return e.respondWith(cacheFirst(req));
 });

@@ -710,10 +710,12 @@ async function samplePanelColor(w, x, y){
 /* ---------- SAM (MobileSAM) nel browser: il telefono "studia" la foto una volta, poi ogni tocco dà il contorno quasi subito ---------- */
 const SAMCFG = { ort: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/', enc: 'models/mobilesam_encoder.onnx', dec: 'models/mobilesam_decoder.onnx' };
 const sam = { state: 'off', enc: null, dec: null, emb: {}, loading: null };
+const samMaybe = () => sam.state !== 'failed' || (!sam.noWasm && Date.now() - (sam.failedAt || 0) > 15000);
 function loadScript(src){ return new Promise((res, rej) => { const el = document.createElement('script'); el.src = src; el.onload = res; el.onerror = rej; document.head.appendChild(el); }); }
 async function samInit(){
   if(sam.state === 'ready') return true;
-  if(sam.state === 'failed') return false;
+  /* se lo scaricamento è fallito (rete debole), si riprova dopo un po' invece di rinunciare per tutta la sessione */
+  if(sam.state === 'failed'){ if(!sam.noWasm && Date.now() - (sam.failedAt || 0) > 15000) sam.state = 'off'; else return false; }
   if(sam.loading) return sam.loading;
   sam.loading = (async () => {
     sam.state = 'loading'; renderTools();
@@ -727,7 +729,7 @@ async function samInit(){
       sam.dec = await ort.InferenceSession.create(SAMCFG.dec, o);
       sam.enc = await ort.InferenceSession.create(SAMCFG.enc, o);
       sam.state = 'ready'; return true;
-    }catch(e){ console.warn('SAM non disponibile', e); sam.state = 'failed'; return false; }
+    }catch(e){ console.warn('SAM non disponibile', e); sam.state = 'failed'; sam.failedAt = Date.now(); sam.noWasm = typeof WebAssembly !== 'object'; sam.dec = null; sam.enc = null; return false; }
     finally{ done(); sam.loading = null; renderTools(); }
   })();
   return sam.loading;
@@ -763,7 +765,7 @@ async function samEmbed(w){
 }
 /* prepara il modello e la foto in anticipo, così il primo tocco non aspetta */
 function samWarm(w){
-  if(!w || sam.state === 'failed') return;
+  if(!w || !samMaybe()) return;
   samInit().then(ok => { if(ok) samEmbed(w).catch(() => {}); });
 }
 /* ---------- rifinitura: SAM sulla zona della presa ingrandita ----------
@@ -1206,7 +1208,7 @@ async function detect(w, x, y, ts, strict){
   try{ await nextPaint(); return await detect0(w, x, y, ts, strict); } finally { done(); }
 }
 async function detect0(w, x, y, ts, strict){
-  if(sam.state !== 'failed'){
+  if(samMaybe()){
     try{
       const r = await samSegment(w, x, y, ts || 1, strict);
       if(r) return r;
@@ -1417,7 +1419,7 @@ async function samAutoScan(w){
 async function autoDetectAll(w){
   if(!w || ui.scan || w.locked) return;
   ui.cleared = null;
-  const useSam = sam.state !== 'failed' && await samInit();
+  const useSam = samMaybe() && await samInit();
   if(useSam) return samAutoScan(w);
   const step = useSam ? Math.max(14, Math.round(Math.max(w.w, w.h) / 64)) : Math.max(14, Math.round(Math.max(w.w, w.h) / 85));
   const cols = Math.max(1, Math.floor(w.w / step)), rows = Math.max(1, Math.floor(w.h / step));
@@ -2228,7 +2230,7 @@ async function findColor(w, c){
     const r = await colorCands(w, c);
     if(r.err){ toast(r.err, 7000); return; }
     const list = [];
-    const useSam = sam.state !== 'failed' && await samInit();
+    const useSam = samMaybe() && await samInit();
     for(const cp of r.comps){
       let poly = null, so = null;
       if(useSam){ try{ const s2 = await samSegment(w, cp.X, cp.Y, 1, false, false, true); if(s2 && inPoly(s2.poly, cp.X, cp.Y) && s2.area < cp.a*4 && s2.area > cp.a*0.3){ poly = s2.poly; so = s2.so; } }catch(e){} }
@@ -2529,7 +2531,7 @@ function renderChips(){
 }
 function samStatus(w){
   const e = sam.emb[w.id];
-  if(sam.state === 'failed') return 'Riconoscimento intelligente non disponibile su questo telefono: uso il metodo semplice.';
+  if(sam.state === 'failed') return sam.noWasm ? 'Riconoscimento intelligente non disponibile su questo telefono: uso il metodo semplice.' : 'Non sono riuscito a scaricare il riconoscimento intelligente (rete debole?): per ora uso il metodo semplice, riprovo al prossimo tocco.';
   if(sam.state === 'loading') return 'Scarico il riconoscimento intelligente (circa 33 MB, solo la prima volta)…';
   if(sam.state === 'ready' && e && !e.e) return 'Studio la foto del muro (qualche secondo)…';
   if(sam.state === 'ready' && e && e.e) return 'Riconoscimento intelligente pronto: tocca una presa.';
@@ -2681,7 +2683,7 @@ function needsSam(w){ return EDIT && w && !ui.home && !bGrid() && !bOver() && ((
 function render(){
   const w = curWall();
   normalizeMode(w);
-  if(needsSam(w) && sam.state !== 'failed' && !(sam.emb[w.id] && sam.emb[w.id].key === samKey(w))) samWarm(w);
+  if(needsSam(w) && samMaybe() && !(sam.emb[w.id] && sam.emb[w.id].key === samKey(w))) samWarm(w);
   const viewing = !EDIT || S.mode === 'view';
   if(viewing && w && isSec(w)){ const v = sortedVisible(w); if(v.length && !v.some(x => x.id === w.activeCircuit)) w.activeCircuit = v[0].id; }
   if(ui.full && (!viewing || !curCircuit())) ui.full = false;
