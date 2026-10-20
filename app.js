@@ -2905,10 +2905,15 @@ function swipeGo(d){
   let sx = 0, sy = 0, lx = 0, ly = 0, st = 0, on = false;
   const down = e => { if(!newC() || e.touches.length !== 1){ on = false; return; } on = true; sx = lx = e.touches[0].clientX; sy = ly = e.touches[0].clientY; st = Date.now(); };
   const move = e => { if(!on) return; if(e.touches.length !== 1){ on = false; return; } lx = e.touches[0].clientX; ly = e.touches[0].clientY; };
+  /* in anteprima, per lo staff: se un trascinamento di lato non cambia blocco si dice perché (aiuta a regolare il gesto) */
+  const why = (m, dx, dy, ms) => { if(REAL_EDIT && ui.prevNew && Math.abs(dx) > 30) toast(`Scorrimento non riconosciuto: ${m} (${Math.round(dx)}/${Math.round(dy)} px, ${ms} ms, zoom ${ui.zoom.toFixed(2)})`, 3500); };
   const up = (e, always) => { if(!on || !newC()) return; on = false; const t = e.changedTouches && e.changedTouches[0];
-    const dx = (t ? t.clientX : lx) - sx, dy = (t ? t.clientY : ly) - sy;
-    if(Date.now() - st > 800 || Math.abs(dx) < 50 || Math.abs(dx) < 1.5 * Math.abs(dy)) return;
-    if(!always && ui.zoom > 1.02) return;   /* foto ingrandita: il dito sposta la foto, non cambia blocco */
+    const dx = (t ? t.clientX : lx) - sx, dy = (t ? t.clientY : ly) - sy, ms = Date.now() - st;
+    if(ms > 800) return why('troppo lento', dx, dy, ms);
+    if(Math.abs(dx) < 50) return why('troppo corto', dx, dy, ms);
+    if(Math.abs(dx) < 1.5 * Math.abs(dy)) return why('troppo in diagonale', dx, dy, ms);
+    if(!always && ui.zoom > 1.02) return why('foto ingrandita', dx, dy, ms);   /* foto ingrandita: il dito sposta la foto, non cambia blocco */
+    if(ui.home || bGrid() || ui.sheet) return why('non sei in un settore', dx, dy, ms);
     swipeGo(dx < 0 ? 1 : -1); };
   const bind = (el, always) => { if(!el) return; el.addEventListener('touchstart', down, { passive: true }); el.addEventListener('touchmove', move, { passive: true });
     el.addEventListener('touchend', e => up(e, always), { passive: true }); el.addEventListener('touchcancel', e => up(e, always), { passive: true }); };
@@ -3258,7 +3263,8 @@ function renderSheet(){
         REAL_EDIT ? `<p class="note" style="margin:0">In anteprima le salite si salvano sul tuo account dello staff.</p>` : row('acct', 'Entra o crea un account', 'gratis: serve per le tue salite'))+
       `</div>`+
       (REAL_EDIT ? `<div class="row"><button class="btn" data-act="viewas" data-v="${ME.role}">Esci dall'anteprima</button><button class="btn primary" data-act="close">Chiudi</button></div>` :
-        `<div class="row"><button class="btn primary" data-act="close">Chiudi</button></div><p class="note" style="text-align:center"><button class="linklike" data-act="login">Accesso staff</button></p>`);
+        `<div class="row"><button class="btn primary" data-act="close">Chiudi</button></div><p class="note" style="text-align:center"><button class="linklike" data-act="login">Accesso staff</button></p>`)+
+      `<p class="note" style="text-align:center;margin:6px 0 0;opacity:.6">versione ${esc(APP_V)}</p>`;
   } else if(ui.sheet === 'menu'){
     const bo = w ? isSec(w) : BO(), n = w ? sortedVisible(w).length : 0, one = bo ? 'questo boulder' : 'questo circuito';
     const row = (act, label, sub, dis) => `<button class="wrow" data-act="${act}" ${dis ? 'disabled' : ''}><span>${label}</span><small>${sub || ''}</small></button>`;
@@ -3283,7 +3289,8 @@ function renderSheet(){
       (SB && (REAL_EDIT || ui.authEmail) ? row('setpass', 'Imposta password', 'per entrare senza aspettare l\'email') : '')+
       (SB && REAL_EDIT ? row('logout', 'Esci', ME ? esc(ME.email) + ' · ' + (ME.role === 'gestore' ? 'gestore' : 'tracciatore') : '') : '')+
       `</div>`+
-      `<div class="row"><button class="btn primary" data-act="close">Chiudi</button></div>`;
+      `<div class="row"><button class="btn primary" data-act="close">Chiudi</button></div>`+
+      `<p class="note" style="text-align:center;margin:6px 0 0;opacity:.6">versione ${esc(APP_V)}</p>`;
   } else if(ui.sheet === 'install'){
     h = `<h2>Installa l'app</h2>`+
       (isIOS() ? `<p>Su iPhone:</p><ol style="margin:0 0 14px;padding-left:20px;line-height:1.6"><li>tocca <b>Condividi</b> (il quadrato con la freccia in su), in basso in Safari</li><li>scorri e scegli <b>Aggiungi alla schermata Home</b></li><li>tocca <b>Aggiungi</b></li></ol><p class="note" style="margin:0 0 12px">Funziona da Safari: se hai aperto il link da un'altra app, aprilo prima in Safari.</p>`
