@@ -2488,6 +2488,7 @@ function overlay(w, o){
 
 /* ---------- render ---------- */
 function fit(){
+  $('#app').classList.toggle('swipeok', newC() && !(ui.zoom > 1.02));
   const w = curWall(); if(!w) return;
   const b = $('#box'), st = $('#stage');
   const k = Math.min(b.clientWidth / w.w, b.clientHeight / w.h) * ui.zoom;
@@ -2824,6 +2825,8 @@ function render(){
   $('#app').classList.toggle('home', !!ui.home);
   $('#app').classList.toggle('over', bOver());
   $('#app').classList.toggle('ccomp', cCompact());
+  /* scorrimento col dito: finché la foto non è ingrandita, il gesto orizzontale lo gestisce l'app e non il browser */
+  $('#app').classList.toggle('swipeok', newC() && !(ui.zoom > 1.02));
   renderTop(); renderViewbar(); renderPub(); renderStage(); renderChips(); renderTools(); renderFull(); }
 /* ordine degli elenchi: circuiti per grado e nome, boulder per difficoltà e numero */
 const circCmp = (x, y) => gradeIdx(x.grade) - gradeIdx(y.grade) || String(x.name).localeCompare(String(y.name));
@@ -2898,15 +2901,18 @@ function swipeGo(d){
   toast(n.name, 1200);
 }
 (function swipe(){
-  let sx = 0, sy = 0, st = 0, on = false;
-  const down = e => { if(!newC() || e.touches.length !== 1){ on = false; return; } on = true; sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now(); };
-  const up = (e, always) => { if(!on || !newC()) return; on = false; const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
-    if(Date.now() - st > 600 || Math.abs(dx) < 60 || Math.abs(dx) < 2 * Math.abs(dy)) return;
+  /* l'ultima posizione del dito si tiene a parte: se il telefono interrompe il tocco (touchcancel) si decide lo stesso */
+  let sx = 0, sy = 0, lx = 0, ly = 0, st = 0, on = false;
+  const down = e => { if(!newC() || e.touches.length !== 1){ on = false; return; } on = true; sx = lx = e.touches[0].clientX; sy = ly = e.touches[0].clientY; st = Date.now(); };
+  const move = e => { if(!on) return; if(e.touches.length !== 1){ on = false; return; } lx = e.touches[0].clientX; ly = e.touches[0].clientY; };
+  const up = (e, always) => { if(!on || !newC()) return; on = false; const t = e.changedTouches && e.changedTouches[0];
+    const dx = (t ? t.clientX : lx) - sx, dy = (t ? t.clientY : ly) - sy;
+    if(Date.now() - st > 800 || Math.abs(dx) < 50 || Math.abs(dx) < 1.5 * Math.abs(dy)) return;
     if(!always && ui.zoom > 1.02) return;   /* foto ingrandita: il dito sposta la foto, non cambia blocco */
     swipeGo(dx < 0 ? 1 : -1); };
-  const box = document.getElementById('box'), fc = document.getElementById('fcard');
-  if(box){ box.addEventListener('touchstart', down, { passive: true }); box.addEventListener('touchend', e => up(e, false), { passive: true }); }
-  if(fc){ fc.addEventListener('touchstart', down, { passive: true }); fc.addEventListener('touchend', e => up(e, true), { passive: true }); }
+  const bind = (el, always) => { if(!el) return; el.addEventListener('touchstart', down, { passive: true }); el.addEventListener('touchmove', move, { passive: true });
+    el.addEventListener('touchend', e => up(e, always), { passive: true }); el.addEventListener('touchcancel', e => up(e, always), { passive: true }); };
+  bind(document.getElementById('box'), false); bind(document.getElementById('fcard'), true);
 })();
 /* ---------- account cliente e "Le mie salite" ---------- */
 const loginIntent = () => { try{ return localStorage.getItem('login-intent') || 'staff'; }catch(e){ return 'staff'; } };
@@ -4228,6 +4234,7 @@ function applyZoom(nz, fx, fy){
   const u = st.clientWidth ? (box.scrollLeft + px - st.offsetLeft)/st.clientWidth : 0.5;
   const v = st.clientHeight ? (box.scrollTop + py - st.offsetTop)/st.clientHeight : 0.5;
   ui.zoom = nz; fit();
+  $('#app').classList.toggle('swipeok', newC() && !(ui.zoom > 1.02));
   box.scrollLeft = u*st.clientWidth + st.offsetLeft - px;
   box.scrollTop = v*st.clientHeight + st.offsetTop - py;
   const wallMode = EDIT && S.mode === 'wall';

@@ -39,6 +39,8 @@ button,label.btn{cursor:pointer}
 #stage{position:relative;margin:auto;flex:none;user-select:none;-webkit-user-select:none}
 #stage.edit{cursor:crosshair}
 #stage.linedraw{touch-action:none}
+#app.swipeok #box{touch-action:pan-y}
+#fcard{touch-action:pan-y}
 #photo{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;-webkit-user-drag:none}
 #ov{position:absolute;inset:0;width:100%;height:100%;display:block}
 .zoom{position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;gap:6px}
@@ -152,7 +154,7 @@ button,label.btn{cursor:pointer}
   background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.25);font-weight:600;font-size:15px;max-width:92%;pointer-events:none}
 .spin{flex:none;width:18px;height:18px;border-radius:50%;border:3px solid rgba(128,128,128,.45);border-top-color:#ff7a1a;animation:spin .8s linear infinite;will-change:transform}
 @keyframes spin{to{transform:rotate(360deg)}}
-.toast{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:20;
+.toast{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:20;pointer-events:none;
   background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:10px;max-width:88%;text-align:center}
 
 .menubtn{flex:none;width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:700 22px/1 Barlow,sans-serif;padding:0}
@@ -241,5 +243,5 @@ button,label.btn{cursor:pointer}
 </style></head><body><div id="root"></div>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="namegen.js"></script><script id="app-js" src="app.js?v=112"></script>
+<script src="namegen.js"></script><script id="app-js" src="app.js?v=113"></script>
 </body></html>
