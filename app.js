@@ -72,10 +72,19 @@ function colOf(c){
 const diffOf = c => DIFFS.find(d => d[0] === (c && c.diff)) || null;
 const diffIdx = c => { const i = DIFFS.findIndex(d => d[0] === (c && c.diff)); return i < 0 ? 99 : i; };
 const bTitle = c => { const d = diffOf(c); return d ? d[1] + ' ' + (c.num || 1) : 'Nuovo boulder'; };
-const bTitleHtml = c => esc(bTitle(c)) + (c.name && diffOf(c) ? ` <span style="font-weight:600;color:var(--muted)">· ${esc(c.name)}</span>` : '') + (isNew(c) ? ' <span class="newb">Nuovo</span>' : '');
-/* "Nuovo": boulder in parete montato da non più di una settimana */
-const NEW_DAYS = 7;
-const isNew = c => !!(c && c.diff && c.dateSet && !isOff(c) && c.dateSet <= todayISO() && (Date.now() - Date.parse(c.dateSet + 'T00:00:00')) < (NEW_DAYS + 1) * 864e5);
+const bTitleHtml = c => esc(bTitle(c)) + (c.name && diffOf(c) ? ` <span style="font-weight:600;color:var(--muted)">· ${esc(c.name)}</span>` : '') + (bLabel(c) ? ` <span class="newb ${bLabel(c) === 'Recente' ? 'rec' : ''}">${bLabel(c)}</span>` : '');
+/* età dei boulder, a settimane: 1ª settimana "Nuovo", 2ª "Recente" (per i clienti), dalla 9ª "Scaduto" (solo per lo staff).
+   I settori si rinnovano interi a rotazione, quindi l'etichetta va sul settore; un singolo boulder ce l'ha
+   solo se è stato aggiunto dopo il rinnovo del suo settore (le eccezioni). */
+const daysOld = d => { if(!d || d > todayISO()) return null; const t = Date.parse(d + 'T00:00:00'); return isNaN(t) ? null : Math.floor((Date.now() - t) / 864e5); };
+const AGE_NEW = 7, AGE_RECENT = 14, AGE_EXPIRED = 56;
+const ageLabel = d => { const a = daysOld(d); return a === null ? '' : a < AGE_NEW ? 'Nuovo' : a < AGE_RECENT ? 'Recente' : a >= AGE_EXPIRED ? 'Scaduto' : ''; };
+/* data di rinnovo del settore: il boulder in parete più vecchio */
+const secRenew = w => (w.circuits || []).filter(c => c.diff && c.dateSet && !isOff(c)).map(c => c.dateSet).sort()[0] || '';
+const secLabel = w => { if(!isSec(w)) return ''; const l = ageLabel(secRenew(w)); return l === 'Scaduto' ? (EDIT ? l : '') : (EDIT ? '' : l); };
+const wallOfC = c => S.walls.find(w => (w.circuits || []).includes(c));
+const bLabel = c => { if(EDIT || !c || !c.diff || isOff(c)) return ''; const l = ageLabel(c.dateSet); if(l !== 'Nuovo' && l !== 'Recente') return ''; const w = wallOfC(c); return w && c.dateSet > secRenew(w) ? l : ''; };
+const isNewB = c => !!bLabel(c);
 /* numero: il più piccolo libero tra i boulder in parete della stessa difficoltà nel settore */
 function assignNum(w, c){
   if(!diffOf(c)) { delete c.num; return; }
@@ -2378,8 +2387,8 @@ function homeScreen(){
     const ws = S.walls.filter(w => secOf(w) === sec && !w.archived), bo = sec === 'boulder';
     const n = ws.reduce((t, w) => t + (bo ? w.circuits.filter(c => !isOff(c)).length : w.circuits.length), 0);
     const img = ws[0] ? `<img src="${esc(ws[0].img)}" alt="">` : '';
-    const nn = bo ? ws.reduce((t, w) => t + w.circuits.filter(isNew).length, 0) : 0;
-    const sub = ws.length ? `${ws.length} ${bo ? (ws.length === 1 ? 'settore' : 'settori') : (ws.length === 1 ? 'muro' : 'muri')} · ${n} ${bo ? 'boulder' : (n === 1 ? 'circuito' : 'circuiti')}${nn ? ` · <span class="hnew">${nn} ${nn === 1 ? 'nuovo' : 'nuovi'}</span>` : ''}` : (bo ? 'nessun settore ancora' : 'nessun muro ancora');
+    const nn = bo && !EDIT ? ws.filter(w => secLabel(w) === 'Nuovo').length : 0, ns = bo && EDIT ? ws.filter(w => secLabel(w) === 'Scaduto').length : 0;
+    const sub = ws.length ? `${ws.length} ${bo ? (ws.length === 1 ? 'settore' : 'settori') : (ws.length === 1 ? 'muro' : 'muri')} · ${n} ${bo ? 'boulder' : (n === 1 ? 'circuito' : 'circuiti')}${nn ? ` · <span class="hnew">${nn === 1 ? '1 settore nuovo' : nn + ' settori nuovi'}</span>` : ''}${ns ? ` · <span class="hnew">${ns === 1 ? '1 scaduto' : ns + ' scaduti'}</span>` : ''}` : (bo ? 'nessun settore ancora' : 'nessun muro ancora');
     return `<button class="htile" data-act="pickhome" data-v="${sec}">${img}<span class="hlab"><b>${bo ? 'Boulder' : 'Circuiti'}</b><small>${sub}</small></span></button>`;
   };
   return `<div class="home">${tile('boulder')}${tile('circ')}</div>`;
@@ -2393,8 +2402,9 @@ function sectorGrid(){
     let info, staff = '';
     if(bo){
       const dots = DIFFS.map(d => { const n = on.filter(c => c.diff === d[0]).length; return n ? `<span class="sdot"><i style="background:${d[2]}"></i>${n}</span>` : ''; }).join('');
-      const nn = on.filter(isNew).length;
-      info = (dots || '<small>nessun boulder</small>') + (nn ? `<span class="snew">${nn} ${nn === 1 ? 'nuovo' : 'nuovi'}</span>` : '');
+      const nn = on.filter(isNewB).length;
+      const sl = secLabel(w);
+      info = (dots || '<small>nessun boulder</small>') + (sl ? `<span class="snew ${sl === 'Recente' ? 'rec' : sl === 'Scaduto' ? 'exp' : ''}">${sl}</span>` : nn ? `<span class="snew">${nn} novità</span>` : '');
       if(EDIT){
         const last = on.map(c => c.dateSet || '').sort().pop();
         const t = todayISO(), lim = new Date(Date.now() + 7*864e5).toISOString().slice(0,10);
@@ -2555,7 +2565,7 @@ function renderStage(){
 const bShowEff = () => EDIT ? ui.bShow : 'on';
 function visibleCircuits(w){
   const show = bShowEff();
-  if(isSec(w)) return w.circuits.filter(c => (show === 'all' || (show === 'off') === isOff(c)) && (!ui.bColor || c.diff === ui.bColor) && (!ui.bNew || isNew(c)));
+  if(isSec(w)) return w.circuits.filter(c => (show === 'all' || (show === 'off') === isOff(c)) && (!ui.bColor || c.diff === ui.bColor) && (!ui.bNew || isNewB(c)));
   return w.circuits.filter(cMatch);
 }
 const gradeBand = g => { const i = GRADES.indexOf(g || ''); if(i <= 0) return '#5b6068'; if(i <= GRADES.indexOf('5c')) return '#7bd389'; if(i <= GRADES.indexOf('6b+')) return '#ffd166'; if(i <= GRADES.indexOf('7a+')) return '#ff9a3d'; return '#ef476f'; };
@@ -2579,8 +2589,8 @@ function circMeta(c){
 function bFilters(w){
   const ds = DIFFS.filter(d => w.circuits.some(x => x.diff === d[0] && (EDIT || !isOff(x))));
   const st = (v, l) => `<button class="fchip ${ui.bShow === v ? 'on' : ''}" data-act="bshow" data-v="${v}">${l}</button>`;
-  const nNew = w.circuits.filter(isNew).length;
-  const nw = nNew ? `<button class="fchip ${ui.bNew ? 'on' : ''}" data-act="bnew">Nuovi · ${nNew}</button>` : '';
+  const nNew = w.circuits.filter(isNewB).length;
+  const nw = nNew ? `<button class="fchip ${ui.bNew ? 'on' : ''}" data-act="bnew">Novità · ${nNew}</button>` : '';
   return (EDIT ? `<div class="fchips">${st('on','In parete')}${st('off','Smontati')}${st('all','Tutti')}${nw}</div>` : nw ? `<div class="fchips">${nw}</div>` : '')+
     (ds.length > 1 ? `<div class="fchips">${ds.map(d => `<button class="fdot ${ui.bColor === d[0] ? 'on' : ''}" data-act="bcolor" data-v="${d[0]}" aria-label="${d[1]}" aria-pressed="${ui.bColor === d[0]}" style="background:${d[2]}"></button>`).join('')}</div>` : '');
 }
@@ -2901,40 +2911,40 @@ function openFromLink(){
 }
 window.addEventListener('hashchange', () => { if(ui.ready && /[#&]m=/.test(location.hash)) openFromLink(); });
 /* ---------- pannello settori (gestore): età, gradi, chi traccia ---------- */
-const DASH_OLD = 42, DASH_MID = 28;   /* giorni: oltre 6 settimane "da rinnovare", oltre 4 "da tenere d'occhio" */
+
 function ageDays(d){ if(!d) return null; const t = Date.parse(d + 'T12:00:00'); return isNaN(t) ? null : Math.max(0, Math.round((Date.now() - t) / 864e5)); }
 function dashHtml(){
   const secs = S.walls.filter(w => isSec(w) && !w.archived);
   const t = todayISO(), lim = new Date(Date.now() + 7*864e5).toISOString().slice(0,10);
   const all = [], rows = secs.map(w => {
     const on = w.circuits.filter(c => !isOff(c)); on.forEach(c => all.push(c));
-    const ages = on.map(c => ageDays(c.dateSet)).filter(a => a !== null);
-    const avg = ages.length ? Math.round(ages.reduce((a, b) => a + b, 0) / ages.length) : null, max = ages.length ? Math.max(...ages) : null;
+    const ren = secRenew(w), age = daysOld(ren);
+    const later = on.filter(c => c.diff && c.dateSet && c.dateSet > ren).length;
     const due = on.filter(c => c.dateRemoved && c.dateRemoved >= t && c.dateRemoved <= lim).length;
-    return { w, on, avg, max, due, miss: DIFFS.filter(d => !on.some(c => c.diff === d[0])), noGrade: on.filter(c => !c.diff).length };
-  }).sort((a, b) => (b.avg ?? -1) - (a.avg ?? -1));
+    return { w, on, ren, age, later, due, miss: DIFFS.filter(d => !on.some(c => c.diff === d[0])), noGrade: on.filter(c => !c.diff).length };
+  }).sort((a, b) => (b.age ?? -1) - (a.age ?? -1));
+
   const bar = list => { const n = list.length || 1; return `<div class="dbar">${DIFFS.map(d => { const k = list.filter(c => c.diff === d[0]).length; return k ? `<i style="flex:${k};background:${d[2]}" title="${d[1]}: ${k}"></i>` : ''; }).join('')}</div>`+
     `<div class="sdots" style="padding:0;margin-top:6px">${DIFFS.map(d => { const k = list.filter(c => c.diff === d[0]).length; return `<span class="sdot${k ? '' : ' zero'}"><i style="background:${d[2]}"></i>${k}</span>`; }).join('')}</div>`; };
-  const tag = a => a === null ? '' : a > DASH_OLD ? `<small class="dtag old">da rinnovare</small>` : a > DASH_MID ? `<small class="dtag mid">da tenere d'occhio</small>` : `<small class="dtag ok">fresco</small>`;
-  const allAges = all.map(c => ageDays(c.dateSet)).filter(a => a !== null);
-  const mAvg = allAges.length ? Math.round(allAges.reduce((a, b) => a + b, 0) / allAges.length) : null;
+  const tag = a => a === null ? '' : a >= AGE_EXPIRED ? `<small class="dtag old">scaduto</small>` : a < AGE_NEW ? `<small class="dtag ok">nuovo</small>` : a < AGE_RECENT ? `<small class="dtag ok">recente</small>` : '';
+  const oldest = rows.length && rows[0].age !== null ? rows[0].age : null;
   /* chi traccia: boulder montati negli ultimi 30 giorni (anche quelli già smontati) */
   const since = new Date(Date.now() - 30*864e5).toISOString().slice(0,10), by = {};
   secs.forEach(w => w.circuits.forEach(c => { if(c.dateSet && c.dateSet >= since){ const k = (c.setter || '').trim() || 'senza nome'; by[k] = (by[k] || 0) + 1; } }));
   const setters = Object.entries(by).sort((a, b) => b[1] - a[1]);
   return `<h2>Pannello settori</h2>`+
-    `<div class="dsum"><div><b>${all.length}</b><small>boulder in parete</small></div><div><b>${secs.length}</b><small>settori</small></div><div><b>${mAvg === null ? '–' : mAvg + ' gg'}</b><small>età media</small></div></div>`+
+    `<div class="dsum"><div><b>${all.length}</b><small>boulder in parete</small></div><div><b>${secs.length}</b><small>settori</small></div><div><b>${oldest === null ? '–' : oldest + ' gg'}</b><small>il settore più vecchio</small></div></div>`+
     `<p class="dlab">Gradi in palestra</p>${bar(all)}`+
     `<p class="dlab">Settori, dal più vecchio</p><div class="list">${rows.map(r => `<button class="wrow drow" data-act="dashsec" data-id="${r.w.id}"><span style="flex:1;min-width:0;text-align:left">`+
-      `<b>${esc(r.w.name)}</b> ${tag(r.avg)}<br>`+
-      `<small>${r.on.length ? `${r.on.length} boulder · età media ${r.avg ?? '–'} gg · il più vecchio ${r.max ?? '–'} gg` : 'nessun boulder in parete'}${r.due ? ` · <b>${r.due} da smontare entro 7 giorni</b>` : ''}</small>`+
+      `<b>${esc(r.w.name)}</b> ${tag(r.age)}<br>`+
+      `<small>${r.ren ? `rinnovato il ${fmtDate(r.ren)} (${r.age} gg fa) · ${r.on.length} boulder${r.later ? ` · ${r.later} aggiunti dopo` : ''}` : r.on.length ? `${r.on.length} boulder senza data` : 'nessun boulder in parete'}${r.due ? ` · <b>${r.due} da smontare entro 7 giorni</b>` : ''}</small>`+
       (r.on.length > r.noGrade ? bar(r.on) : '')+
       (r.on.length > r.noGrade && r.miss.length ? `<small class="dmiss">Mancano: ${r.miss.map(d => d[1].toLowerCase()).join(', ')}</small>` : '')+
       (r.noGrade ? `<small class="dmiss">${r.noGrade} senza grado</small>` : '')+
       `</span></button>`).join('')}</div>`+
     `<p class="dlab">Chi ha tracciato (ultimi 30 giorni)</p>`+
     (setters.length ? `<div class="list">${setters.map(([k, n]) => `<div class="wrow"><span style="flex:1">${esc(k)}</span><b>${n}</b></div>`).join('')}</div>` : `<p class="hint">Nessun boulder montato negli ultimi 30 giorni.</p>`)+
-    `<p class="note">"Fresco" fino a ${DASH_MID} giorni di età media, "da tenere d'occhio" fino a ${DASH_OLD}, poi "da rinnovare". Tocca un settore per aprirlo.</p>`+
+    `<p class="note">Il rinnovo di un settore è la data del suo boulder in parete più vecchio. Nuovo nella 1ª settimana, recente nella 2ª, scaduto dalla 9ª (questa etichetta la vede solo lo staff). Tocca un settore per aprirlo.</p>`+
     `<div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
 }
 function openSheet(name){ ui.sheet = name; ui.confirm = null; renderSheet(); }
@@ -3696,7 +3706,7 @@ document.addEventListener('click', e => {
       if(EDIT && S.mode === 'wall' && v === 'boulder') S.mode = 'edit';
       ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); saveBUI(); render(); break;
     }
-    case 'bnew': ui.bNew = !ui.bNew; if(ui.bNew && EDIT) ui.bShow = 'on'; afterFilter(); break;
+    case 'bnew': ui.bNew = !ui.bNew; afterFilter(); break;
     case 'bshow': case 'bcolor':
       if(a === 'bshow') ui.bShow = b.dataset.v; else ui.bColor = ui.bColor === b.dataset.v ? '' : b.dataset.v;
       saveBUI(); afterFilter(); break;
