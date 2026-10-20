@@ -2470,7 +2470,7 @@ function overlay(w, o){
     if(bo) act.holds.forEach(h => { const fm = foreignMask(w, act, h); if(fm) s += `<image href="${fm.url}" xlink:href="${fm.url}" x="${fm.x}" y="${fm.y}" width="${fm.w}" height="${fm.h}" preserveAspectRatio="none" opacity="${(op/0.62).toFixed(2)}"/>`; });
   }
   if(act && bo) s += lineSVG(act.line || autoLine(act, w), w.w, colOf(act), act);
-  if(bo && ui.bline && ui.lineDraft.length > 1) s += lineSVG(ui.lineDraft, w.w, '#ff3b7a');
+  if(bo && ui.bline && ui.lineDraft.length > 1) s += lineSVG(ui.lineDraft.flat(), w.w, '#ff3b7a');   /* la bozza è fatta di coppie [x, y]: lineSVG vuole i numeri in fila */
   if(act) s += circuitSVG(act, w.w, 1, Object.assign({}, o, { H: w.h, obst: w.holds || [], busy: busyMap(w), mk }));
   if(o.edit && bo && act && ui.cand && ui.cand.cid === act.id){
     const t = Math.max(2, w.w*0.0026);
@@ -2534,7 +2534,7 @@ const EYE_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="tr
 const WRENCH_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4.5 4.5 0 0 1 5.9-1.1l-3 3 .3 2.2 2.2.3 3-3a4.5 4.5 0 0 1-6 5.9L8.5 22.2a2.1 2.1 0 0 1-3-3l8.6-8.6a4.5 4.5 0 0 1 .6-4.3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
 function renderViewbar(){
   const el = $('#viewbar'); if(!el) return;
-  if(REAL_EDIT && ui.viewAs === 'cliente' && ui.prevNew){ el.hidden = false; el.innerHTML = `<span>Anteprima della <b>nuova parte clienti</b>: i clienti non la vedono<br><small class="swdbg">${esc(ui.swDbg || 'dito: nessun tocco ancora')}</small></span><button class="btn" data-act="viewas" data-v="${ME.role}">Esci</button>`; return; }
+  if(REAL_EDIT && ui.viewAs === 'cliente' && ui.prevNew){ el.hidden = false; el.innerHTML = `<span>Anteprima della <b>nuova parte clienti</b>: i clienti non la vedono</span><button class="btn" data-act="viewas" data-v="${ME.role}">Esci</button>`; return; }
   if(!REAL_EDIT || !ui.viewAs || ui.viewAs === 'cliente'){ el.hidden = true; return; }
   el.hidden = false;
   el.innerHTML = `<span>Stai vedendo come <b>${ui.viewAs}</b>${ui.viewAs === 'cliente' && dirtyReal() ? ' (con le tue modifiche non pubblicate)' : ''}</span><button class="btn" data-act="viewas" data-v="${ME.role}">Torna ${ME.role}</button>`;
@@ -2904,8 +2904,8 @@ function swipeGo(d){
   /* due strade, per i telefoni che si comportano in modo diverso: eventi "pointer" e, in riserva, eventi "touch".
      Il primo dei due che riconosce il gesto lo esegue; l'altro viene ignorato per mezzo secondo. */
   let g = null, lastGo = 0;
-  const dbg = (m) => { if(REAL_EDIT && ui.prevNew){ ui.swDbg = m; const el = $('#viewbar'); const d = el && el.querySelector('.swdbg'); if(d) d.textContent = m; } };
-  const why = (m, dx, dy, ms) => { dbg(`${m} · ${Math.round(dx)}/${Math.round(dy)}px · ${ms}ms · zoom ${ui.zoom.toFixed(2)}`); if(REAL_EDIT && ui.prevNew && Math.abs(dx) > 30) toast(`Scorrimento non riconosciuto: ${m}`, 2500); };
+  const dbg = () => {};
+  const why = () => {};
   const start = (x, y, src, always) => { if(!newC()) return; g = { x, y, lx: x, ly: y, t: Date.now(), src, always }; dbg('dito giù (' + src + ')'); };
   const moveTo = (x, y) => { if(g){ g.lx = x; g.ly = y; } };
   const finish = (x, y, how) => {
@@ -2999,20 +2999,30 @@ function mineHtml(){
     `<div class="row"><button class="btn primary" data-act="acctmode" data-v="new">Crea account</button><button class="btn" data-act="acctmode" data-v="in">Ho già un account</button><button class="btn" data-act="close">Chiudi</button></div>`;
   if(!ui.ticks) return `<h2>Le mie salite</h2><p>Carico…</p>`;
   if(ui.ticksErr) return `<h2>Le mie salite</h2><p>Le salite non sono ancora disponibili. Riprova più tardi.</p><div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
-  const items = mineItems(), done = items.filter(x => x.t.status === 'fatto'), proj = items.filter(x => x.t.status === 'progetto' && !x.gone);
-  const secs = S.walls.filter(w => isSec(w) && !w.archived), onB = secs.flatMap(w => w.circuits.filter(c => c.diff && !isOff(c)));
-  const doneIds = new Set(done.map(x => x.c.id));
-  const bars = DIFFS.map(d => { const tot = onB.filter(c => c.diff === d[0]).length; if(!tot) return ''; const k = onB.filter(c => c.diff === d[0] && doneIds.has(c.id)).length;
-    return `<div class="pbar"><i class="dot" style="background:${d[2]}"></i><span class="pname">${d[1]}</span><span class="ptrack"><span style="width:${Math.round(k / tot * 100)}%;background:${d[2]}"></span></span><b>${k}/${tot}</b></div>`; }).join('');
-  const circDone = done.filter(x => !isSec(x.w)), grades = [...new Set(circDone.map(x => x.c.grade).filter(Boolean))].sort((x, y) => gradeIdx(x) - gradeIdx(y));
+  /* due sezioni, come nell'app: Boulder e Circuiti */
+  const tab = ui.mineTab || (ui.section === 'boulder' ? 'boulder' : 'circ'), bo = tab === 'boulder';
+  const all = mineItems(), items = all.filter(x => isSec(x.w) === bo);
+  const done = items.filter(x => x.t.status === 'fatto'), proj = items.filter(x => x.t.status === 'progetto' && !x.gone);
+  const nB = all.filter(x => isSec(x.w) && x.t.status === 'fatto').length, nC = all.filter(x => !isSec(x.w) && x.t.status === 'fatto').length;
   const row = x => `<button class="lrow" data-act="minego" data-w="${x.w.id}" data-id="${x.c.id}"><i class="dot" style="background:${colOf(x.c)}"></i><span class="ctext" style="flex:1"><b>${esc(blockTitle(x.w, x.c))}</b><small>${esc([x.w.name, x.gone ? (isSec(x.w) ? 'smontato' : 'muro archiviato') : '', x.t.vote ? 'per te ' + x.t.vote : '', fmtDate((x.t.updated_at || '').slice(0, 10))].filter(Boolean).join(' · '))}</small></span>${isSec(x.w) ? '' : gradeBadge(x.c.grade)}</button>`;
   const recent = done.slice().sort((x, y) => String(y.t.updated_at).localeCompare(String(x.t.updated_at))).slice(0, 15);
+  let prog = '';
+  if(bo){
+    const onB = S.walls.filter(w => isSec(w) && !w.archived).flatMap(w => w.circuits.filter(c => c.diff && !isOff(c))), ids = new Set(done.map(x => x.c.id));
+    prog = DIFFS.map(d => { const tot = onB.filter(c => c.diff === d[0]).length; if(!tot) return ''; const k = onB.filter(c => c.diff === d[0] && ids.has(c.id)).length;
+      return `<div class="pbar"><i class="dot" style="background:${d[2]}"></i><span class="pname">${d[1]}</span><span class="ptrack"><span style="width:${Math.round(k / tot * 100)}%;background:${d[2]}"></span></span><b>${k}/${tot}</b></div>`; }).join('');
+    if(prog) prog = `<p class="dlab">Boulder in parete fatti, per colore</p>` + prog;
+  } else {
+    const live = done.filter(x => !x.gone), grades = [...new Set(live.map(x => x.c.grade).filter(Boolean))].sort((x, y) => gradeIdx(x) - gradeIdx(y));
+    if(grades.length) prog = `<p class="dlab">Circuiti fatti, per grado</p><div class="sdots" style="padding:0">${grades.map(g => `<span class="sdot">${gradeBadge(g)} ${live.filter(x => x.c.grade === g).length}</span>`).join('')}</div>`;
+  }
+  const what = bo ? 'un boulder' : 'un circuito';
   return `<h2>Le mie salite</h2>`+
-    `<div class="dsum"><div><b>${done.length}</b><small>fatti</small></div><div><b>${proj.length}</b><small>progetti</small></div><div><b>${circDone.length}</b><small>circuiti fatti</small></div></div>`+
-    (bars ? `<p class="dlab">Boulder in parete fatti, per colore</p>${bars}` : '')+
-    (grades.length ? `<p class="dlab">Circuiti fatti, per grado</p><div class="sdots" style="padding:0">${grades.map(g => `<span class="sdot">${gradeBadge(g)} ${circDone.filter(x => x.c.grade === g).length}</span>`).join('')}</div>` : '')+
-    `<p class="dlab">Progetti</p>` + (proj.length ? `<div class="list" style="gap:0">${proj.map(row).join('')}</div>` : `<p class="hint">Apri un percorso e tocca ☆ Progetto per ritrovarlo qui.</p>`)+
-    `<p class="dlab">Fatti di recente</p>` + (recent.length ? `<div class="list" style="gap:0">${recent.map(row).join('')}</div>` : `<p class="hint">Apri un percorso e tocca ✓ Fatto quando lo chiudi.</p>`)+
+    `<div class="seg" role="group" aria-label="Sezione" style="margin:0 0 12px"><button data-act="minetab" data-v="boulder" aria-pressed="${bo}">Boulder${nB ? ' · ' + nB : ''}</button><button data-act="minetab" data-v="circ" aria-pressed="${!bo}">Circuiti${nC ? ' · ' + nC : ''}</button></div>`+
+    `<div class="dsum" style="grid-template-columns:repeat(2,1fr)"><div><b>${done.length}</b><small>${bo ? 'boulder fatti' : 'circuiti fatti'}</small></div><div><b>${proj.length}</b><small>progetti</small></div></div>`+
+    prog+
+    `<p class="dlab">Progetti</p>` + (proj.length ? `<div class="list" style="gap:0">${proj.map(row).join('')}</div>` : `<p class="hint">Apri ${what} e tocca ☆ Progetto per ritrovarlo qui.</p>`)+
+    `<p class="dlab">Fatti di recente</p>` + (recent.length ? `<div class="list" style="gap:0">${recent.map(row).join('')}</div>` : `<p class="hint">Apri ${what} e tocca ✓ Fatto quando lo chiudi.</p>`)+
     `<div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
 }
 function acctHtml(){
@@ -3820,7 +3830,7 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
+const PUBLIC_ACTS = ['minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
 const MGR_ACTS = ['qr','qrprint','qrcopy','dash','dashsec','fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
@@ -3916,7 +3926,8 @@ document.addEventListener('click', e => {
     case 'prevnew': ui.prevNew = true; setViewAs('cliente'); ui.wIdx = 0; openSheet('welcome'); break;
     case 'tick': tick(b.dataset.v); break;
     case 'vote': vote(b.dataset.v); break;
-    case 'mine': ui.confirm = null; openSheet('mine'); break;
+    case 'mine': ui.confirm = null; ui.mineTab = null; openSheet('mine'); break;
+    case 'minetab': ui.mineTab = b.dataset.v === 'boulder' ? 'boulder' : 'circ'; renderSheet(); break;
     case 'acct': ui.acctMode = 'in'; ui.acctWhy = false; openSheet('acct'); break;
     case 'acctmode': ui.acctMode = b.dataset.v; if(ui.sheet !== 'acct') openSheet('acct'); else renderSheet(); break;
     case 'acctgo': acctGo(); break;
