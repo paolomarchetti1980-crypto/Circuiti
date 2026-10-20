@@ -121,6 +121,12 @@ let EDIT = false, SB = null, BASE = null, ME = null;
 /* REAL_EDIT: l'account è dello staff. EDIT: in questo momento si modifica (falso se il gestore guarda "come cliente").
    ui.viewAs permette allo staff di vedere l'app come la vede un ruolo con meno permessi. */
 let REAL_EDIT = false;
+/* nuova parte clienti: finché NEWC_LIVE è false la vede solo lo staff, da menu ⋮ → Anteprima parte clienti */
+const NEWC_LIVE = false;
+let CL = null;   /* account cliente: { id, email } */
+const newC = () => !EDIT && (NEWC_LIVE || !!ui.prevNew);
+/* chi salva le salite: il cliente, oppure lo staff mentre prova l'anteprima */
+const ACC = () => CL || (REAL_EDIT && ME && ME.uid ? { id: ME.uid, email: ME.email } : null);
 const isMgr = () => !ME || (ME.role === 'gestore' && ui.viewAs !== 'tracciatore' && ui.viewAs !== 'cliente');
 const ui = { bline:false, lineDraft:[], view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:null, csel:null, busy:false, sel:null, move:false, nextRole:'start', zoom:1, sheet:null, confirm:null, imgUrl:null, ready:false, publishing:false, saveWarned:false, scan:null, nextHand:'L', crop:null };
 /* filtri dei circuiti: gli stessi per tutti i muri e per la ricerca in palestra */
@@ -2401,7 +2407,7 @@ function sectorGrid(){
   const bo = BO(), mgr = EDIT && isMgr(), arch = archWalls();
   const nC = bo ? 0 : secWalls().reduce((t, w) => t + w.circuits.length, 0);
   return (nC > 1 ? `<button class="sqbar" data-act="csearch"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><circle cx="7.5" cy="7.5" r="5.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 12l4.5 4.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>Cerca un circuito</span><small>${nC} in palestra</small></button>` : '') +
-    `<div class="sgrid">` + secWalls().map(w => {
+    `<div class="sgrid">` + (newC() && bo ? secWalls().slice().sort((x, y) => { const rx = secLabel(x) ? 1 : 0, ry = secLabel(y) ? 1 : 0; return ry - rx || (rx ? String(secRenew(y)).localeCompare(String(secRenew(x))) : 0); }) : secWalls()).map(w => {
     const on = w.circuits.filter(c => !isOff(c));
     let info, staff = '';
     if(bo){
@@ -2527,6 +2533,7 @@ const EYE_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="tr
 const WRENCH_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4.5 4.5 0 0 1 5.9-1.1l-3 3 .3 2.2 2.2.3 3-3a4.5 4.5 0 0 1-6 5.9L8.5 22.2a2.1 2.1 0 0 1-3-3l8.6-8.6a4.5 4.5 0 0 1 .6-4.3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
 function renderViewbar(){
   const el = $('#viewbar'); if(!el) return;
+  if(REAL_EDIT && ui.viewAs === 'cliente' && ui.prevNew){ el.hidden = false; el.innerHTML = `<span>Anteprima della <b>nuova parte clienti</b>: i clienti non la vedono</span><button class="btn" data-act="viewas" data-v="${ME.role}">Esci</button>`; return; }
   if(!REAL_EDIT || !ui.viewAs || ui.viewAs === 'cliente'){ el.hidden = true; return; }
   el.hidden = false;
   el.innerHTML = `<span>Stai vedendo come <b>${ui.viewAs}</b>${ui.viewAs === 'cliente' && dirtyReal() ? ' (con le tue modifiche non pubblicate)' : ''}</span><button class="btn" data-act="viewas" data-v="${ME.role}">Torna ${ME.role}</button>`;
@@ -2540,7 +2547,7 @@ function renderPub(){
   b.textContent = ui.publishing ? 'Pubblico…' : 'Pubblica';
 }
 /* oscuramento del resto della foto: in Traccia solo se chiesto col tasto, a schermo intero sempre, altrimenti come da preferenza */
-function dimOn(editing){ return editing ? !!ui.editDim : (!!ui.full || S.prefs.dim); }
+function dimOn(editing){ return editing ? !!ui.editDim : (!!ui.full || S.prefs.dim || newC()); }
 function renderStage(){
   const w = curWall(), st = $('#stage'), em = $('#empty'), z = $('#zoom');
   if(ui.home){ st.hidden = true; z.hidden = true; em.hidden = false; em.innerHTML = homeScreen(); return; }
@@ -2563,7 +2570,7 @@ function renderStage(){
   const sv = $('#ov');
   sv.setAttribute('viewBox', `0 0 ${w.w} ${w.h}`);
   const editing = EDIT && S.mode === 'edit';
-  sv.innerHTML = overlay(w, { over: bOver(), numbers: editing || S.prefs.numbers, lines: S.prefs.lines, others: EDIT && S.prefs.others, edit: editing, dim: dimOn(editing), wall: EDIT && S.mode === 'wall' });
+  sv.innerHTML = overlay(w, { over: bOver(), numbers: editing || S.prefs.numbers || newC(), lines: S.prefs.lines || newC(), others: EDIT && S.prefs.others, edit: editing, dim: dimOn(editing), wall: EDIT && S.mode === 'wall' });
   fit();
 }
 /* il cliente vede solo i boulder in parete: gli smontati servono allo staff */
@@ -2602,7 +2609,7 @@ function bFilters(w){
 function bRows(w, cls){
   const act = bOver() ? null : curCircuit(), vis = sortedVisible(w);
   if(!vis.length) return `<p class="hint" style="padding:6px 2px">${w.circuits.length ? 'Nessun boulder con questi filtri.' : 'Ancora nessun boulder su questo settore.'}</p>`;
-  return `<div class="list" style="gap:${cls === 'crow' ? 6 : 0}px;margin:0">` + vis.map(x => `<button class="${cls} ${act && x.id === act.id ? 'active' : ''} ${isOff(x) ? 'off' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext" style="flex:1"><b>${bTitleHtml(x)}</b><small>${[x.style ? esc(x.style) : '', bMeta(x)].filter(Boolean).join(' · ')}</small></span></button>`).join('') + `</div>`;
+  return `<div class="list" style="gap:${cls === 'crow' ? 6 : 0}px;margin:0">` + vis.map(x => `<button class="${cls} ${act && x.id === act.id ? 'active' : ''} ${isOff(x) ? 'off' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext" style="flex:1"><b>${tickMark(x)}${bTitleHtml(x)}</b><small>${[x.style ? esc(x.style) : '', bMeta(x)].filter(Boolean).join(' · ')}</small></span></button>`).join('') + `</div>`;
 }
 /* riga rapida sopra l'elenco: inclinazioni a portata di dito, tutto il resto in "Filtri" */
 function circFilters(w){
@@ -2621,7 +2628,7 @@ function circFilters(w){
 function circRows(w, cls){
   const act = curCircuit(), vis = sortedVisible(w);
   if(!vis.length) return `<p class="hint" style="padding:6px 2px">${w.circuits.length ? 'Nessun circuito con questi filtri.' : 'Ancora nessun circuito su questo muro.'}</p>`;
-  return `<div class="list" style="gap:${cls === 'crow' ? 6 : 0}px;margin:0">` + vis.map(x => `<button class="${cls} ${act && x.id === act.id ? 'active' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${colOf(x)}"></i><span class="ctext" style="flex:1"><b>${cTitleHtml(x)}</b><small>${circMeta(x)}</small></span>${gradeBadge(x.grade)}</button>`).join('') + `</div>`;
+  return `<div class="list" style="gap:${cls === 'crow' ? 6 : 0}px;margin:0">` + vis.map(x => `<button class="${cls} ${act && x.id === act.id ? 'active' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${colOf(x)}"></i><span class="ctext" style="flex:1"><b>${tickMark(x)}${cTitleHtml(x)}</b><small>${circMeta(x)}</small></span>${gradeBadge(x.grade)}</button>`).join('') + `</div>`;
 }
 function renderChips(){
   const w = curWall(), el = $('#chips');
@@ -2725,6 +2732,7 @@ function renderTools(){
   if(EDIT && S.mode !== 'view' && bOver()){ el.innerHTML = ''; return; }   /* foto d'insieme dello staff: si sceglie il boulder dall'elenco */
   if(!EDIT || S.mode === 'view'){
     const p = S.prefs;
+    if(newC()){ el.innerHTML = ''; return; }   /* per i clienti niente interruttori: numeri, linee e oscuramento sempre attivi */
     el.innerHTML = c ? `<div class="mini">`+
       (isSec(w) ? '' : `<button class="btn ${p.numbers ? 'on' : ''}" data-act="pref" data-k="numbers">Numeri</button>`+
       `<button class="btn ${p.lines ? 'on' : ''}" data-act="pref" data-k="lines">Linee</button>`)+
@@ -2827,13 +2835,19 @@ function renderFull(){
   el.hidden = false;
   el.innerHTML = `<div class="row" style="flex-wrap:nowrap;align-items:center;gap:12px">`+
     `<i class="dot" style="background:${colOf(c)};width:16px;height:16px"></i>`+
-    `<span class="ctext" style="flex:1"><b>${isSec(w) ? bTitleHtml(c) : esc(c.name)}${isSec(w) && c.style ? ` · ${esc(c.style)}` : ''}</b><small>${isSec(w) ? esc([c.setter ? 'di ' + c.setter : '', c.dateSet ? 'montato ' + fmtDate(c.dateSet) : '', c.dateRemoved ? (isOff(c) ? 'smontato ' : 'smonta ') + fmtDate(c.dateRemoved) : ''].filter(Boolean).join(' · ')) : circMeta(c)}</small></span>${isSec(w) ? '' : gradeBadge(c.grade)}</div>`+
+    `<span class="ctext" style="flex:1"><b>${tickMark(c)}${isSec(w) ? bTitleHtml(c) : cTitleHtml(c)}${isSec(w) && c.style ? ` · ${esc(c.style)}` : ''}</b><small>${isSec(w) ? esc([c.setter ? 'di ' + c.setter : '', c.dateSet ? 'montato ' + fmtDate(c.dateSet) : '', c.dateRemoved ? (isOff(c) ? 'smontato ' : 'smonta ') + fmtDate(c.dateRemoved) : ''].filter(Boolean).join(' · ')) : circMeta(c)}</small></span>${isSec(w) ? '' : gradeBadge(c.grade)}</div>`+
     (isSec(w) && (c.tags || []).length ? `<div class="tags" style="margin:10px 0 0">${c.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : '')+
     (isSec(w) && c.notes ? `<p class="bnotes">${esc(c.notes)}</p>` : '')+
+    tickPanel(w, c)+
+    (newC() ? `<div class="row fnavrow" style="margin-top:10px;flex-wrap:nowrap">`+
+      `<button class="btn" data-act="fnav" data-d="-1" ${i > 0 ? '' : 'disabled'} style="flex:1">‹ Precedente</button>`+
+      `<button class="btn" data-act="fexit" aria-label="${isSec(w) ? 'Elenco boulder' : 'Elenco circuiti'}" title="Elenco"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M3 4h12M3 9h12M3 14h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>`+
+      `<button class="btn primary" data-act="fnav" data-d="1" ${i >= 0 && i < list.length - 1 ? '' : 'disabled'} style="flex:1">Successivo ›</button></div>`+
+      (list.length > 1 && i >= 0 ? `<p class="hint" style="text-align:center;margin:6px 0 0;font-size:12px">${i + 1} di ${list.length}</p>` : '') :
     `<div class="row" style="margin-top:10px;flex-wrap:nowrap">`+
     `<button class="btn" data-act="fnav" data-d="-1" ${i > 0 ? '' : 'disabled'} aria-label="Precedente">‹</button>`+
     `<button class="btn primary" data-act="fexit" style="flex:1">${isSec(w) ? 'Elenco boulder' : 'Elenco circuiti'}</button>`+
-    `<button class="btn" data-act="fnav" data-d="1" ${i >= 0 && i < list.length - 1 ? '' : 'disabled'} aria-label="Successivo">›</button></div>`;
+    `<button class="btn" data-act="fnav" data-d="1" ${i >= 0 && i < list.length - 1 ? '' : 'disabled'} aria-label="Successivo">›</button></div>`);
 }
 function setFull(on){
   if(on && !ui.full){ ui.full = true; try{ history.pushState({ full: 1 }, ''); }catch(e){} }
@@ -2865,6 +2879,143 @@ window.addEventListener('popstate', () => {
 });
 
 /* ---------- pannelli ---------- */
+/* ---------- account cliente e "Le mie salite" ---------- */
+const loginIntent = () => { try{ return localStorage.getItem('login-intent') || 'staff'; }catch(e){ return 'staff'; } };
+const setIntent = v => { try{ localStorage.setItem('login-intent', v); }catch(e){} };
+const welcomeSeen = () => { try{ return localStorage.getItem('mr-welcome') === '1'; }catch(e){ return false; } };
+async function loadTicks(){
+  const { data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,updated_at');
+  ui.ticks = new Map(); ui.ticksErr = !!error;
+  (data || []).forEach(t => ui.ticks.set(t.item_id, t));
+  render(); if(ui.sheet) renderSheet();
+}
+async function loadTickSum(){
+  try{ const { data, error } = await SB.rpc('tick_summary'); if(!error && Array.isArray(data)){ ui.tsum = new Map(data.map(r => [r.item_id, r])); render(); } }catch(e){}
+}
+const tickOf = c => (c && ui.ticks && ui.ticks.get(c.id)) || null;
+async function saveTick(w, c, next){
+  const prev = tickOf(c);
+  if(next) ui.ticks.set(c.id, next); else ui.ticks.delete(c.id);
+  render();
+  const r = next ? await SB.from('ticks').upsert({ item_id: c.id, wall_id: w.id, status: next.status, vote: next.vote || null, updated_at: new Date().toISOString() })
+                 : await SB.from('ticks').delete().eq('item_id', c.id);
+  if(r && r.error){ if(prev) ui.ticks.set(c.id, prev); else ui.ticks.delete(c.id); render(); toast('Non riesco a salvare: ' + (r.error.message || 'riprova tra poco.')); }
+}
+function tick(status){
+  const w = curWall(), c = curCircuit(); if(!w || !c) return;
+  if(!ACC()){ ui.acctMode = 'new'; ui.acctWhy = true; openSheet('acct'); return; }
+  if(!ui.ticks) ui.ticks = new Map();
+  const t = tickOf(c);
+  if(t && t.status === status) saveTick(w, c, null);
+  else saveTick(w, c, { item_id: c.id, wall_id: w.id, status, vote: status === 'fatto' && t ? t.vote : null, updated_at: new Date().toISOString() });
+  if(status === 'fatto' && !(t && t.status === 'fatto')) toast('Segnato come fatto! Se vuoi, dicci com\'era il grado.');
+}
+function vote(v){
+  const w = curWall(), c = curCircuit(), t = tickOf(c); if(!w || !c || !t || t.status !== 'fatto') return;
+  saveTick(w, c, Object.assign({}, t, { vote: t.vote === v ? null : v, updated_at: new Date().toISOString() }));
+}
+const tickMark = c => { if(!newC()) return ''; const t = tickOf(c); return t ? (t.status === 'fatto' ? '<span class="tk done" aria-label="fatto">✓</span>' : '<span class="tk proj" aria-label="progetto">☆</span>') : ''; };
+function tickPanel(w, c){
+  if(EDIT){
+    const sm = ui.tsum && ui.tsum.get(c.id); if(!sm) return '';
+    const v = (+sm.facile || 0) + (+sm.giusto || 0) + (+sm.duro || 0);
+    return `<p class="tsum">Clienti: <b>${sm.fatti}</b> ${+sm.fatti === 1 ? 'salita' : 'salite'}${v ? ` · grado: facile ${sm.facile} · giusto ${sm.giusto} · duro ${sm.duro}` : ''}</p>`;
+  }
+  if(!newC()) return '';
+  const t = tickOf(c), st = t ? t.status : '';
+  return `<div class="tickrow"><button class="tbtn ${st === 'fatto' ? 'on' : ''}" data-act="tick" data-v="fatto" aria-pressed="${st === 'fatto'}">✓ Fatto</button>`+
+    `<button class="tbtn ${st === 'progetto' ? 'on proj' : ''}" data-act="tick" data-v="progetto" aria-pressed="${st === 'progetto'}">☆ Progetto</button></div>`+
+    (st === 'fatto' ? `<div class="voterow"><small>Il grado ti è sembrato</small><div class="seg">${[['facile','Facile'],['giusto','Giusto'],['duro','Duro']].map(o => `<button data-act="vote" data-v="${o[0]}" aria-pressed="${t.vote === o[0]}">${o[1]}</button>`).join('')}</div></div>` : '');
+}
+/* elementi di "Le mie salite": blocchi ancora esistenti (anche smontati) con la loro salita */
+function mineItems(){
+  if(!ui.ticks) return [];
+  const out = [];
+  ui.ticks.forEach(t => { const w = S.walls.find(x => x.id === t.wall_id), c = w && w.circuits.find(x => x.id === t.item_id); if(w && c) out.push({ t, w, c, gone: !!w.archived || (isSec(w) && isOff(c)) }); });
+  return out;
+}
+function mineHtml(){
+  const a = ACC();
+  if(!a) return `<h2>Le mie salite</h2><p>Segna i boulder e i circuiti che hai fatto e quelli che vuoi provare, e tieni d'occhio i tuoi progressi.</p>`+
+    `<p class="note">Serve un account gratuito: ti chiediamo solo email e password.</p>`+
+    `<div class="row"><button class="btn primary" data-act="acctmode" data-v="new">Crea account</button><button class="btn" data-act="acctmode" data-v="in">Ho già un account</button><button class="btn" data-act="close">Chiudi</button></div>`;
+  if(!ui.ticks) return `<h2>Le mie salite</h2><p>Carico…</p>`;
+  if(ui.ticksErr) return `<h2>Le mie salite</h2><p>Le salite non sono ancora disponibili. Riprova più tardi.</p><div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
+  const items = mineItems(), done = items.filter(x => x.t.status === 'fatto'), proj = items.filter(x => x.t.status === 'progetto' && !x.gone);
+  const secs = S.walls.filter(w => isSec(w) && !w.archived), onB = secs.flatMap(w => w.circuits.filter(c => c.diff && !isOff(c)));
+  const doneIds = new Set(done.map(x => x.c.id));
+  const bars = DIFFS.map(d => { const tot = onB.filter(c => c.diff === d[0]).length; if(!tot) return ''; const k = onB.filter(c => c.diff === d[0] && doneIds.has(c.id)).length;
+    return `<div class="pbar"><i class="dot" style="background:${d[2]}"></i><span class="pname">${d[1]}</span><span class="ptrack"><span style="width:${Math.round(k / tot * 100)}%;background:${d[2]}"></span></span><b>${k}/${tot}</b></div>`; }).join('');
+  const circDone = done.filter(x => !isSec(x.w)), grades = [...new Set(circDone.map(x => x.c.grade).filter(Boolean))].sort((x, y) => gradeIdx(x) - gradeIdx(y));
+  const row = x => `<button class="lrow" data-act="minego" data-w="${x.w.id}" data-id="${x.c.id}"><i class="dot" style="background:${colOf(x.c)}"></i><span class="ctext" style="flex:1"><b>${esc(blockTitle(x.w, x.c))}</b><small>${esc([x.w.name, x.gone ? (isSec(x.w) ? 'smontato' : 'muro archiviato') : '', x.t.vote ? 'per te ' + x.t.vote : '', fmtDate((x.t.updated_at || '').slice(0, 10))].filter(Boolean).join(' · '))}</small></span>${isSec(x.w) ? '' : gradeBadge(x.c.grade)}</button>`;
+  const recent = done.slice().sort((x, y) => String(y.t.updated_at).localeCompare(String(x.t.updated_at))).slice(0, 15);
+  return `<h2>Le mie salite</h2>`+
+    `<div class="dsum"><div><b>${done.length}</b><small>fatti</small></div><div><b>${proj.length}</b><small>progetti</small></div><div><b>${circDone.length}</b><small>circuiti fatti</small></div></div>`+
+    (bars ? `<p class="dlab">Boulder in parete fatti, per colore</p>${bars}` : '')+
+    (grades.length ? `<p class="dlab">Circuiti fatti, per grado</p><div class="sdots" style="padding:0">${grades.map(g => `<span class="sdot">${gradeBadge(g)} ${circDone.filter(x => x.c.grade === g).length}</span>`).join('')}</div>` : '')+
+    `<p class="dlab">Progetti</p>` + (proj.length ? `<div class="list" style="gap:0">${proj.map(row).join('')}</div>` : `<p class="hint">Apri un blocco e tocca ☆ Progetto per ritrovarlo qui.</p>`)+
+    `<p class="dlab">Fatti di recente</p>` + (recent.length ? `<div class="list" style="gap:0">${recent.map(row).join('')}</div>` : `<p class="hint">Apri un blocco e tocca ✓ Fatto quando lo chiudi.</p>`)+
+    `<div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
+}
+function acctHtml(){
+  const m = ui.acctMode || 'in';
+  if(m === 'sent') return `<h2>Controlla la tua email</h2><p>Ti abbiamo mandato un'email a <b>${esc(ui.acctEmail || '')}</b>. Tocca il link per confermare l'account, poi torna qui ed entra con email e password.</p>`+
+    `<div class="row"><button class="btn primary" data-act="acctmode" data-v="in">Entra</button><button class="btn" data-act="close">Chiudi</button></div>`;
+  if(m === 'reset') return `<h2>Password dimenticata</h2><p>Scrivi la tua email: ti mandiamo un link per sceglierne una nuova.</p>`+
+    `<label class="field">Email<input id="aemail" type="email" autocomplete="email" inputmode="email" value="${esc(ui.acctEmail || '')}"></label>`+
+    `<div class="row"><button class="btn primary" data-act="acctreset">Mandami il link</button><button class="btn" data-act="acctmode" data-v="in">Indietro</button></div>`;
+  const nw = m === 'new';
+  return `<h2>${nw ? 'Crea il tuo account' : 'Entra'}</h2>`+
+    (ui.acctWhy ? `<p>Per segnare le tue salite serve un account: è gratis e ti chiediamo solo email e password.</p>` : '')+
+    `<label class="field">Email<input id="aemail" type="email" autocomplete="email" inputmode="email" value="${esc(ui.acctEmail || '')}"></label>`+
+    `<label class="field">Password${nw ? ' (almeno 8 caratteri)' : ''}<input id="apass" type="password" autocomplete="${nw ? 'new-password' : 'current-password'}"></label>`+
+    `<div class="row"><button class="btn primary" data-act="acctgo">${nw ? 'Crea account' : 'Entra'}</button>`+
+    `<button class="btn" data-act="acctmode" data-v="${nw ? 'in' : 'new'}">${nw ? 'Ho già un account' : 'Crea un account'}</button></div>`+
+    (nw ? '' : `<p class="note"><button class="linklike" data-act="acctmode" data-v="reset">Password dimenticata?</button></p>`)+
+    `<p class="note">Salviamo solo la tua email e le tue salite. I pareri sul grado arrivano ai tracciatori in forma anonima. Puoi cancellare l'account quando vuoi dal menu.</p>`;
+}
+async function acctGo(){
+  const em = document.getElementById('aemail'), pw = document.getElementById('apass');
+  const email = ((em && em.value) || '').trim(), password = (pw && pw.value) || '', nw = ui.acctMode === 'new';
+  ui.acctEmail = email;
+  if(!/^\S+@\S+\.\S+$/.test(email)){ toast('Scrivi un\'email valida.'); return; }
+  if(password.length < (nw ? 8 : 1)){ toast(nw ? 'La password deve avere almeno 8 caratteri.' : 'Scrivi la password.'); return; }
+  setIntent('cliente');
+  if(nw){
+    const { data, error } = await SB.auth.signUp({ email, password, options: { emailRedirectTo: appBase() } });
+    if(error){ toast(/registered|exists/i.test(error.message || '') ? 'Hai già un account con questa email: entra.' : 'Registrazione non riuscita: ' + error.message); if(/registered|exists/i.test(error.message || '')){ ui.acctMode = 'in'; renderSheet(); } return; }
+    if(data && data.session){ rememberPlace(); location.reload(); return; }
+    ui.acctMode = 'sent'; renderSheet(); return;
+  }
+  const { error } = await SB.auth.signInWithPassword({ email, password });
+  if(error){ toast(/confirm/i.test(error.message || '') ? 'Prima conferma l\'account dal link che ti abbiamo mandato per email.' : /invalid/i.test(error.message || '') ? 'Email o password non corrette.' : 'Accesso non riuscito: ' + error.message); return; }
+  rememberPlace(); location.reload();
+}
+async function acctReset(){
+  const em = document.getElementById('aemail'), email = ((em && em.value) || '').trim(); ui.acctEmail = email;
+  if(!/^\S+@\S+\.\S+$/.test(email)){ toast('Scrivi un\'email valida.'); return; }
+  setIntent('cliente');
+  const { error } = await SB.auth.resetPasswordForEmail(email, { redirectTo: appBase() });
+  if(error){ toast('Invio non riuscito: ' + error.message); return; }
+  toast('Fatto: controlla l\'email e tocca il link per scegliere la nuova password.', 7000); ui.acctMode = 'in'; renderSheet();
+}
+async function delAccount(){
+  if(ui.confirm !== 'delacct'){ ui.confirm = 'delacct'; renderSheet(); return; }
+  ui.confirm = null;
+  const { error } = await SB.rpc('delete_my_account');
+  if(error){ toast('Non riesco a cancellare l\'account: ' + error.message); return; }
+  await SB.auth.signOut().catch(() => {}); setIntent('staff'); toast('Account cancellato, insieme alle tue salite.'); setTimeout(() => location.reload(), 1200);
+}
+const WELCOME = [
+  ['Benvenuto in Monkey Roads', 'Tutti i boulder e i circuiti di Monkey Island Roma, sempre aggiornati. Dalla pagina iniziale scegli <b>Boulder</b> o <b>Circuiti</b>.'],
+  ['Trova il tuo blocco', 'Apri un settore e tocca un blocco: vedi partenza, prese e top. Con le frecce passi al successivo. I settori <b>Nuovi</b> sono in cima.'],
+  ['Le tue salite', 'Con un account gratuito segni i blocchi <b>fatti</b> e i <b>progetti</b>, vedi i tuoi progressi e ci dici se il grado ti torna.']
+];
+function welcomeHtml(){
+  const i = Math.max(0, Math.min(WELCOME.length - 1, ui.wIdx || 0)), last = i === WELCOME.length - 1;
+  return `<div class="wel"><p class="welstep">${WELCOME.map((x, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</p><h2>${WELCOME[i][0]}</h2><p>${WELCOME[i][1]}</p></div>`+
+    `<div class="row"><button class="btn primary" data-act="wnext">${last ? 'Inizia' : 'Avanti'}</button>${last ? (ACC() ? '' : `<button class="btn" data-act="acctmode" data-v="new">Crea account</button>`) : `<button class="btn" data-act="wskip">Salta</button>`}</div>`;
+}
 /* ---------- QR code da attaccare ai muri ---------- */
 const appBase = () => location.origin + location.pathname.replace(/index\.html$/, '');
 const wallLink = w => appBase() + (w ? '#m=' + encodeURIComponent(w.id) : '');
@@ -3054,6 +3205,20 @@ function renderSheet(){
         `<p class="note">Nessun ${bo ? 'settore' : 'muro'} archiviato.</p>`)+
       `<p class="note">Eliminare cancella per sempre ${bo ? 'il settore e i suoi boulder' : 'il muro, le sue prese e i suoi circuiti'} (dopo aver pubblicato).</p>`+
       `<div class="row"><button class="btn primary" data-act="close">Chiudi</button></div>`;
+  } else if(ui.sheet === 'menu' && newC()){
+    const row = (act, label, sub, dis) => `<button class="wrow" data-act="${act}" ${dis ? 'disabled' : ''}><span>${label}</span><small>${sub || ''}</small></button>`;
+    const nd = ui.ticks ? [...ui.ticks.values()].filter(t => t.status === 'fatto').length : 0;
+    h = `<h2>Menu</h2><div class="list">`+
+      row('mine', 'Le mie salite', ACC() ? (nd ? nd + (nd === 1 ? ' blocco fatto' : ' blocchi fatti') : 'segna i blocchi fatti e i progetti') : 'segna i blocchi fatti e i progetti')+
+      (SB ? row('fbnew', 'Segnala un problema', 'o un suggerimento: arriva alla palestra') : '')+
+      (canInstall() ? row('install', "Installa l'app", 'sulla schermata Home') : '')+
+      row('welcome', 'Come funziona', 'rivedi la presentazione')+
+      `</div><h3 class="mhead">Account</h3><div class="list">`+
+      (CL ? row('logout', 'Esci', esc(CL.email)) + row('delacct', ui.confirm === 'delacct' ? 'Tocca ancora: cancello account e salite' : 'Cancella il mio account', 'e tutte le tue salite', false) :
+        REAL_EDIT ? `<p class="note" style="margin:0">In anteprima le salite si salvano sul tuo account dello staff.</p>` : row('acct', 'Entra o crea un account', 'gratis: serve per le tue salite'))+
+      `</div>`+
+      (REAL_EDIT ? `<div class="row"><button class="btn" data-act="viewas" data-v="${ME.role}">Esci dall'anteprima</button><button class="btn primary" data-act="close">Chiudi</button></div>` :
+        `<div class="row"><button class="btn primary" data-act="close">Chiudi</button></div><p class="note" style="text-align:center"><button class="linklike" data-act="login">Accesso staff</button></p>`);
   } else if(ui.sheet === 'menu'){
     const bo = w ? isSec(w) : BO(), n = w ? sortedVisible(w).length : 0, one = bo ? 'questo boulder' : 'questo circuito';
     const row = (act, label, sub, dis) => `<button class="wrow" data-act="${act}" ${dis ? 'disabled' : ''}><span>${label}</span><small>${sub || ''}</small></button>`;
@@ -3066,6 +3231,7 @@ function renderSheet(){
       (canInstall() ? row('install', "Installa l'app", 'sulla schermata Home') : '')+
       (SB ? row('fbnew', 'Segnala un problema', 'o un suggerimento: arriva al gestore') : '')+
       (SB && REAL_EDIT && ME.role === 'gestore' ? row('fblist', 'Segnalazioni ricevute', 'problemi segnalati ed errori dell\'app') : '')+
+      (REAL_EDIT && !ui.viewAs ? row('prevnew', 'Anteprima parte clienti', 'la nuova versione: la vedete solo voi dello staff') : '')+
       (REAL_EDIT && ME.role === 'gestore' ? (ui.viewAs === 'tracciatore' ? row('viewas" data-v="gestore', 'Torna gestore', 'stai vedendo l\'app come un tracciatore') : row('viewas" data-v="tracciatore', 'Vedi come tracciatore', 'per controllare cosa può fare lo staff')) : '')+
       `</div><h3 class="mhead">Account</h3><div class="list">`+
       (SB && !REAL_EDIT ? row('login', 'Accesso staff', ui.authEmail ? 'sei entrato come ' + esc(ui.authEmail) + ', che non è nello staff' : 'per gestore e tracciatori') : '')+
@@ -3106,6 +3272,12 @@ function renderSheet(){
     h = `<h2>Segnala un problema</h2><p class="note" style="margin:0 0 10px">Scrivi cosa non va o cosa miglioreresti. Insieme al messaggio arrivano da sole anche la schermata in cui sei${where ? ` (<b>${esc(where)}</b>)` : ''}, il tipo di telefono e la versione dell'app.</p>`+
       `<label class="field">Messaggio<textarea id="fbtext" rows="5" maxlength="2000" placeholder="Es.: il contorno di questa presa è sbagliato, non trovo il tasto per…" style="width:100%;resize:vertical">${esc(ui.fbDraft || '')}</textarea></label>`+
       `<div class="row"><button class="btn primary" data-act="fbsend">Invia</button><button class="btn" data-act="close">Annulla</button></div>`;
+  } else if(ui.sheet === 'mine'){
+    h = mineHtml();
+  } else if(ui.sheet === 'acct'){
+    h = acctHtml();
+  } else if(ui.sheet === 'welcome'){
+    h = welcomeHtml();
   } else if(ui.sheet === 'qr'){
     h = qrHtml();
   } else if(ui.sheet === 'dash'){
@@ -3357,6 +3529,7 @@ async function passLogin(){
   const email = ((em && em.value) || '').trim(), password = (pw && pw.value) || '';
   ui.loginEmail = email;
   if(!SB || !/^\S+@\S+\.\S+$/.test(email) || !password){ toast('Scrivi email e password.'); return; }
+  setIntent('staff');
   const { error } = await SB.auth.signInWithPassword({ email, password });
   if(error){ toast(/invalid/i.test(error.message || '') ? 'Email o password non corrette. Se non hai ancora una password, usa il link.' : 'Accesso non riuscito: ' + error.message); return; }
   rememberPlace(); location.reload();
@@ -3373,6 +3546,7 @@ async function sendLoginLink(){
   const email = ((inp && inp.value) || ui.loginEmail || '').trim();
   ui.loginEmail = email;
   if(!SB || !/^\S+@\S+\.\S+$/.test(email)){ toast('Scrivi un\'email valida.'); return; }
+  setIntent('staff');
   const { error } = await SB.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname } });
   if(error){ toast('Invio non riuscito: ' + (error.message || 'riprova tra poco.')); return; }
   ui.loginSent = true; renderSheet();
@@ -3462,12 +3636,13 @@ function setViewAs(v){
   if(ME.role !== 'gestore' && v === 'gestore') return;
   const inSector = BO() && !bGrid() && !!curWall();   /* entrando o uscendo dall'anteprima si resta sullo stesso settore */
   ui.viewAs = v === ME.role ? null : v;
+  if(v !== 'cliente') ui.prevNew = false;
   EDIT = v !== 'cliente';
   if(inSector) ui.bLevel = 'sector';
   S.mode = EDIT ? 'edit' : 'view';
   ui.sel = null; ui.csel = null; ui.move = false; ui.full = false; ui.draft = []; ui.bdraw = false; ui.sheet = null;
   renderSheet(); render();
-  if(ui.viewAs) toast(v === 'cliente' ? 'Anteprima: l\'app come la vede un cliente. Tocca la chiave inglese per tornare a lavorare.' : 'Vedi l\'app come un tracciatore.');
+  if(ui.viewAs && !ui.prevNew) toast(v === 'cliente' ? 'Anteprima: l\'app come la vede un cliente. Tocca la chiave inglese per tornare a lavorare.' : 'Vedi l\'app come un tracciatore.');
 }
 async function publish(){
   if(!EDIT || !SB || ui.publishing || !dirty()) return;
@@ -3581,7 +3756,7 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
+const PUBLIC_ACTS = ['tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
 const MGR_ACTS = ['qr','qrprint','qrcopy','dash','dashsec','fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
@@ -3674,6 +3849,26 @@ document.addEventListener('click', e => {
       (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Copiata: incollala a Claude'), () => { window.prompt('Copia il testo:', txt); });
       break; }
     case 'dash': openSheet('dash'); break;
+    case 'prevnew': ui.prevNew = true; setViewAs('cliente'); ui.wIdx = 0; openSheet('welcome'); break;
+    case 'tick': tick(b.dataset.v); break;
+    case 'vote': vote(b.dataset.v); break;
+    case 'mine': ui.confirm = null; openSheet('mine'); break;
+    case 'acct': ui.acctMode = 'in'; ui.acctWhy = false; openSheet('acct'); break;
+    case 'acctmode': ui.acctMode = b.dataset.v; if(ui.sheet !== 'acct') openSheet('acct'); else renderSheet(); break;
+    case 'acctgo': acctGo(); break;
+    case 'acctreset': acctReset(); break;
+    case 'delacct': if(CL) delAccount(); break;
+    case 'welcome': ui.wIdx = 0; openSheet('welcome'); break;
+    case 'wnext': if((ui.wIdx || 0) >= WELCOME.length - 1){ try{ localStorage.setItem('mr-welcome', '1'); }catch(e){} ui.sheet = null; renderSheet(); } else { ui.wIdx = (ui.wIdx || 0) + 1; renderSheet(); } break;
+    case 'wskip': try{ localStorage.setItem('mr-welcome', '1'); }catch(e){} ui.sheet = null; renderSheet(); break;
+    case 'minego': {
+      const w2 = S.walls.find(x => x.id === b.dataset.w), c2 = w2 && w2.circuits.find(x => x.id === b.dataset.id); if(!w2 || !c2) break;
+      if(w2.archived){ toast('Questo muro è stato archiviato.'); break; }
+      ui.sheet = null; renderSheet();
+      ui.section = secOf(w2); ui.home = false; S.active = w2.id; ui.lastSec[ui.section] = w2.id; saveBUI();
+      ui.bLevel = 'sector'; ui.secOver = true; ui.zoom = 1; w2.activeCircuit = c2.id;
+      if(isSec(w2) && isOff(c2)){ ui.bShow = 'all'; }
+      save(); try{ history.pushState({ grid: 1 }, ''); history.pushState({ sec: 1 }, ''); }catch(e){} setFull(true); break; }
     case 'qr': openSheet('qr'); break;
     case 'qrprint': qrPrint(b.dataset.id); break;
     case 'qrcopy': { const it = qrItems().find(x => x.id === b.dataset.id); if(!it) break; const u = wallLink(it.w);
@@ -4123,12 +4318,14 @@ render();
           EDIT = true; REAL_EDIT = true;
           let role = 'tracciatore';
           try{ const r = await SB.rpc('my_role'); if(r && r.data) role = r.data; }catch(e){}
-          ME = { email: (session.user && session.user.email) || '', role };
+          ME = { email: (session.user && session.user.email) || '', role, uid: session.user && session.user.id };
           try{ const { data: st } = await SB.from('editors').select('email,name');
             if(Array.isArray(st)){ const me = st.find(x => (x.email || '').toLowerCase() === ME.email.toLowerCase()); if(me && me.name) ME.name = me.name;
               ui.staffNames = st.map(x => (x.name || '').trim()).filter(Boolean).sort(); } }catch(e){}
         }
-        else {
+        else if(loginIntent() === 'cliente'){
+          CL = { id: session.user.id, email: session.user.email || '' };
+        } else {
           /* accesso riuscito ma l'email non è nella lista Staff: si dice quale email, così il gestore può controllarla */
           ui.authEmail = (session.user && session.user.email) || '';
           toast(`Sei entrato come ${ui.authEmail}, ma questa email non è nello staff. Chiedi al gestore di aggiungere esattamente questo indirizzo (menu ⋮ → Staff), poi riapri l'app.`, 9000);
@@ -4137,10 +4334,14 @@ render();
     }
   }catch(e){ EDIT = false; }
   if(EDIT){ await loadDraft(); S.mode = 'edit'; if(!curWall() && S.walls.length) S.active = S.walls[0].id; }
+  if(SB && (CL || REAL_EDIT)) loadTicks().catch(() => {});
+  if(SB && REAL_EDIT) loadTickSum();
+  if(SB) try{ SB.auth.onAuthStateChange((ev, ses) => { if(ev === 'PASSWORD_RECOVERY' && ses){ if(!REAL_EDIT && !CL){ CL = { id: ses.user.id, email: ses.user.email || '' }; try{ localStorage.setItem('login-intent', 'cliente'); }catch(e){} } openSheet('setpass'); } }); }catch(e){}
   ui.ready = true;
   ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
   render();
-  openFromLink();
+  const fromLink = openFromLink();
+  if(newC() && !fromLink && !welcomeSeen()){ ui.wIdx = 0; openSheet('welcome'); }
   /* aperta dalla notifica di una nuova segnalazione: il gestore va dritto all'elenco */
   if(/segnalazioni/.test(location.hash)){ history.replaceState(null, '', location.pathname + location.search);
     if(SB && ME && ME.role === 'gestore'){ ui.fbAll = false; ui.fb = null; openSheet('fblist'); loadFb(); } }

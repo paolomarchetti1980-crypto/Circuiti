@@ -137,3 +137,43 @@ create trigger feedback_notify after insert on public.feedback for each row exec
 -- ===== Aggiornamento: nome delle persone dello staff =====
 -- Il nome compare come tracciatore sui boulder nuovi di quella persona; il gestore lo modifica dalla lista Staff.
 alter table public.editors add column if not exists name text;
+
+-- ===== Aggiornamento: "Le mie salite" dei clienti =====
+-- Ogni cliente (con il suo account) vede e modifica solo le proprie salite; lo staff vede solo un riepilogo anonimo.
+create table if not exists public.ticks (
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  item_id text not null,
+  wall_id text not null,
+  status text not null check (status in ('fatto', 'progetto')),
+  vote text check (vote in ('facile', 'giusto', 'duro')),
+  updated_at timestamptz not null default now(),
+  primary key (user_id, item_id)
+);
+alter table public.ticks enable row level security;
+drop policy if exists "le mie salite: leggo" on public.ticks;
+drop policy if exists "le mie salite: aggiungo" on public.ticks;
+drop policy if exists "le mie salite: modifico" on public.ticks;
+drop policy if exists "le mie salite: tolgo" on public.ticks;
+create policy "le mie salite: leggo" on public.ticks for select to authenticated using (user_id = auth.uid());
+create policy "le mie salite: aggiungo" on public.ticks for insert to authenticated with check (user_id = auth.uid());
+create policy "le mie salite: modifico" on public.ticks for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "le mie salite: tolgo" on public.ticks for delete to authenticated using (user_id = auth.uid());
+
+create or replace function public.tick_summary() returns table(item_id text, fatti bigint, facile bigint, giusto bigint, duro bigint)
+language sql security definer stable set search_path = public as $$
+  select t.item_id, count(*) filter (where t.status = 'fatto'), count(*) filter (where t.vote = 'facile'),
+         count(*) filter (where t.vote = 'giusto'), count(*) filter (where t.vote = 'duro')
+  from public.ticks t where public.is_editor() group by t.item_id;
+$$;
+revoke execute on function public.tick_summary() from public, anon;
+grant execute on function public.tick_summary() to authenticated;
+
+create or replace function public.delete_my_account() returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'non autenticato'; end if;
+  if public.is_editor() then raise exception 'gli account dello staff si tolgono dalla lista Staff'; end if;
+  delete from auth.users where id = auth.uid();
+end $$;
+revoke execute on function public.delete_my_account() from public, anon;
+grant execute on function public.delete_my_account() to authenticated;
