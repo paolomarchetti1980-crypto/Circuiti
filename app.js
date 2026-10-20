@@ -85,6 +85,9 @@ const secLabel = w => { if(!isSec(w)) return ''; const l = ageLabel(secRenew(w))
 const wallOfC = c => S.walls.find(w => (w.circuits || []).includes(c));
 const bLabel = c => { if(EDIT || !c || !c.diff || isOff(c)) return ''; const l = ageLabel(c.dateSet); if(l !== 'Nuovo' && l !== 'Recente') return ''; const w = wallOfC(c); return w && c.dateSet > secRenew(w) ? l : ''; };
 const isNewB = c => !!bLabel(c);
+/* circuiti: si cambiano uno alla volta, quindi l'etichetta va sul singolo circuito (solo per i clienti) */
+const cLabel = c => { if(EDIT || !c) return ''; const l = ageLabel(c.dateSet); return l === 'Nuovo' || l === 'Recente' ? l : ''; };
+const cTitleHtml = c => esc(c.name) + (cLabel(c) ? ` <span class="newb ${cLabel(c) === 'Recente' ? 'rec' : ''}">${cLabel(c)}</span>` : '');
 /* numero: il più piccolo libero tra i boulder in parete della stessa difficoltà nel settore */
 function assignNum(w, c){
   if(!diffOf(c)) { delete c.num; return; }
@@ -324,7 +327,7 @@ function newCircuit(w){
   const p = PALETTE.find(p => !used.includes(p[1])) || PALETTE[0];
   let n = w.circuits.length + 1; while(w.circuits.some(c => c.name === 'Circuito ' + n)) n++;
   const name = window.genCircuitName ? window.genCircuitName('', w.circuits.map(c => c.name)) : 'Circuito ' + n;
-  return { id: uid(), name, color: p[1], holds: [] };
+  return { id: uid(), name, color: p[1], holds: [], dateSet: todayISO() };
 }
 function roleFor(c){ return c && c.holds.length ? 'hold' : 'start'; }
 /* mano della prossima presa: l'opposta dell'ultima segnata (si parte con la sinistra) */
@@ -2387,8 +2390,9 @@ function homeScreen(){
     const ws = S.walls.filter(w => secOf(w) === sec && !w.archived), bo = sec === 'boulder';
     const n = ws.reduce((t, w) => t + (bo ? w.circuits.filter(c => !isOff(c)).length : w.circuits.length), 0);
     const img = ws[0] ? `<img src="${esc(ws[0].img)}" alt="">` : '';
+    const nc = !bo ? ws.reduce((t, w) => t + w.circuits.filter(c => cLabel(c) === 'Nuovo').length, 0) : 0;
     const nn = bo && !EDIT ? ws.filter(w => secLabel(w) === 'Nuovo').length : 0, ns = bo && EDIT ? ws.filter(w => secLabel(w) === 'Scaduto').length : 0;
-    const sub = ws.length ? `${ws.length} ${bo ? (ws.length === 1 ? 'settore' : 'settori') : (ws.length === 1 ? 'muro' : 'muri')} · ${n} ${bo ? 'boulder' : (n === 1 ? 'circuito' : 'circuiti')}${nn ? ` · <span class="hnew">${nn === 1 ? '1 settore nuovo' : nn + ' settori nuovi'}</span>` : ''}${ns ? ` · <span class="hnew">${ns === 1 ? '1 scaduto' : ns + ' scaduti'}</span>` : ''}` : (bo ? 'nessun settore ancora' : 'nessun muro ancora');
+    const sub = ws.length ? `${ws.length} ${bo ? (ws.length === 1 ? 'settore' : 'settori') : (ws.length === 1 ? 'muro' : 'muri')} · ${n} ${bo ? 'boulder' : (n === 1 ? 'circuito' : 'circuiti')}${nn ? ` · <span class="hnew">${nn === 1 ? '1 settore nuovo' : nn + ' settori nuovi'}</span>` : ''}${ns ? ` · <span class="hnew">${ns === 1 ? '1 scaduto' : ns + ' scaduti'}</span>` : ''}${nc ? ` · <span class="hnew">${nc} ${nc === 1 ? 'nuovo' : 'nuovi'}</span>` : ''}` : (bo ? 'nessun settore ancora' : 'nessun muro ancora');
     return `<button class="htile" data-act="pickhome" data-v="${sec}">${img}<span class="hlab"><b>${bo ? 'Boulder' : 'Circuiti'}</b><small>${sub}</small></span></button>`;
   };
   return `<div class="home">${tile('boulder')}${tile('circ')}</div>`;
@@ -2414,7 +2418,8 @@ function sectorGrid(){
     } else {
       const gs = w.circuits.map(c => c.grade).filter(g => gradeIdx(g) < 999).sort((x, y) => gradeIdx(x) - gradeIdx(y));
       const n = w.circuits.length;
-      info = `<small>${n ? n + (n === 1 ? ' circuito' : ' circuiti') : 'nessun circuito'}${gs.length ? ' · ' + esc(gs[0]) + (gs.length > 1 && gs[gs.length-1] !== gs[0] ? '–' + esc(gs[gs.length-1]) : '') : ''}</small>`;
+      const cn = w.circuits.filter(c => cLabel(c) === 'Nuovo').length;
+      info = `<small>${n ? n + (n === 1 ? ' circuito' : ' circuiti') : 'nessun circuito'}${gs.length ? ' · ' + esc(gs[0]) + (gs.length > 1 && gs[gs.length-1] !== gs[0] ? '–' + esc(gs[gs.length-1]) : '') : ''}</small>${cn ? `<span class="snew">${cn} ${cn === 1 ? 'nuovo' : 'nuovi'}</span>` : ''}`;
       if(EDIT && !w.locked) staff = `<span class="sinfo"><b>prese da preparare</b></span>`;
     }
     return `<button class="scard" data-act="opensec" data-id="${w.id}"><span class="sph"><img src="${esc(w.img)}" alt="" loading="lazy">${mgr ? `<span class="sedit" role="button" data-act="wman" data-id="${w.id}" aria-label="Gestisci ${bo ? 'il settore' : 'il muro'}">Modifica</span>` : ''}</span>`+
@@ -2566,7 +2571,7 @@ const bShowEff = () => EDIT ? ui.bShow : 'on';
 function visibleCircuits(w){
   const show = bShowEff();
   if(isSec(w)) return w.circuits.filter(c => (show === 'all' || (show === 'off') === isOff(c)) && (!ui.bColor || c.diff === ui.bColor) && (!ui.bNew || isNewB(c)));
-  return w.circuits.filter(cMatch);
+  return w.circuits.filter(c => cMatch(c) && (!ui.cNew || cLabel(c)));
 }
 const gradeBand = g => { const i = GRADES.indexOf(g || ''); if(i <= 0) return '#5b6068'; if(i <= GRADES.indexOf('5c')) return '#7bd389'; if(i <= GRADES.indexOf('6b+')) return '#ffd166'; if(i <= GRADES.indexOf('7a+')) return '#ff9a3d'; return '#ef476f'; };
 const gradeBadge = g => `<span class="gb" style="background:${gradeBand(g)}">${esc(g || '–')}</span>`;
@@ -2605,8 +2610,9 @@ function circFilters(w){
   const angles = [...new Set(all.map(x => x.c.angle).filter(x => x != null))].sort((a, b) => a - b), q = ui.sq;
   const other = (q.min || q.max ? 1 : 0) + (q.sty ? 1 : 0) + (q.feet ? 1 : 0);
   const chip = (v, l) => `<button class="fchip ${q.ang === String(v) ? 'on' : ''}" data-act="sqang" data-v="${v}">${l}</button>`;
-  const n = visibleCircuits(w).length, tot = w.circuits.length;
+  const n = visibleCircuits(w).length, tot = w.circuits.length, nNew = w.circuits.filter(cLabel).length;
   return `<div class="fchips">`+
+    (nNew ? `<button class="fchip ${ui.cNew ? 'on' : ''}" data-act="cnew">Novità · ${nNew}</button>` : '')+
     `<button class="fchip fbtn ${other ? 'on' : ''}" data-act="cfilt"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M1 3h12M3 7h8M5 11h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Filtri${other ? ' · ' + other : ''}</button>`+
     (angles.length > 1 ? chip('', 'Tutte') + angles.map(a => chip(a, a + '°')).join('') : '')+
     `</div>`+
@@ -2615,7 +2621,7 @@ function circFilters(w){
 function circRows(w, cls){
   const act = curCircuit(), vis = sortedVisible(w);
   if(!vis.length) return `<p class="hint" style="padding:6px 2px">${w.circuits.length ? 'Nessun circuito con questi filtri.' : 'Ancora nessun circuito su questo muro.'}</p>`;
-  return `<div class="list" style="gap:${cls === 'crow' ? 6 : 0}px;margin:0">` + vis.map(x => `<button class="${cls} ${act && x.id === act.id ? 'active' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${colOf(x)}"></i><span class="ctext" style="flex:1"><b>${esc(x.name)}</b><small>${circMeta(x)}</small></span>${gradeBadge(x.grade)}</button>`).join('') + `</div>`;
+  return `<div class="list" style="gap:${cls === 'crow' ? 6 : 0}px;margin:0">` + vis.map(x => `<button class="${cls} ${act && x.id === act.id ? 'active' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${colOf(x)}"></i><span class="ctext" style="flex:1"><b>${cTitleHtml(x)}</b><small>${circMeta(x)}</small></span>${gradeBadge(x.grade)}</button>`).join('') + `</div>`;
 }
 function renderChips(){
   const w = curWall(), el = $('#chips');
@@ -2640,7 +2646,7 @@ function renderChips(){
   }
   el.innerHTML = `<div class="curbar">`+
     `<button class="cinfo" data-act="clist" aria-label="Elenco circuiti"><i class="dot" style="background:${colOf(act)}"></i>`+
-    `<span class="ctext"><b>${isSec(w) ? bTitleHtml(act) : esc(act.name)}</b><small>${circMeta(act)}</small></span>${isSec(w) ? '' : gradeBadge(act.grade)}</button>`+
+    `<span class="ctext"><b>${isSec(w) ? bTitleHtml(act) : cTitleHtml(act)}</b><small>${circMeta(act)}</small></span>${isSec(w) ? '' : gradeBadge(act.grade)}</button>`+
     (EDIT && S.mode === 'edit' ? `<button class="btn" data-act="cedit">Modifica</button>` : '')+
     `<button class="btn primary" data-act="clist">${isSec(w) ? `Boulder (${tot})` : `Circuiti (${tot})${filtered}`}</button></div>`;
 }
@@ -3018,6 +3024,7 @@ function renderSheet(){
     const styleOpt = v => `<option value="${v}" ${(c.style || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
     h = `<h2>Circuito</h2>`+
       `<label class="field">Nome<span style="display:flex;gap:8px;margin-top:4px"><input id="cname" value="${esc(c.name)}" maxlength="40" style="margin-top:0;flex:1"><button type="button" class="btn" data-act="cgen" aria-label="Proponi un nome" title="Proponi un nome" style="flex:none;font-size:20px;padding:6px 12px">🎲</button></span></label>`+
+      `<label class="field">Montato il<input id="cdset" type="date" value="${esc(c.dateSet || '')}"></label>`+
       `<label class="field">Grado<select id="cgrade">${GRADES.map(gradeOpt).join('')}</select></label>`+
       `<label class="field">Stile<select id="cstyle">${STYLES.map(styleOpt).join('')}</select></label>`+
       `<p class="field" style="margin-bottom:4px">Piedi</p><div class="seg" role="group" aria-label="Piedi" style="margin:0 0 12px">`+
@@ -3574,7 +3581,7 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['bnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
+const PUBLIC_ACTS = ['bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
 const MGR_ACTS = ['qr','qrprint','qrcopy','dash','dashsec','fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
@@ -3707,6 +3714,7 @@ document.addEventListener('click', e => {
       ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); saveBUI(); render(); break;
     }
     case 'bnew': ui.bNew = !ui.bNew; afterFilter(); break;
+    case 'cnew': ui.cNew = !ui.cNew; afterFilter(); break;
     case 'bshow': case 'bcolor':
       if(a === 'bshow') ui.bShow = b.dataset.v; else ui.bColor = ui.bColor === b.dataset.v ? '' : b.dataset.v;
       saveBUI(); afterFilter(); break;
@@ -3917,6 +3925,7 @@ document.addEventListener('input', e => {
   if(e.target.id === 'sqmin' || e.target.id === 'sqmax'){ ui.sq[e.target.id === 'sqmin' ? 'min' : 'max'] = e.target.value; saveCF(); afterFilter(); renderSheet(); return; }
   if(!EDIT) return;
   if(e.target.id === 'bsetter' && c){ const v = e.target.value.trim(); if(v) c.setter = v; else delete c.setter; try{ localStorage.setItem('boulder-setter', v); }catch(err){} renderChips(); touch(); }
+  if(e.target.id === 'cdset' && c){ if(e.target.value) c.dateSet = e.target.value; else delete c.dateSet; touch(); }
   if(e.target.id === 'bdset' && c){ if(e.target.value) c.dateSet = e.target.value; else delete c.dateSet; renderChips(); touch(); }
   if(e.target.id === 'bdrem' && c){
     if(e.target.value) c.dateRemoved = e.target.value; else delete c.dateRemoved;
