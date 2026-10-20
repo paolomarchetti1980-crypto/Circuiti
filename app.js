@@ -2534,7 +2534,7 @@ const EYE_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="tr
 const WRENCH_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4.5 4.5 0 0 1 5.9-1.1l-3 3 .3 2.2 2.2.3 3-3a4.5 4.5 0 0 1-6 5.9L8.5 22.2a2.1 2.1 0 0 1-3-3l8.6-8.6a4.5 4.5 0 0 1 .6-4.3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
 function renderViewbar(){
   const el = $('#viewbar'); if(!el) return;
-  if(REAL_EDIT && ui.viewAs === 'cliente' && ui.prevNew){ el.hidden = false; el.innerHTML = `<span>Anteprima della <b>nuova parte clienti</b>: i clienti non la vedono</span><button class="btn" data-act="viewas" data-v="${ME.role}">Esci</button>`; return; }
+  if(REAL_EDIT && ui.viewAs === 'cliente' && ui.prevNew){ el.hidden = false; el.innerHTML = `<span>Anteprima della <b>nuova parte clienti</b>: i clienti non la vedono<br><small class="swdbg">${esc(ui.swDbg || 'dito: nessun tocco ancora')}</small></span><button class="btn" data-act="viewas" data-v="${ME.role}">Esci</button>`; return; }
   if(!REAL_EDIT || !ui.viewAs || ui.viewAs === 'cliente'){ el.hidden = true; return; }
   el.hidden = false;
   el.innerHTML = `<span>Stai vedendo come <b>${ui.viewAs}</b>${ui.viewAs === 'cliente' && dirtyReal() ? ' (con le tue modifiche non pubblicate)' : ''}</span><button class="btn" data-act="viewas" data-v="${ME.role}">Torna ${ME.role}</button>`;
@@ -2901,22 +2901,39 @@ function swipeGo(d){
   toast(n.name, 1200);
 }
 (function swipe(){
-  /* l'ultima posizione del dito si tiene a parte: se il telefono interrompe il tocco (touchcancel) si decide lo stesso */
-  let sx = 0, sy = 0, lx = 0, ly = 0, st = 0, on = false;
-  const down = e => { if(!newC() || e.touches.length !== 1){ on = false; return; } on = true; sx = lx = e.touches[0].clientX; sy = ly = e.touches[0].clientY; st = Date.now(); };
-  const move = e => { if(!on) return; if(e.touches.length !== 1){ on = false; return; } lx = e.touches[0].clientX; ly = e.touches[0].clientY; };
-  /* in anteprima, per lo staff: se un trascinamento di lato non cambia blocco si dice perché (aiuta a regolare il gesto) */
-  const why = (m, dx, dy, ms) => { if(REAL_EDIT && ui.prevNew && Math.abs(dx) > 30) toast(`Scorrimento non riconosciuto: ${m} (${Math.round(dx)}/${Math.round(dy)} px, ${ms} ms, zoom ${ui.zoom.toFixed(2)})`, 3500); };
-  const up = (e, always) => { if(!on || !newC()) return; on = false; const t = e.changedTouches && e.changedTouches[0];
-    const dx = (t ? t.clientX : lx) - sx, dy = (t ? t.clientY : ly) - sy, ms = Date.now() - st;
-    if(ms > 800) return why('troppo lento', dx, dy, ms);
-    if(Math.abs(dx) < 50) return why('troppo corto', dx, dy, ms);
-    if(Math.abs(dx) < 1.5 * Math.abs(dy)) return why('troppo in diagonale', dx, dy, ms);
-    if(!always && ui.zoom > 1.02) return why('foto ingrandita', dx, dy, ms);   /* foto ingrandita: il dito sposta la foto, non cambia blocco */
+  /* due strade, per i telefoni che si comportano in modo diverso: eventi "pointer" e, in riserva, eventi "touch".
+     Il primo dei due che riconosce il gesto lo esegue; l'altro viene ignorato per mezzo secondo. */
+  let g = null, lastGo = 0;
+  const dbg = (m) => { if(REAL_EDIT && ui.prevNew){ ui.swDbg = m; const el = $('#viewbar'); const d = el && el.querySelector('.swdbg'); if(d) d.textContent = m; } };
+  const why = (m, dx, dy, ms) => { dbg(`${m} · ${Math.round(dx)}/${Math.round(dy)}px · ${ms}ms · zoom ${ui.zoom.toFixed(2)}`); if(REAL_EDIT && ui.prevNew && Math.abs(dx) > 30) toast(`Scorrimento non riconosciuto: ${m}`, 2500); };
+  const start = (x, y, src, always) => { if(!newC()) return; g = { x, y, lx: x, ly: y, t: Date.now(), src, always }; dbg('dito giù (' + src + ')'); };
+  const moveTo = (x, y) => { if(g){ g.lx = x; g.ly = y; } };
+  const finish = (x, y, how) => {
+    if(!g || !newC()) { g = null; return; }
+    const G = g; g = null;
+    const dx = (x == null ? G.lx : x) - G.x, dy = (y == null ? G.ly : y) - G.y, ms = Date.now() - G.t;
+    if(Date.now() - lastGo < 500) return;
+    if(ms > 900) return why('troppo lento (' + how + ')', dx, dy, ms);
+    if(Math.abs(dx) < 45) return why('troppo corto (' + how + ')', dx, dy, ms);
+    if(Math.abs(dx) < 1.3 * Math.abs(dy)) return why('troppo in diagonale (' + how + ')', dx, dy, ms);
+    if(!G.always && ui.zoom > 1.02) return why('foto ingrandita', dx, dy, ms);
     if(ui.home || bGrid() || ui.sheet) return why('non sei in un settore', dx, dy, ms);
-    swipeGo(dx < 0 ? 1 : -1); };
-  const bind = (el, always) => { if(!el) return; el.addEventListener('touchstart', down, { passive: true }); el.addEventListener('touchmove', move, { passive: true });
-    el.addEventListener('touchend', e => up(e, always), { passive: true }); el.addEventListener('touchcancel', e => up(e, always), { passive: true }); };
+    lastGo = Date.now(); ui.pinchAt = Date.now(); dbg('scorrimento ok (' + G.src + ', ' + how + ')');
+    swipeGo(dx < 0 ? 1 : -1);
+  };
+  const bind = (el, always) => {
+    if(!el) return;
+    el.addEventListener('pointerdown', e => { if(e.pointerType === 'mouse' || !e.isPrimary) return; start(e.clientX, e.clientY, 'pointer', always); }, { passive: true });
+    el.addEventListener('pointermove', e => { if(e.isPrimary) moveTo(e.clientX, e.clientY); }, { passive: true });
+    el.addEventListener('pointerup', e => { if(e.isPrimary && g && g.src === 'pointer') finish(e.clientX, e.clientY, 'su'); }, { passive: true });
+    el.addEventListener('pointercancel', e => { if(e.isPrimary && g && g.src === 'pointer') finish(null, null, 'interrotto'); }, { passive: true });
+    el.addEventListener('touchstart', e => { if(e.touches.length !== 1){ g = null; return; } if(!g) start(e.touches[0].clientX, e.touches[0].clientY, 'touch', always); }, { passive: true });
+    /* non passivo: se il gesto è chiaramente orizzontale, si impedisce al browser di prenderselo */
+    el.addEventListener('touchmove', e => { if(!g) return; if(e.touches.length !== 1){ g = null; return; } const t = e.touches[0]; moveTo(t.clientX, t.clientY);
+      const dx = t.clientX - g.x, dy = t.clientY - g.y; if(newC() && Math.abs(dx) > 12 && Math.abs(dx) > 1.3 * Math.abs(dy) && (always || !(ui.zoom > 1.02)) && e.cancelable) e.preventDefault(); }, { passive: false });
+    el.addEventListener('touchend', e => { if(g){ const t = e.changedTouches[0]; finish(t ? t.clientX : null, t ? t.clientY : null, 'fine tocco'); } }, { passive: true });
+    el.addEventListener('touchcancel', () => { if(g) finish(null, null, 'tocco interrotto'); }, { passive: true });
+  };
   bind(document.getElementById('box'), false); bind(document.getElementById('fcard'), true);
 })();
 /* ---------- account cliente e "Le mie salite" ---------- */
