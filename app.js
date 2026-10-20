@@ -3077,7 +3077,7 @@ async function delAccount(){
 const WELCOME = [
   ['Benvenuto in Monkey Roads', 'Tutti i boulder e i circuiti di Monkey Island Roma, sempre aggiornati. Dalla pagina iniziale scegli <b>Boulder</b> o <b>Circuiti</b>.'],
   ['Trova il tuo percorso', 'Apri un settore e tocca un percorso: vedi partenza, prese e top. Con uno swipe navighi tra le nostre pareti!'],
-  ['Le tue salite', 'Con un account gratuito segni i percorsi <b>fatti</b> e i <b>progetti</b>, vedi i tuoi progressi e ci dici se il grado ti torna.']
+  ['Le tue salite', 'Con un account gratuito segni i percorsi <b>fatti</b> e i <b>progetti</b>, vedi i tuoi progressi e ci aiuti a rendere le nostre proposte più belle e mirate.']
 ];
 function welcomeHtml(){
   const i = Math.max(0, Math.min(WELCOME.length - 1, ui.wIdx || 0)), last = i === WELCOME.length - 1;
