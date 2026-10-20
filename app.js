@@ -122,7 +122,11 @@ let EDIT = false, SB = null, BASE = null, ME = null;
    ui.viewAs permette allo staff di vedere l'app come la vede un ruolo con meno permessi. */
 let REAL_EDIT = false;
 /* nuova parte clienti: finché NEWC_LIVE è false la vede solo lo staff, da menu ⋮ → Anteprima parte clienti */
-const NEWC_LIVE = false;
+const NEWC_LIVE = true;
+/* account cliente e "Le mie salite": finché ACCT_LIVE è false li vede solo lo staff, da menu ⋮ → Anteprima con Le mie salite
+   (prima bisogna collegare a Supabase un servizio per l'invio delle email) */
+const ACCT_LIVE = false;
+const acctOn = () => ACCT_LIVE || (REAL_EDIT && !!ui.prevNew);
 let CL = null;   /* account cliente: { id, email } */
 const newC = () => !EDIT && (NEWC_LIVE || !!ui.prevNew);
 /* chi salva le salite: il cliente, oppure lo staff mentre prova l'anteprima */
@@ -2534,7 +2538,7 @@ const EYE_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="tr
 const WRENCH_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4.5 4.5 0 0 1 5.9-1.1l-3 3 .3 2.2 2.2.3 3-3a4.5 4.5 0 0 1-6 5.9L8.5 22.2a2.1 2.1 0 0 1-3-3l8.6-8.6a4.5 4.5 0 0 1 .6-4.3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
 function renderViewbar(){
   const el = $('#viewbar'); if(!el) return;
-  if(REAL_EDIT && ui.viewAs === 'cliente' && ui.prevNew){ el.hidden = false; el.innerHTML = `<span>Anteprima della <b>nuova parte clienti</b>: i clienti non la vedono</span><button class="btn" data-act="viewas" data-v="${ME.role}">Esci</button>`; return; }
+  if(REAL_EDIT && ui.viewAs === 'cliente' && ui.prevNew){ el.hidden = false; el.innerHTML = `<span>Anteprima con <b>Le mie salite</b> e gli account: i clienti non li vedono ancora</span><button class="btn" data-act="viewas" data-v="${ME.role}">Esci</button>`; return; }
   if(!REAL_EDIT || !ui.viewAs || ui.viewAs === 'cliente'){ el.hidden = true; return; }
   el.hidden = false;
   el.innerHTML = `<span>Stai vedendo come <b>${ui.viewAs}</b>${ui.viewAs === 'cliente' && dirtyReal() ? ' (con le tue modifiche non pubblicate)' : ''}</span><button class="btn" data-act="viewas" data-v="${ME.role}">Torna ${ME.role}</button>`;
@@ -2971,7 +2975,7 @@ function vote(v){
   const w = curWall(), c = curCircuit(), t = tickOf(c); if(!w || !c || !t || t.status !== 'fatto') return;
   saveTick(w, c, Object.assign({}, t, { vote: t.vote === v ? null : v, updated_at: new Date().toISOString() }));
 }
-const tickMark = c => { if(!newC()) return ''; const t = tickOf(c); return t ? (t.status === 'fatto' ? '<span class="tk done" aria-label="fatto">✓</span>' : '<span class="tk proj" aria-label="progetto">☆</span>') : ''; };
+const tickMark = c => { if(!newC() || !acctOn()) return ''; const t = tickOf(c); return t ? (t.status === 'fatto' ? '<span class="tk done" aria-label="fatto">✓</span>' : '<span class="tk proj" aria-label="progetto">☆</span>') : ''; };
 function tickPanel(w, c){
   if(EDIT){
     const sm = ui.tsum && ui.tsum.get(c.id); if(!sm) return '';
@@ -2979,7 +2983,7 @@ function tickPanel(w, c){
     const pc = k => Math.round((+sm[k] || 0) / v * 100) + '%';
     return `<p class="tsum">Clienti: <b>${sm.fatti}</b> ${+sm.fatti === 1 ? 'salita' : 'salite'}${v ? ` · grado: facile ${pc('facile')} · giusto ${pc('giusto')} · duro ${pc('duro')} <small>(${v} ${v === 1 ? 'parere' : 'pareri'})</small>` : ''}</p>`;
   }
-  if(!newC()) return '';
+  if(!newC() || !acctOn()) return '';
   const t = tickOf(c), st = t ? t.status : '';
   return `<div class="tickrow"><button class="tbtn ${st === 'fatto' ? 'on' : ''}" data-act="tick" data-v="fatto" aria-pressed="${st === 'fatto'}">✓ Fatto</button>`+
     `<button class="tbtn ${st === 'progetto' ? 'on proj' : ''}" data-act="tick" data-v="progetto" aria-pressed="${st === 'progetto'}">☆ Progetto</button></div>`+
@@ -3079,10 +3083,11 @@ const WELCOME = [
   ['Trova il tuo percorso', 'Apri un settore e tocca un percorso: vedi partenza, prese e top. Con uno swipe navighi tra le nostre pareti!'],
   ['Le tue salite', 'Con un account gratuito segni i percorsi <b>fatti</b> e i <b>progetti</b>, vedi i tuoi progressi e ci aiuti a rendere le nostre proposte più belle e mirate.']
 ];
+const welcomeSlides = () => acctOn() ? WELCOME : WELCOME.slice(0, 2);
 function welcomeHtml(){
-  const i = Math.max(0, Math.min(WELCOME.length - 1, ui.wIdx || 0)), last = i === WELCOME.length - 1;
-  return `<div class="wel"><p class="welstep">${WELCOME.map((x, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</p><h2>${WELCOME[i][0]}</h2><p>${WELCOME[i][1]}</p></div>`+
-    `<div class="row"><button class="btn primary" data-act="wnext">${last ? 'Inizia' : 'Avanti'}</button>${last ? (ACC() ? '' : `<button class="btn" data-act="acctmode" data-v="new">Crea account</button>`) : `<button class="btn" data-act="wskip">Salta</button>`}</div>`;
+  const WS = welcomeSlides(), i = Math.max(0, Math.min(WS.length - 1, ui.wIdx || 0)), last = i === WS.length - 1;
+  return `<div class="wel"><p class="welstep">${WS.map((x, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</p><h2>${WS[i][0]}</h2><p>${WS[i][1]}</p></div>`+
+    `<div class="row"><button class="btn primary" data-act="wnext">${last ? 'Inizia' : 'Avanti'}</button>${last ? (ACC() || !acctOn() ? '' : `<button class="btn" data-act="acctmode" data-v="new">Crea account</button>`) : `<button class="btn" data-act="wskip">Salta</button>`}</div>`;
 }
 /* ---------- QR code da attaccare ai muri ---------- */
 const appBase = () => location.origin + location.pathname.replace(/index\.html$/, '');
@@ -3278,16 +3283,17 @@ function renderSheet(){
     const nd = ui.ticks ? [...ui.ticks.values()].filter(t => t.status === 'fatto').length : 0;
     const inside = !ui.home && !bGrid(), cw = inside ? w : null, cc = cw ? c : null, cn = cw ? sortedVisible(cw).length : 0;
     h = `<h2>Menu</h2><div class="list">`+
-      row('mine', 'Le mie salite', ACC() ? (nd ? nd + (nd === 1 ? ' percorso fatto' : ' percorsi fatti') : 'segna i percorsi fatti e i progetti') : 'segna i percorsi fatti e i progetti')+
+      (acctOn() ? row('mine', 'Le mie salite', ACC() ? (nd ? nd + (nd === 1 ? ' percorso fatto' : ' percorsi fatti') : 'segna i percorsi fatti e i progetti') : 'segna i percorsi fatti e i progetti') : '')+
       (SB ? row('fbnew', 'Segnala un problema', 'o un suggerimento: arriva alla palestra') : '')+
       (canInstall() ? row('install', "Installa l'app", 'sulla schermata Home') : '')+
       row('welcome', 'Come funziona', 'rivedi la presentazione')+
-      `</div><h3 class="mhead">Stampa</h3><div class="list">`+
-      row('printone', 'Stampa ' + (cw && isSec(cw) ? 'questo boulder' : 'questo circuito'), cc ? esc(blockTitle(cw, cc)) : 'apri prima un blocco', !cc)+
+      `</div><h3 class="mhead">Stampa e condividi</h3><div class="list">`+
+      row('printone', 'Stampa ' + (cw && isSec(cw) ? 'questo boulder' : 'questo circuito'), cc ? esc(blockTitle(cw, cc)) : 'apri prima un percorso', !cc)+
       row('printall', cw && isSec(cw) ? 'Stampa i boulder del settore' : 'Stampa i circuiti del muro', cn ? cn + (cn === 1 ? ' pagina' : ' pagine') : 'apri prima un settore o un muro', !cn)+
-      `</div><h3 class="mhead">Account</h3><div class="list">`+
+      row('img', 'Condividi immagine', cc ? 'da salvare o mandare' : 'apri prima un percorso', !cc)+
+      (acctOn() || CL ? `</div><h3 class="mhead">Account</h3><div class="list">`+
       (CL ? row('logout', 'Esci', esc(CL.email)) + row('delacct', ui.confirm === 'delacct' ? 'Tocca ancora: cancello account e salite' : 'Cancella il mio account', 'e tutte le tue salite', false) :
-        REAL_EDIT ? `<p class="note" style="margin:0">In anteprima le salite si salvano sul tuo account dello staff.</p>` : row('acct', 'Entra o crea un account', 'gratis: serve per le tue salite'))+
+        REAL_EDIT ? `<p class="note" style="margin:0">In anteprima le salite si salvano sul tuo account dello staff.</p>` : row('acct', 'Entra o crea un account', 'gratis: serve per le tue salite')) : '')+
       `</div>`+
       (REAL_EDIT ? `<div class="row"><button class="btn" data-act="viewas" data-v="${ME.role}">Esci dall'anteprima</button><button class="btn primary" data-act="close">Chiudi</button></div>` :
         `<div class="row"><button class="btn primary" data-act="close">Chiudi</button></div><p class="note" style="text-align:center"><button class="linklike" data-act="login">Accesso staff</button></p>`)+
@@ -3304,7 +3310,7 @@ function renderSheet(){
       (canInstall() ? row('install', "Installa l'app", 'sulla schermata Home') : '')+
       (SB ? row('fbnew', 'Segnala un problema', 'o un suggerimento: arriva al gestore') : '')+
       (SB && REAL_EDIT && ME.role === 'gestore' ? row('fblist', 'Segnalazioni ricevute', 'problemi segnalati ed errori dell\'app') : '')+
-      (REAL_EDIT && !ui.viewAs ? row('prevnew', 'Anteprima parte clienti', 'la nuova versione: la vedete solo voi dello staff') : '')+
+      (REAL_EDIT && !ui.viewAs ? row('prevnew', 'Anteprima con Le mie salite', 'la parte clienti con gli account: la vedete solo voi dello staff') : '')+
       (REAL_EDIT && ME.role === 'gestore' ? (ui.viewAs === 'tracciatore' ? row('viewas" data-v="gestore', 'Torna gestore', 'stai vedendo l\'app come un tracciatore') : row('viewas" data-v="tracciatore', 'Vedi come tracciatore', 'per controllare cosa può fare lo staff')) : '')+
       `</div><h3 class="mhead">Account</h3><div class="list">`+
       (SB && !REAL_EDIT ? row('login', 'Accesso staff', ui.authEmail ? 'sei entrato come ' + esc(ui.authEmail) + ', che non è nello staff' : 'per gestore e tracciatori') : '')+
@@ -3934,7 +3940,7 @@ document.addEventListener('click', e => {
     case 'acctreset': acctReset(); break;
     case 'delacct': if(CL) delAccount(); break;
     case 'welcome': ui.wIdx = 0; openSheet('welcome'); break;
-    case 'wnext': if((ui.wIdx || 0) >= WELCOME.length - 1){ try{ localStorage.setItem('mr-welcome', '1'); }catch(e){} ui.sheet = null; renderSheet(); } else { ui.wIdx = (ui.wIdx || 0) + 1; renderSheet(); } break;
+    case 'wnext': if((ui.wIdx || 0) >= welcomeSlides().length - 1){ try{ localStorage.setItem('mr-welcome', '1'); }catch(e){} ui.sheet = null; renderSheet(); } else { ui.wIdx = (ui.wIdx || 0) + 1; renderSheet(); } break;
     case 'wskip': try{ localStorage.setItem('mr-welcome', '1'); }catch(e){} ui.sheet = null; renderSheet(); break;
     case 'minego': {
       const w2 = S.walls.find(x => x.id === b.dataset.w), c2 = w2 && w2.circuits.find(x => x.id === b.dataset.id); if(!w2 || !c2) break;
