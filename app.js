@@ -2407,7 +2407,7 @@ function sectorGrid(){
   const bo = BO(), mgr = EDIT && isMgr(), arch = archWalls();
   const nC = bo ? 0 : secWalls().reduce((t, w) => t + w.circuits.length, 0);
   return (nC > 1 ? `<button class="sqbar" data-act="csearch"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><circle cx="7.5" cy="7.5" r="5.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 12l4.5 4.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>Cerca un circuito</span><small>${nC} in palestra</small></button>` : '') +
-    `<div class="sgrid">` + (newC() && bo ? secWalls().slice().sort((x, y) => { const rx = secLabel(x) ? 1 : 0, ry = secLabel(y) ? 1 : 0; return ry - rx || (rx ? String(secRenew(y)).localeCompare(String(secRenew(x))) : 0); }) : secWalls()).map(w => {
+    `<div class="sgrid">` + gridWalls().map(w => {
     const on = w.circuits.filter(c => !isOff(c));
     let info, staff = '';
     if(bo){
@@ -2570,7 +2570,7 @@ function renderStage(){
   const sv = $('#ov');
   sv.setAttribute('viewBox', `0 0 ${w.w} ${w.h}`);
   const editing = EDIT && S.mode === 'edit';
-  sv.innerHTML = overlay(w, { over: bOver(), numbers: editing || S.prefs.numbers || newC(), lines: S.prefs.lines || newC(), others: EDIT && S.prefs.others, edit: editing, dim: dimOn(editing), wall: EDIT && S.mode === 'wall' });
+  sv.innerHTML = overlay(w, { over: bOver(), numbers: editing || S.prefs.numbers || newC(), lines: S.prefs.lines, others: EDIT && S.prefs.others, edit: editing, dim: dimOn(editing), wall: EDIT && S.mode === 'wall' });
   fit();
 }
 /* il cliente vede solo i boulder in parete: gli smontati servono allo staff */
@@ -2732,7 +2732,8 @@ function renderTools(){
   if(EDIT && S.mode !== 'view' && bOver()){ el.innerHTML = ''; return; }   /* foto d'insieme dello staff: si sceglie il boulder dall'elenco */
   if(!EDIT || S.mode === 'view'){
     const p = S.prefs;
-    if(newC()){ el.innerHTML = ''; return; }   /* per i clienti niente interruttori: numeri, linee e oscuramento sempre attivi */
+    /* per i clienti un solo interruttore, le linee dei circuiti (spente di base): numeri e oscuramento sempre attivi */
+    if(newC()){ el.innerHTML = c && !isSec(w) ? `<div class="mini"><button class="btn ${p.lines ? 'on' : ''}" data-act="pref" data-k="lines">Linee</button></div>` : ''; return; }
     el.innerHTML = c ? `<div class="mini">`+
       (isSec(w) ? '' : `<button class="btn ${p.numbers ? 'on' : ''}" data-act="pref" data-k="numbers">Numeri</button>`+
       `<button class="btn ${p.lines ? 'on' : ''}" data-act="pref" data-k="lines">Linee</button>`)+
@@ -2879,6 +2880,34 @@ window.addEventListener('popstate', () => {
 });
 
 /* ---------- pannelli ---------- */
+/* ordine della griglia: per i clienti i settori nuovi o recenti in cima */
+function gridWalls(){
+  const l = secWalls();
+  return newC() && BO() ? l.slice().sort((x, y) => { const rx = secLabel(x) ? 1 : 0, ry = secLabel(y) ? 1 : 0; return ry - rx || (rx ? String(secRenew(y)).localeCompare(String(secRenew(x))) : 0); }) : l;
+}
+/* scorrimento col dito (clienti): a schermo intero passa al blocco vicino, sulla foto del settore al settore vicino */
+function swipeGo(d){
+  const w = curWall(); if(!w || ui.home || bGrid() || ui.sheet) return;
+  if(ui.full){
+    const list = sortedVisible(w), i = list.findIndex(x => x.id === w.activeCircuit), n = list[i + d];
+    if(n){ w.activeCircuit = n.id; ui.sel = null; save(); render(); focusCircuit(); } return;
+  }
+  const l = gridWalls(), i = l.findIndex(x => x.id === w.id), n = l[i + d]; if(!n) return;
+  S.active = n.id; ui.lastSec[ui.section] = n.id; saveBUI(); ui.zoom = 1; ui.sel = null; ui.secOver = true;
+  ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save(); render(); $('#box').scrollTop = 0;
+  toast(n.name, 1200);
+}
+(function swipe(){
+  let sx = 0, sy = 0, st = 0, on = false;
+  const down = e => { if(!newC() || e.touches.length !== 1){ on = false; return; } on = true; sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now(); };
+  const up = (e, always) => { if(!on || !newC()) return; on = false; const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if(Date.now() - st > 600 || Math.abs(dx) < 60 || Math.abs(dx) < 2 * Math.abs(dy)) return;
+    if(!always && ui.zoom > 1.02) return;   /* foto ingrandita: il dito sposta la foto, non cambia blocco */
+    swipeGo(dx < 0 ? 1 : -1); };
+  const box = document.getElementById('box'), fc = document.getElementById('fcard');
+  if(box){ box.addEventListener('touchstart', down, { passive: true }); box.addEventListener('touchend', e => up(e, false), { passive: true }); }
+  if(fc){ fc.addEventListener('touchstart', down, { passive: true }); fc.addEventListener('touchend', e => up(e, true), { passive: true }); }
+})();
 /* ---------- account cliente e "Le mie salite" ---------- */
 const loginIntent = () => { try{ return localStorage.getItem('login-intent') || 'staff'; }catch(e){ return 'staff'; } };
 const setIntent = v => { try{ localStorage.setItem('login-intent', v); }catch(e){} };
@@ -2919,7 +2948,8 @@ function tickPanel(w, c){
   if(EDIT){
     const sm = ui.tsum && ui.tsum.get(c.id); if(!sm) return '';
     const v = (+sm.facile || 0) + (+sm.giusto || 0) + (+sm.duro || 0);
-    return `<p class="tsum">Clienti: <b>${sm.fatti}</b> ${+sm.fatti === 1 ? 'salita' : 'salite'}${v ? ` · grado: facile ${sm.facile} · giusto ${sm.giusto} · duro ${sm.duro}` : ''}</p>`;
+    const pc = k => Math.round((+sm[k] || 0) / v * 100) + '%';
+    return `<p class="tsum">Clienti: <b>${sm.fatti}</b> ${+sm.fatti === 1 ? 'salita' : 'salite'}${v ? ` · grado: facile ${pc('facile')} · giusto ${pc('giusto')} · duro ${pc('duro')} <small>(${v} ${v === 1 ? 'parere' : 'pareri'})</small>` : ''}</p>`;
   }
   if(!newC()) return '';
   const t = tickOf(c), st = t ? t.status : '';
@@ -3208,11 +3238,15 @@ function renderSheet(){
   } else if(ui.sheet === 'menu' && newC()){
     const row = (act, label, sub, dis) => `<button class="wrow" data-act="${act}" ${dis ? 'disabled' : ''}><span>${label}</span><small>${sub || ''}</small></button>`;
     const nd = ui.ticks ? [...ui.ticks.values()].filter(t => t.status === 'fatto').length : 0;
+    const inside = !ui.home && !bGrid(), cw = inside ? w : null, cc = cw ? c : null, cn = cw ? sortedVisible(cw).length : 0;
     h = `<h2>Menu</h2><div class="list">`+
       row('mine', 'Le mie salite', ACC() ? (nd ? nd + (nd === 1 ? ' blocco fatto' : ' blocchi fatti') : 'segna i blocchi fatti e i progetti') : 'segna i blocchi fatti e i progetti')+
       (SB ? row('fbnew', 'Segnala un problema', 'o un suggerimento: arriva alla palestra') : '')+
       (canInstall() ? row('install', "Installa l'app", 'sulla schermata Home') : '')+
       row('welcome', 'Come funziona', 'rivedi la presentazione')+
+      `</div><h3 class="mhead">Stampa</h3><div class="list">`+
+      row('printone', 'Stampa ' + (cw && isSec(cw) ? 'questo boulder' : 'questo circuito'), cc ? esc(blockTitle(cw, cc)) : 'apri prima un blocco', !cc)+
+      row('printall', cw && isSec(cw) ? 'Stampa i boulder del settore' : 'Stampa i circuiti del muro', cn ? cn + (cn === 1 ? ' pagina' : ' pagine') : 'apri prima un settore o un muro', !cn)+
       `</div><h3 class="mhead">Account</h3><div class="list">`+
       (CL ? row('logout', 'Esci', esc(CL.email)) + row('delacct', ui.confirm === 'delacct' ? 'Tocca ancora: cancello account e salite' : 'Cancella il mio account', 'e tutte le tue salite', false) :
         REAL_EDIT ? `<p class="note" style="margin:0">In anteprima le salite si salvano sul tuo account dello staff.</p>` : row('acct', 'Entra o crea un account', 'gratis: serve per le tue salite'))+
