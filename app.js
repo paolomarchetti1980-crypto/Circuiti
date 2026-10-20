@@ -3066,7 +3066,7 @@ async function delAccount(){
 }
 const WELCOME = [
   ['Benvenuto in Monkey Roads', 'Tutti i boulder e i circuiti di Monkey Island Roma, sempre aggiornati. Dalla pagina iniziale scegli <b>Boulder</b> o <b>Circuiti</b>.'],
-  ['Trova il tuo blocco', 'Apri un settore e tocca un blocco: vedi partenza, prese e top. Con le frecce passi al successivo. I settori <b>Nuovi</b> sono in cima.'],
+  ['Trova il tuo blocco', 'Apri un settore e tocca un percorso: vedi partenza, prese e top. Con uno swipe navighi tra le nostre pareti!'],
   ['Le tue salite', 'Con un account gratuito segni i blocchi <b>fatti</b> e i <b>progetti</b>, vedi i tuoi progressi e ci dici se il grado ti torna.']
 ];
 function welcomeHtml(){
