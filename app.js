@@ -3011,8 +3011,8 @@ function mineHtml(){
     `<div class="dsum"><div><b>${done.length}</b><small>fatti</small></div><div><b>${proj.length}</b><small>progetti</small></div><div><b>${circDone.length}</b><small>circuiti fatti</small></div></div>`+
     (bars ? `<p class="dlab">Boulder in parete fatti, per colore</p>${bars}` : '')+
     (grades.length ? `<p class="dlab">Circuiti fatti, per grado</p><div class="sdots" style="padding:0">${grades.map(g => `<span class="sdot">${gradeBadge(g)} ${circDone.filter(x => x.c.grade === g).length}</span>`).join('')}</div>` : '')+
-    `<p class="dlab">Progetti</p>` + (proj.length ? `<div class="list" style="gap:0">${proj.map(row).join('')}</div>` : `<p class="hint">Apri un blocco e tocca ☆ Progetto per ritrovarlo qui.</p>`)+
-    `<p class="dlab">Fatti di recente</p>` + (recent.length ? `<div class="list" style="gap:0">${recent.map(row).join('')}</div>` : `<p class="hint">Apri un blocco e tocca ✓ Fatto quando lo chiudi.</p>`)+
+    `<p class="dlab">Progetti</p>` + (proj.length ? `<div class="list" style="gap:0">${proj.map(row).join('')}</div>` : `<p class="hint">Apri un percorso e tocca ☆ Progetto per ritrovarlo qui.</p>`)+
+    `<p class="dlab">Fatti di recente</p>` + (recent.length ? `<div class="list" style="gap:0">${recent.map(row).join('')}</div>` : `<p class="hint">Apri un percorso e tocca ✓ Fatto quando lo chiudi.</p>`)+
     `<div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
 }
 function acctHtml(){
@@ -3066,8 +3066,8 @@ async function delAccount(){
 }
 const WELCOME = [
   ['Benvenuto in Monkey Roads', 'Tutti i boulder e i circuiti di Monkey Island Roma, sempre aggiornati. Dalla pagina iniziale scegli <b>Boulder</b> o <b>Circuiti</b>.'],
-  ['Trova il tuo blocco', 'Apri un settore e tocca un percorso: vedi partenza, prese e top. Con uno swipe navighi tra le nostre pareti!'],
-  ['Le tue salite', 'Con un account gratuito segni i blocchi <b>fatti</b> e i <b>progetti</b>, vedi i tuoi progressi e ci dici se il grado ti torna.']
+  ['Trova il tuo percorso', 'Apri un settore e tocca un percorso: vedi partenza, prese e top. Con uno swipe navighi tra le nostre pareti!'],
+  ['Le tue salite', 'Con un account gratuito segni i percorsi <b>fatti</b> e i <b>progetti</b>, vedi i tuoi progressi e ci dici se il grado ti torna.']
 ];
 function welcomeHtml(){
   const i = Math.max(0, Math.min(WELCOME.length - 1, ui.wIdx || 0)), last = i === WELCOME.length - 1;
@@ -3268,7 +3268,7 @@ function renderSheet(){
     const nd = ui.ticks ? [...ui.ticks.values()].filter(t => t.status === 'fatto').length : 0;
     const inside = !ui.home && !bGrid(), cw = inside ? w : null, cc = cw ? c : null, cn = cw ? sortedVisible(cw).length : 0;
     h = `<h2>Menu</h2><div class="list">`+
-      row('mine', 'Le mie salite', ACC() ? (nd ? nd + (nd === 1 ? ' blocco fatto' : ' blocchi fatti') : 'segna i blocchi fatti e i progetti') : 'segna i blocchi fatti e i progetti')+
+      row('mine', 'Le mie salite', ACC() ? (nd ? nd + (nd === 1 ? ' percorso fatto' : ' percorsi fatti') : 'segna i percorsi fatti e i progetti') : 'segna i percorsi fatti e i progetti')+
       (SB ? row('fbnew', 'Segnala un problema', 'o un suggerimento: arriva alla palestra') : '')+
       (canInstall() ? row('install', "Installa l'app", 'sulla schermata Home') : '')+
       row('welcome', 'Come funziona', 'rivedi la presentazione')+
