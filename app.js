@@ -1731,14 +1731,15 @@ function bubbleCost(x, y, br, gap, env){
   let cost = 0;
   if(x - br < 0 || y - br < 0 || x + br > env.W || y + br > env.H) cost += 6;
   /* la bolla con il suo bordino e lo stacco scuro intorno: nessun contorno vicino deve toccarla */
-  const lim = br*1.4 + gap;
+  const lim = br*1.25 + gap;
   for(const q of env.shapes){
     if(q.bb.x0 - lim > x || q.bb.x1 + lim < x || q.bb.y0 - lim > y || q.bb.y1 + lim < y) continue;
     const d = polyDist(x, y, q.p); if(d < lim) cost += 6*(1 - d/lim) + (d === 0 ? 3 : 0);
+    else if(d < lim*2.2) cost += 0.8*(1 - (d - lim)/(lim*1.2));   /* anche oltre il contatto: meglio dove c'è più spazio libero */
   }
   for(const sg of env.segs){ const d = segDist(x, y, sg[0], sg[1], sg[2], sg[3]); if(d < lim) cost += 2.5*(1 - d/lim); }
   /* due numeri che si toccano si leggono male: costo alto finché non c'è aria tra le due bolle */
-  for(const b of env.badges){ const d = Math.hypot(x - b[0], y - b[1]); if(d < br*2.9) cost += 9*(1 - d/(br*2.9)) + (d < br*2.25 ? 8 : 0); }
+  for(const b of env.badges){ const d = Math.hypot(x - b[0], y - b[1]); if(d < br*2.9) cost += 9*(1 - d/(br*2.9)) + (d < br*2.25 ? 8 : 0); else if(d < br*5) cost += 0.8*(1 - (d - br*2.9)/(br*2.1)); }
   return cost + 3*busyAt(env.busy, x, y, br);
 }
 function placeBubbles(h, W, br, gap, env, n){
@@ -1768,6 +1769,9 @@ function placeBubbles(h, W, br, gap, env, n){
       if(!found) ok = false; else chain.push(found);
     }
     if(!ok) continue;
+    /* i numeri si leggono da sinistra a destra (o dall'alto in basso): la prima bolla è quella più a sinistra */
+    const f = chain[0], l = chain[chain.length - 1];
+    if(Math.abs(f.x - l.x) > Math.abs(f.y - l.y) * 0.5 ? f.x > l.x : f.y > l.y) chain.reverse();
     /* le bolle si accavallano tra loro: si conta il costo di ognuna, non le loro sovrapposizioni reciproche */
     const cost = chain.reduce((t, p) => t + p.c, 0);
     if(!best || cost < best.cost) best = { cost, chain };
@@ -1940,8 +1944,6 @@ function circuitSVG(c, W, alpha, o){
       LBL_CACHE.set(ckey, P.map(ps => ps.map(p => ({ x: p.x, y: p.y }))));
       if(LBL_CACHE.size > 60) LBL_CACHE.delete(LBL_CACHE.keys().next().value);
     }
-    /* stacco scuro sotto ogni numero: taglia i contorni vicini che ci passano sotto */
-    P.forEach(ps => ps.forEach(p => { s += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${(br*1.32).toFixed(1)}" fill="#000" fill-opacity=".5"/>`; }));
     labels.forEach((L, li) => {
       const ps = P[li], pos = ps[0];
       if(L.segs){
@@ -1953,7 +1955,11 @@ function circuitSVG(c, W, alpha, o){
         return;
       }
       const bx = pos.x.toFixed(1), by = pos.y.toFixed(1);
-      s += `<circle cx="${bx}" cy="${by}" r="${br}" fill="${L.col}" stroke="${L.ha}" stroke-opacity=".7" stroke-width="${br*0.22}"/>`+
+      /* forme diverse: partenza quadrata, arrivo a rombo, prese intermedie tonde */
+      const isS = /^S\d*$/.test(L.label), isT = L.label === 'T', bst = `fill="${L.col}" stroke="${L.ha}" stroke-opacity=".7" stroke-width="${br*0.22}"`;
+      s += (isS ? `<rect x="${(pos.x - br*0.95).toFixed(1)}" y="${(pos.y - br*0.95).toFixed(1)}" width="${(br*1.9).toFixed(1)}" height="${(br*1.9).toFixed(1)}" rx="${(br*0.32).toFixed(1)}" ${bst}/>` :
+            isT ? `<path d="M${bx},${(pos.y - br*1.32).toFixed(1)}L${(pos.x + br*1.32).toFixed(1)},${by}L${bx},${(pos.y + br*1.32).toFixed(1)}L${(pos.x - br*1.32).toFixed(1)},${by}Z" stroke-linejoin="round" ${bst}/>` :
+            `<circle cx="${bx}" cy="${by}" r="${br}" ${bst}/>`)+
            `<text x="${bx}" y="${by}" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed, Arial, sans-serif" font-weight="700" font-size="${br*(L.label.length>1?(L.label.length>3?0.62:0.8):1.25)}" fill="${inkOn(L.col)}">${L.label}</text>`;
     });
   }
@@ -2625,9 +2631,12 @@ function bMeta(c){
   const t = (c.tags || []).slice(0, 3).join(', ');
   return [holdColText(c), c.setter || '', isOff(c) ? 'smontato ' + fmtDate(c.dateRemoved) : c.dateSet ? fmtDate(c.dateSet) : '', t].filter(Boolean).map(esc).join(' · ');
 }
+/* movimenti: ogni passaggio dopo la partenza (sulla stessa presa si può passare più volte) */
+const movesOf = c => (c.holds || []).filter(h => h.role !== 'start').length;
+const movesText = c => { const n = movesOf(c); return n === 1 ? '1 movimento' : n + ' movimenti'; };
 function circMeta(c){
   if(curWall() && isSec(curWall())) return bMeta(c);
-  return [c.angle != null ? c.angle + '°' : '', c.style || '', c.feet ? 'piedi ' + c.feet : '', c.holds.length + (c.holds.length === 1 ? ' presa' : ' prese')].filter(Boolean).map(esc).join(' · ');
+  return [c.angle != null ? c.angle + '°' : '', c.style || '', c.feet ? 'piedi ' + c.feet : '', movesText(c)].filter(Boolean).map(esc).join(' · ');
 }
 /* filtri dei boulder: stato (in parete / smontati / tutti), grado, colore delle prese */
 function bFilters(w){
@@ -3510,7 +3519,7 @@ async function printBlocks(all){
       const pic = await composeBlock(w, b, { numbers: !isSec(w), others: false, dim: true });
       const meta = isSec(w)
         ? [b.style, b.setter ? 'tracciato da ' + b.setter : '', b.dateSet ? 'montato il ' + fmtDate(b.dateSet) : '', holdColText(b)].filter(Boolean)
-        : [b.grade ? 'grado ' + b.grade : '', b.style, b.feet ? 'piedi ' + b.feet : '', b.angle != null ? b.angle + '°' : '', b.holds.length + ' prese'].filter(Boolean);
+        : [b.grade ? 'grado ' + b.grade : '', b.style, b.feet ? 'piedi ' + b.feet : '', b.angle != null ? b.angle + '°' : '', movesText(b)].filter(Boolean);
       html += `<section class="ppage"><header><span>Monkey Island Roma</span><span>${esc(w.name)}</span></header>`+
         `<h1><i style="background:${colOf(b)}"></i>${esc(blockTitle(w, b))}${!isSec(w) && b.grade ? `<b>${esc(b.grade)}</b>` : ''}</h1>`+
         `<p class="pmeta">${meta.map(esc).join(' · ')}</p>`+
