@@ -177,3 +177,15 @@ begin
 end $$;
 revoke execute on function public.delete_my_account() from public, anon;
 grant execute on function public.delete_my_account() to authenticated;
+
+-- ===== Aggiornamento: voto da 1 a 10 sui percorsi fatti =====
+alter table public.ticks add column if not exists rating smallint check (rating between 1 and 10);
+create or replace function public.tick_stats() returns table(item_id text, fatti bigint, facile bigint, giusto bigint, duro bigint, voti bigint, media numeric)
+language sql security definer stable set search_path = public as $$
+  select t.item_id, count(*) filter (where t.status = 'fatto'), count(*) filter (where t.vote = 'facile'),
+         count(*) filter (where t.vote = 'giusto'), count(*) filter (where t.vote = 'duro'),
+         count(t.rating), round(avg(t.rating)::numeric, 1)
+  from public.ticks t where public.is_editor() group by t.item_id;
+$$;
+revoke execute on function public.tick_stats() from public, anon;
+grant execute on function public.tick_stats() to authenticated;

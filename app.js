@@ -2981,20 +2981,21 @@ const loginIntent = () => { try{ return localStorage.getItem('login-intent') || 
 const setIntent = v => { try{ localStorage.setItem('login-intent', v); }catch(e){} };
 const welcomeSeen = () => { try{ return localStorage.getItem('mr-welcome') === '1'; }catch(e){ return false; } };
 async function loadTicks(){
-  const { data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,updated_at');
+  let { data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,updated_at');
+  if(error) ({ data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,updated_at'));
   ui.ticks = new Map(); ui.ticksErr = !!error;
   (data || []).forEach(t => ui.ticks.set(t.item_id, t));
   render(); if(ui.sheet) renderSheet();
 }
 async function loadTickSum(){
-  try{ const { data, error } = await SB.rpc('tick_summary'); if(!error && Array.isArray(data)){ ui.tsum = new Map(data.map(r => [r.item_id, r])); render(); } }catch(e){}
+  try{ let { data, error } = await SB.rpc('tick_stats'); if(error) ({ data, error } = await SB.rpc('tick_summary')); if(!error && Array.isArray(data)){ ui.tsum = new Map(data.map(r => [r.item_id, r])); render(); } }catch(e){}
 }
 const tickOf = c => (c && ui.ticks && ui.ticks.get(c.id)) || null;
 async function saveTick(w, c, next){
   const prev = tickOf(c);
   if(next) ui.ticks.set(c.id, next); else ui.ticks.delete(c.id);
   render();
-  const r = next ? await SB.from('ticks').upsert({ item_id: c.id, wall_id: w.id, status: next.status, vote: next.vote || null, updated_at: new Date().toISOString() })
+  const r = next ? await SB.from('ticks').upsert({ item_id: c.id, wall_id: w.id, status: next.status, vote: next.vote || null, rating: next.rating || null, updated_at: new Date().toISOString() })
                  : await SB.from('ticks').delete().eq('item_id', c.id);
   if(r && r.error){ if(prev) ui.ticks.set(c.id, prev); else ui.ticks.delete(c.id); render(); toast('Non riesco a salvare: ' + (r.error.message || 'riprova tra poco.')); }
 }
@@ -3004,8 +3005,13 @@ function tick(status){
   if(!ui.ticks) ui.ticks = new Map();
   const t = tickOf(c);
   if(t && t.status === status) saveTick(w, c, null);
-  else saveTick(w, c, { item_id: c.id, wall_id: w.id, status, vote: status === 'fatto' && t ? t.vote : null, updated_at: new Date().toISOString() });
-  if(status === 'fatto' && !(t && t.status === 'fatto')) toast('Segnato come fatto! Se vuoi, dicci com\'era il grado.');
+  else saveTick(w, c, { item_id: c.id, wall_id: w.id, status, vote: status === 'fatto' && t ? t.vote : null, rating: status === 'fatto' && t ? t.rating || null : null, updated_at: new Date().toISOString() });
+  if(status === 'fatto' && !(t && t.status === 'fatto')) toast('Segnato come fatto! Se vuoi, dicci com\'era il grado e quanto ti è piaciuto.');
+}
+function rate(n){
+  const w = curWall(), c = curCircuit(), t = tickOf(c); if(!w || !c || !t || t.status !== 'fatto') return;
+  n = Math.max(1, Math.min(10, +n || 0));
+  saveTick(w, c, Object.assign({}, t, { rating: t.rating === n ? null : n, updated_at: new Date().toISOString() }));
 }
 function vote(v){
   const w = curWall(), c = curCircuit(), t = tickOf(c); if(!w || !c || !t || t.status !== 'fatto') return;
@@ -3017,13 +3023,15 @@ function tickPanel(w, c){
     const sm = ui.tsum && ui.tsum.get(c.id); if(!sm) return '';
     const v = (+sm.facile || 0) + (+sm.giusto || 0) + (+sm.duro || 0);
     const pc = k => Math.round((+sm[k] || 0) / v * 100) + '%';
-    return `<p class="tsum">Clienti: <b>${sm.fatti}</b> ${+sm.fatti === 1 ? 'salita' : 'salite'}${v ? ` · grado: facile ${pc('facile')} · giusto ${pc('giusto')} · duro ${pc('duro')} <small>(${v} ${v === 1 ? 'parere' : 'pareri'})</small>` : ''}</p>`;
+    const nv = +sm.voti || 0;
+    return `<p class="tsum">Clienti: <b>${sm.fatti}</b> ${+sm.fatti === 1 ? 'salita' : 'salite'}${nv ? ` · piaciuto <b>${String(sm.media).replace('.', ',')}</b>/10 <small>(${nv} ${nv === 1 ? 'voto' : 'voti'})</small>` : ''}${v ? ` · grado: facile ${pc('facile')} · giusto ${pc('giusto')} · duro ${pc('duro')} <small>(${v} ${v === 1 ? 'parere' : 'pareri'})</small>` : ''}</p>`;
   }
   if(!newC() || !acctOn()) return '';
   const t = tickOf(c), st = t ? t.status : '';
   return `<div class="tickrow"><button class="tbtn ${st === 'fatto' ? 'on' : ''}" data-act="tick" data-v="fatto" aria-pressed="${st === 'fatto'}">✓ Fatto</button>`+
     `<button class="tbtn ${st === 'progetto' ? 'on proj' : ''}" data-act="tick" data-v="progetto" aria-pressed="${st === 'progetto'}">☆ Progetto</button></div>`+
-    (st === 'fatto' ? `<div class="voterow"><small>Il grado ti è sembrato</small><div class="seg">${[['facile','Facile'],['giusto','Giusto'],['duro','Duro']].map(o => `<button data-act="vote" data-v="${o[0]}" aria-pressed="${t.vote === o[0]}">${o[1]}</button>`).join('')}</div></div>` : '');
+    (st === 'fatto' ? `<div class="voterow"><small>Il grado ti è sembrato</small><div class="seg">${[['facile','Facile'],['giusto','Giusto'],['duro','Duro']].map(o => `<button data-act="vote" data-v="${o[0]}" aria-pressed="${t.vote === o[0]}">${o[1]}</button>`).join('')}</div></div>`+
+      `<div class="voterow"><small>Quanto ti è piaciuto?${t.rating ? ` <b>${t.rating}/10</b>` : ''}</small><div class="rate">${Array.from({ length: 10 }, (_, k) => k + 1).map(n => `<button data-act="rate" data-v="${n}" aria-pressed="${t.rating === n}" class="${t.rating && n <= t.rating ? 'on' : ''}">${n}</button>`).join('')}</div></div>` : '');
 }
 /* elementi di "Le mie salite": blocchi ancora esistenti (anche smontati) con la loro salita */
 function mineItems(){
@@ -3044,7 +3052,7 @@ function mineHtml(){
   const all = mineItems(), items = all.filter(x => isSec(x.w) === bo);
   const done = items.filter(x => x.t.status === 'fatto'), proj = items.filter(x => x.t.status === 'progetto' && !x.gone);
   const nB = all.filter(x => isSec(x.w) && x.t.status === 'fatto').length, nC = all.filter(x => !isSec(x.w) && x.t.status === 'fatto').length;
-  const row = x => `<button class="lrow" data-act="minego" data-w="${x.w.id}" data-id="${x.c.id}"><i class="dot" style="background:${colOf(x.c)}"></i><span class="ctext" style="flex:1"><b>${esc(blockTitle(x.w, x.c))}</b><small>${esc([x.w.name, x.gone ? (isSec(x.w) ? 'smontato' : 'muro archiviato') : '', x.t.vote ? 'per te ' + x.t.vote : '', fmtDate((x.t.updated_at || '').slice(0, 10))].filter(Boolean).join(' · '))}</small></span>${isSec(x.w) ? '' : gradeBadge(x.c.grade)}</button>`;
+  const row = x => `<button class="lrow" data-act="minego" data-w="${x.w.id}" data-id="${x.c.id}"><i class="dot" style="background:${colOf(x.c)}"></i><span class="ctext" style="flex:1"><b>${esc(blockTitle(x.w, x.c))}</b><small>${esc([x.w.name, x.gone ? (isSec(x.w) ? 'smontato' : 'muro archiviato') : '', x.t.rating ? 'voto ' + x.t.rating + '/10' : '', x.t.vote ? 'per te ' + x.t.vote : '', fmtDate((x.t.updated_at || '').slice(0, 10))].filter(Boolean).join(' · '))}</small></span>${isSec(x.w) ? '' : gradeBadge(x.c.grade)}</button>`;
   const recent = done.slice().sort((x, y) => String(y.t.updated_at).localeCompare(String(x.t.updated_at))).slice(0, 15);
   let prog = '';
   if(bo){
@@ -3872,7 +3880,7 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
+const PUBLIC_ACTS = ['rate','minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
 const MGR_ACTS = ['qr','qrprint','qrcopy','dash','dashsec','fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
@@ -3968,6 +3976,7 @@ document.addEventListener('click', e => {
     case 'prevnew': ui.prevNew = true; setViewAs('cliente'); ui.wIdx = 0; openSheet('welcome'); break;
     case 'tick': tick(b.dataset.v); break;
     case 'vote': vote(b.dataset.v); break;
+    case 'rate': rate(b.dataset.v); break;
     case 'mine': ui.confirm = null; ui.mineTab = null; openSheet('mine'); break;
     case 'minetab': ui.mineTab = b.dataset.v === 'boulder' ? 'boulder' : 'circ'; renderSheet(); break;
     case 'acct': ui.acctMode = 'in'; ui.acctWhy = false; openSheet('acct'); break;
