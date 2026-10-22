@@ -2875,9 +2875,9 @@ function renderFull(){
     (isSec(w) && c.notes ? `<p class="bnotes">${esc(c.notes)}</p>` : '')+
     tickPanel(w, c)+
     (newC() ? `<div class="row fnavrow" style="margin-top:10px;flex-wrap:nowrap">`+
-      `<button class="btn" data-act="fnav" data-d="-1" ${i > 0 ? '' : 'disabled'} style="flex:1">‹ Precedente</button>`+
-      `<button class="btn" data-act="fexit" aria-label="${isSec(w) ? 'Elenco boulder' : 'Elenco circuiti'}" title="Elenco"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M3 4h12M3 9h12M3 14h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>`+
-      `<button class="btn primary" data-act="fnav" data-d="1" ${i >= 0 && i < list.length - 1 ? '' : 'disabled'} style="flex:1">Successivo ›</button></div>`+
+      `<button class="btn farrow" data-act="fnav" data-d="-1" ${i > 0 ? '' : 'disabled'} aria-label="Precedente">‹</button>`+
+      `<button class="btn primary" data-act="fexit" style="flex:1">${isSec(w) ? 'Settore' : 'Muro'}</button>`+
+      `<button class="btn farrow" data-act="fnav" data-d="1" ${i >= 0 && i < list.length - 1 ? '' : 'disabled'} aria-label="Successivo">›</button></div>`+
       (list.length > 1 && i >= 0 ? `<p class="hint" style="text-align:center;margin:6px 0 0;font-size:12px">${i + 1} di ${list.length}</p>` : '') :
     `<div class="row" style="margin-top:10px;flex-wrap:nowrap">`+
     `<button class="btn" data-act="fnav" data-d="-1" ${i > 0 ? '' : 'disabled'} aria-label="Precedente">‹</button>`+
