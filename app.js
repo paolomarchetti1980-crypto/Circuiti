@@ -1730,13 +1730,15 @@ function busyAt(m, x, y, r){
 function bubbleCost(x, y, br, gap, env){
   let cost = 0;
   if(x - br < 0 || y - br < 0 || x + br > env.W || y + br > env.H) cost += 6;
-  const lim = br + gap;
+  /* la bolla con il suo bordino e lo stacco scuro intorno: nessun contorno vicino deve toccarla */
+  const lim = br*1.4 + gap;
   for(const q of env.shapes){
     if(q.bb.x0 - lim > x || q.bb.x1 + lim < x || q.bb.y0 - lim > y || q.bb.y1 + lim < y) continue;
-    const d = polyDist(x, y, q.p); if(d < lim) cost += 3*(1 - d/lim) + (d === 0 ? 2 : 0);
+    const d = polyDist(x, y, q.p); if(d < lim) cost += 6*(1 - d/lim) + (d === 0 ? 3 : 0);
   }
   for(const sg of env.segs){ const d = segDist(x, y, sg[0], sg[1], sg[2], sg[3]); if(d < lim) cost += 2.5*(1 - d/lim); }
-  for(const b of env.badges){ const d = Math.hypot(x - b[0], y - b[1]); if(d < br*2.2) cost += 5*(1 - d/(br*2.2)); }
+  /* due numeri che si toccano si leggono male: costo alto finché non c'è aria tra le due bolle */
+  for(const b of env.badges){ const d = Math.hypot(x - b[0], y - b[1]); if(d < br*2.9) cost += 9*(1 - d/(br*2.9)) + (d < br*2.25 ? 8 : 0); }
   return cost + 3*busyAt(env.busy, x, y, br);
 }
 function placeBubbles(h, W, br, gap, env, n){
@@ -1751,6 +1753,9 @@ function placeBubbles(h, W, br, gap, env, n){
     /* poi la bolla rientra un po' dentro il contorno della presa (circa un terzo del raggio) */
     t -= br*0.32 + gap; x = cx + dx*t; y = cy + dy*t;
     T.push({ x, y, k, c: bubbleCost(x, y, br, gap, env) + (t - t0)/br*0.15 + Math.min(k, N-k)*0.007 });
+    /* se lì intorno è affollato, la bolla può staccarsi un po' dalla presa (costa qualcosa, ma resta leggibile) */
+    if(n <= 1) for(const ex of [0.9, 1.8]){ const t2 = t + br*ex, x2 = cx + dx*t2, y2 = cy + dy*t2;
+      T.push({ x: x2, y: y2, k, far: ex, c: bubbleCost(x2, y2, br, gap, env) + (t2 - t0)/br*0.15 + ex*1.2 + Math.min(k, N-k)*0.007 }); }
   }
   if(n <= 1){ let best = T[0]; for(const p of T) if(p.c < best.c) best = p; return [best]; }
   const step = br*1.45;
@@ -1797,6 +1802,7 @@ function dupLabel(c, i){
   const h = c.holds[i], same = c.holds.filter(q => q.cid != null && h.cid != null ? q.cid === h.cid : (Math.round(q.x) === Math.round(h.x) && Math.round(q.y) === Math.round(h.y))).length;
   return (['', 'Secondo', 'Terzo', 'Quarto', 'Quinto'][same] || 'Altro') + ' passaggio';
 }
+const LBL_CACHE = new Map();
 function circuitSVG(c, W, alpha, o){
   const segs = [], labels = [];
   const sw = Math.max(2, W*0.0028), hw = sw*0.5;
@@ -1917,12 +1923,27 @@ function circuitSVG(c, W, alpha, o){
     c.holds.forEach(h => { const k = h.cid != null ? 'c'+h.cid : h.x+'_'+h.y; if(seen.has(k)) return; seen.add(k); const p = holdPts(h, W); shapes.push({ p, bb: holdBox(h, W), cid: h.cid, h }); });
     (o.obst || []).forEach(q => { if(q.poly && !c.holds.some(h => h.cid === q.id)) shapes.push({ p: q.poly, bb: holdBox(q, W) }); });
     const env = { W, H: o.H || 1e9, segs, badges: [], shapes: [], busy: o.busy || null };
-    labels.forEach((L, li) => {
+    /* posizioni: un primo giro in ordine, poi due giri di ritocco in cui ogni numero vede anche quelli venuti dopo */
+    /* le posizioni costano (tre giri di ricerca): si ricordano finché il circuito e la vista non cambiano */
+    const ckey = [c.id, W, br, o.lines ? 1 : 0, o.boulder ? 1 : 0, (o.obst || []).length, labels.map(L => L.label + '@' + Math.round(L.h.x) + ',' + Math.round(L.h.y)).join('|'),
+      c.holds.map(h => (h.cid || '') + Math.round(h.x) + ',' + Math.round(h.y) + h.role + (h.hand || '') + (h.poly ? h.poly.length : 0)).join('|')].join('#');
+    const cached = LBL_CACHE.get(ckey);
+    const P = cached ? cached.map(ps => ps.map(p => ({ x: p.x, y: p.y }))) : [];
+    const place = li => { const L = labels[li];
       env.shapes = shapes.filter(q => q.h !== L.h && !(q.cid != null && q.cid === L.h.cid));
+      env.badges = []; P.forEach((ps, j) => { if(j !== li && ps) ps.forEach(p => env.badges.push([p.x, p.y])); });
       /* più passaggi: bolle fuse, una per passaggio, ognuna nel colore della sua mano e tangente alla presa */
-      const ps = placeBubbles(L.h, W, br, gap, env, L.segs ? L.segs.length : 1);
-      ps.forEach(p => env.badges.push([p.x, p.y]));
-      const pos = ps[0];
+      P[li] = placeBubbles(L.h, W, br, gap, env, L.segs ? L.segs.length : 1); };
+    if(!cached){
+      labels.forEach((L, li) => place(li));
+      for(let r = 0; r < 2; r++) labels.forEach((L, li) => place(li));
+      LBL_CACHE.set(ckey, P.map(ps => ps.map(p => ({ x: p.x, y: p.y }))));
+      if(LBL_CACHE.size > 60) LBL_CACHE.delete(LBL_CACHE.keys().next().value);
+    }
+    /* stacco scuro sotto ogni numero: taglia i contorni vicini che ci passano sotto */
+    P.forEach(ps => ps.forEach(p => { s += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${(br*1.32).toFixed(1)}" fill="#000" fill-opacity=".5"/>`; }));
+    labels.forEach((L, li) => {
+      const ps = P[li], pos = ps[0];
       if(L.segs){
         const hw = br*0.22;
         s += ps.map(p => `<circle cx="${p.x}" cy="${p.y}" r="${br + hw/2}" fill="#ffffff" fill-opacity=".8"/>`).join('')+
