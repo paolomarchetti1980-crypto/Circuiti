@@ -1739,7 +1739,8 @@ function bubbleCost(x, y, br, gap, env){
   const lim = br*1.25 + gap;
   for(const q of env.shapes){
     if(q.bb.x0 - lim > x || q.bb.x1 + lim < x || q.bb.y0 - lim > y || q.bb.y1 + lim < y) continue;
-    const d = polyDist(x, y, q.p); if(d < lim) cost += 6*(1 - d/lim) + (d === 0 ? 3 : 0);
+    /* sopra (o a contatto con) un'altra presa del circuito: da evitare quasi a ogni costo */
+    const d = polyDist(x, y, q.p); if(d < lim) cost += 6*(1 - d/lim) + (d === 0 ? 20 : d < br ? 12 : 0);
     else if(d < lim*2.2) cost += 0.8*(1 - (d - lim)/(lim*1.2));   /* anche oltre il contatto: meglio dove c'è più spazio libero */
   }
   for(const sg of env.segs){ const d = segDist(x, y, sg[0], sg[1], sg[2], sg[3]); if(d < lim) cost += 2.5*(1 - d/lim); }
@@ -1754,7 +1755,7 @@ function placeBubbles(h, W, br, gap, env, n, tw){
   /* lato da cui si arriva: a parità di spazio libero, il numero va verso la presa precedente */
   const dirs = (tw || []).map(q => { if(!q) return null; const vx = q[0] - cx, vy = q[1] - cy, L = Math.hypot(vx, vy); return L > 1 ? [vx/L, vy/L] : null; });
   const hasDir = dirs.some(Boolean);
-  const dirCost = (p, j) => { const d = dirs[j]; if(!d) return 0; const vx = p.x - cx, vy = p.y - cy, L = Math.hypot(vx, vy) || 1; return 1.2*(1 - (vx*d[0] + vy*d[1])/L)/2; };   /* solo a parità di spazio: non deve battere una presa vicina coperta */
+  const dirCost = (p, j) => { const d = dirs[j]; if(!d) return 0; const vx = p.x - cx, vy = p.y - cy, L = Math.hypot(vx, vy) || 1; return 2.0*(1 - (vx*d[0] + vy*d[1])/L)/2; };   /* solo a parità di spazio libero dalle prese del circuito */
   const T = [];
   for(let k=0;k<N;k++){
     const a = -Math.PI/4 + k/N*Math.PI*2, dx = Math.cos(a), dy = Math.sin(a);
@@ -1941,12 +1942,12 @@ function circuitSVG(c, W, alpha, o){
     const shapes = [];
     const seen = new Set();
     c.holds.forEach(h => { const k = h.cid != null ? 'c'+h.cid : h.x+'_'+h.y; if(seen.has(k)) return; seen.add(k); const p = holdPts(h, W); shapes.push({ p, bb: holdBox(h, W), cid: h.cid, h }); });
-    (o.obst || []).forEach(q => { if(q.poly && !c.holds.some(h => h.cid === q.id)) shapes.push({ p: q.poly, bb: holdBox(q, W) }); });
-    const env = { W, H: o.H || 1e9, segs, badges: [], shapes: [], busy: o.busy || null };
+    /* le prese che non fanno parte del circuito non contano: un numero sopra una presa qualsiasi si legge bene,
+       sopra una presa del circuito invece non si capisce di chi è */
+    const env = { W, H: o.H || 1e9, segs, badges: [], shapes: [], busy: null };
     /* posizioni: un primo giro in ordine, poi due giri di ritocco in cui ogni numero vede anche quelli venuti dopo */
     /* le posizioni costano (tre giri di ricerca): si ricordano finché il circuito e la vista non cambiano */
-    /* la mappa delle prese della foto arriva dopo il primo disegno: senza questa voce le posizioni calcolate "alla cieca" restavano per sempre */
-    const ckey = [c.id, W, br, o.lines ? 1 : 0, o.boulder ? 1 : 0, o.busy ? 1 : 0, (o.obst || []).length, labels.map(L => L.label + '@' + Math.round(L.h.x) + ',' + Math.round(L.h.y)).join('|'),
+    const ckey = [c.id, W, br, o.lines ? 1 : 0, o.boulder ? 1 : 0, 'v2', labels.map(L => L.label + '@' + Math.round(L.h.x) + ',' + Math.round(L.h.y)).join('|'),
       c.holds.map(h => (h.cid || '') + Math.round(h.x) + ',' + Math.round(h.y) + h.role + (h.hand || '') + (h.poly ? h.poly.length : 0)).join('|')].join('#');
     const cached = LBL_CACHE.get(ckey);
     const P = cached ? cached.map(ps => ps.map(p => ({ x: p.x, y: p.y }))) : [];
