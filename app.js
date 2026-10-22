@@ -126,7 +126,13 @@ const NEWC_LIVE = true;
 /* account cliente e "Le mie salite": finché ACCT_LIVE è false li vede solo lo staff, da menu ⋮ → Anteprima con Le mie salite
    (prima bisogna collegare a Supabase un servizio per l'invio delle email) */
 const ACCT_LIVE = false;
-const acctOn = () => ACCT_LIVE || (REAL_EDIT && !!ui.prevNew);
+/* link segreto per provare gli account da cliente su un solo telefono: #prova-account-<codice> li accende, #prova-account-off li spegne */
+(() => { try{ const h = location.hash;
+  if(h === '#prova-account-6bfacd47'){ localStorage.setItem('mr-acct-test', '1'); history.replaceState(null, '', location.pathname + location.search); setTimeout(() => toast('Prova account cliente attiva su questo telefono.', 4000), 1500); }
+  else if(h === '#prova-account-off'){ localStorage.removeItem('mr-acct-test'); history.replaceState(null, '', location.pathname + location.search); }
+}catch(e){} })();
+const acctTest = (() => { try{ return localStorage.getItem('mr-acct-test') === '1'; }catch(e){ return false; } })();
+const acctOn = () => ACCT_LIVE || acctTest || (REAL_EDIT && !!ui.prevNew);
 let CL = null;   /* account cliente: { id, email } */
 const newC = () => !EDIT && (NEWC_LIVE || !!ui.prevNew);
 /* chi salva le salite: il cliente, oppure lo staff mentre prova l'anteprima */
