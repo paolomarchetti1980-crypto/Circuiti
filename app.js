@@ -1742,8 +1742,12 @@ function bubbleCost(x, y, br, gap, env){
   for(const b of env.badges){ const d = Math.hypot(x - b[0], y - b[1]); if(d < br*2.9) cost += 9*(1 - d/(br*2.9)) + (d < br*2.25 ? 8 : 0); else if(d < br*5) cost += 0.8*(1 - (d - br*2.9)/(br*2.1)); }
   return cost + 3*busyAt(env.busy, x, y, br);
 }
-function placeBubbles(h, W, br, gap, env, n){
+function placeBubbles(h, W, br, gap, env, n, tw){
   const own = holdPts(h, W), bb = holdBox(h, W), cx = (bb.x0+bb.x1)/2, cy = (bb.y0+bb.y1)/2, N = 72;
+  /* lato da cui si arriva: a parità di spazio libero, il numero va verso la presa precedente */
+  const dirs = (tw || []).map(q => { if(!q) return null; const vx = q[0] - cx, vy = q[1] - cy, L = Math.hypot(vx, vy); return L > 1 ? [vx/L, vy/L] : null; });
+  const hasDir = dirs.some(Boolean);
+  const dirCost = (p, j) => { const d = dirs[j]; if(!d) return 0; const vx = p.x - cx, vy = p.y - cy, L = Math.hypot(vx, vy) || 1; return 2.2*(1 - (vx*d[0] + vy*d[1])/L)/2; };
   const T = [];
   for(let k=0;k<N;k++){
     const a = -Math.PI/4 + k/N*Math.PI*2, dx = Math.cos(a), dy = Math.sin(a);
@@ -1753,12 +1757,12 @@ function placeBubbles(h, W, br, gap, env, n){
     for(let g=0; g<80 && polyDist(x, y, own) < br + gap; g++){ t += br*0.12; x = cx + dx*t; y = cy + dy*t; }
     /* poi la bolla rientra un po' dentro il contorno della presa (circa un terzo del raggio) */
     t -= br*0.32 + gap; x = cx + dx*t; y = cy + dy*t;
-    T.push({ x, y, k, c: bubbleCost(x, y, br, gap, env) + (t - t0)/br*0.15 + Math.min(k, N-k)*0.007 });
+    T.push({ x, y, k, c: bubbleCost(x, y, br, gap, env) + (t - t0)/br*0.15 + (hasDir ? 0 : Math.min(k, N-k)*0.007) });
     /* se lì intorno è affollato, la bolla può staccarsi un po' dalla presa (costa qualcosa, ma resta leggibile) */
     if(n <= 1) for(const ex of [0.9, 1.8]){ const t2 = t + br*ex, x2 = cx + dx*t2, y2 = cy + dy*t2;
-      T.push({ x: x2, y: y2, k, far: ex, c: bubbleCost(x2, y2, br, gap, env) + (t2 - t0)/br*0.15 + ex*1.2 + Math.min(k, N-k)*0.007 }); }
+      T.push({ x: x2, y: y2, k, far: ex, c: bubbleCost(x2, y2, br, gap, env) + (t2 - t0)/br*0.15 + ex*1.2 + (hasDir ? 0 : Math.min(k, N-k)*0.007) }); }
   }
-  if(n <= 1){ let best = T[0]; for(const p of T) if(p.c < best.c) best = p; return [best]; }
+  if(n <= 1){ let best = T[0], bc = Infinity; for(const p of T){ const cc = p.c + dirCost(p, 0); if(cc < bc){ bc = cc; best = p; } } return [best]; }
   const step = br*1.45;
   let best = null;
   for(let s0=0; s0<N; s0++) for(const dir of [1, -1]){
@@ -1769,11 +1773,14 @@ function placeBubbles(h, W, br, gap, env, n){
       if(!found) ok = false; else chain.push(found);
     }
     if(!ok) continue;
-    /* i numeri si leggono da sinistra a destra (o dall'alto in basso): la prima bolla è quella più a sinistra */
-    const f = chain[0], l = chain[chain.length - 1];
-    if(Math.abs(f.x - l.x) > Math.abs(f.y - l.y) * 0.5 ? f.x > l.x : f.y > l.y) chain.reverse();
+    /* senza presa precedente: i numeri si leggono da sinistra a destra (o dall'alto in basso) */
+    if(!hasDir){ const f = chain[0], l = chain[chain.length - 1];
+      if(Math.abs(f.x - l.x) > Math.abs(f.y - l.y) * 0.5 ? f.x > l.x : f.y > l.y) chain.reverse(); }
+    /* con la presa precedente: il primo numero è quello più vicino al lato da cui si arriva */
+    else { const d = dirs.find(Boolean), f = chain[0], l = chain[chain.length - 1];
+      if((l.x - cx)*d[0] + (l.y - cy)*d[1] > (f.x - cx)*d[0] + (f.y - cy)*d[1]) chain.reverse(); }
     /* le bolle si accavallano tra loro: si conta il costo di ognuna, non le loro sovrapposizioni reciproche */
-    const cost = chain.reduce((t, p) => t + p.c, 0);
+    const cost = chain.reduce((t, p, j) => t + p.c + dirCost(p, j), 0);
     if(!best || cost < best.cost) best = { cost, chain };
   }
   return best ? best.chain : [T[0]];
@@ -1902,14 +1909,16 @@ function circuitSVG(c, W, alpha, o){
     }
     if(marks){ marks.forEach(q => { segs.push(q); s += tack(q, col, tw, 1); }); return; }
     let label = h.role === 'start' ? (starts.length > 1 && !o.boulder ? 'S' + (starts.indexOf(i)+1) : 'S') : h.role === 'top' ? 'T' : '';
+    /* presa precedente del percorso (diversa da questa): il numero si mette dal lato da cui si arriva */
+    const prevOf = j => { const me = c.holds[j]; for(let k = j - 1; k >= 0; k--){ const q = c.holds[k]; if(me.cid != null ? q.cid !== me.cid : (Math.abs(q.x - me.x) > 1 || Math.abs(q.y - me.y) > 1)) return [q.x, q.y]; } return null; };
     if(!label && o.numbers && h.role === 'hold'){
       if(gi < g.length - 1) return; /* i numeri si mettono una sola volta, sull'ultimo passaggio del gruppo */
       /* passaggi consecutivi (accoppio) = bolle fuse; passaggi lontani (es. 3 e 22) = bolle separate, ognuna al suo posto */
       const clusters = [];
       g.forEach(j => { const last = clusters[clusters.length-1]; if(last && j === last[last.length-1] + 1) last.push(j); else clusters.push([j]); });
       clusters.forEach(cl => {
-        if(cl.length > 1) labels.push({ h: c.holds[g[0]], label: cl.map(j => seqOf[j]).join(','), col: base, ha: haloOf(base), segs: cl.map(j => ({ n: seqOf[j], col: handCol(c.holds[j]) })) });
-        else { const hc = handCol(c.holds[cl[0]]); labels.push({ h: c.holds[g[0]], label: String(seqOf[cl[0]]), col: hc, ha: haloOf(hc), segs: null }); }
+        if(cl.length > 1) labels.push({ h: c.holds[g[0]], label: cl.map(j => seqOf[j]).join(','), col: base, ha: haloOf(base), segs: cl.map(j => ({ n: seqOf[j], col: handCol(c.holds[j]) })), tw: cl.map(prevOf) });
+        else { const hc = handCol(c.holds[cl[0]]); labels.push({ h: c.holds[g[0]], label: String(seqOf[cl[0]]), col: hc, ha: haloOf(hc), segs: null, tw: [prevOf(cl[0])] }); }
       });
       return;
     }
@@ -1917,7 +1926,7 @@ function circuitSVG(c, W, alpha, o){
       if(lv && lv.lastSplit){ col = base; ha = haloOf(base); }
       /* presa con più passaggi: etichetta a capsula, un numero per passaggio nel colore della sua mano */
       const segs = g && g.length > 1 && o.numbers && h.role === 'hold' ? g.map(j => ({ n: seqOf[j], col: handCol(c.holds[j]) })) : null;
-      labels.push({ h: lv ? c.holds[g[0]] : h, label, col, ha, segs });
+      labels.push({ h: lv ? c.holds[g[0]] : h, label, col, ha, segs, tw: segs ? g.map(prevOf) : [h.role === 'start' ? null : prevOf(i)] });
     }
   });
   if(labels.length){
@@ -1937,7 +1946,7 @@ function circuitSVG(c, W, alpha, o){
       env.shapes = shapes.filter(q => q.h !== L.h && !(q.cid != null && q.cid === L.h.cid));
       env.badges = []; P.forEach((ps, j) => { if(j !== li && ps) ps.forEach(p => env.badges.push([p.x, p.y])); });
       /* più passaggi: bolle fuse, una per passaggio, ognuna nel colore della sua mano e tangente alla presa */
-      P[li] = placeBubbles(L.h, W, br, gap, env, L.segs ? L.segs.length : 1); };
+      P[li] = placeBubbles(L.h, W, br, gap, env, L.segs ? L.segs.length : 1, L.tw); };
     if(!cached){
       labels.forEach((L, li) => place(li));
       for(let r = 0; r < 2; r++) labels.forEach((L, li) => place(li));
