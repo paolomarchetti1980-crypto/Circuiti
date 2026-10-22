@@ -229,6 +229,15 @@ async function savePub(data, rev){
     await new Promise((res, rej) => { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put({ data, rev, at: Date.now() }, 'pub'); tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
   }catch(e){}
 }
+/* foto dei muri salvate sul telefono: si tengono solo quelle ancora usate (una foto sostituita non serve più) */
+async function prunePhotos(walls){
+  try{
+    if(!window.caches) return;
+    const used = new Set(walls.map(w => w.img).filter(Boolean).map(u => { try{ return new URL(u, location.href).href; }catch(e){ return u; } }));
+    const c = await caches.open('circuiti-dati');
+    for(const req of await c.keys()) if(req.url.includes('/storage/v1/object/public/') && !used.has(req.url)) await c.delete(req);
+  }catch(e){}
+}
 async function loadDraft(){
   try{
     const db = await openDB();
@@ -4477,7 +4486,7 @@ render();
       /* la versione pubblicata sul database vince su quella scritta nella pagina */
       try{
         const { data: row } = await SB.from('app_state').select('data,rev').eq('id', 1).maybeSingle();
-        if(row && row.data && Array.isArray(row.data.walls)) savePub(row.data, row.rev || 0);
+        if(row && row.data && Array.isArray(row.data.walls)){ savePub(row.data, row.rev || 0); prunePhotos(row.data.walls); }
         if(row && row.data && Array.isArray(row.data.walls) && (row.rev || 0) >= S.rev && !(ui.fromCache && (row.rev || 0) === S.rev)){
           /* aperta dalla copia salvata: chi sta già guardando un settore ci resta */
           const keep = ui.fromCache && row.data.walls.some(w => w.id === S.active) ? S.active : null;
