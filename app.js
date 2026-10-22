@@ -3389,7 +3389,7 @@ function renderSheet(){
   } else if(ui.sheet === 'install'){
     h = `<h2>Installa l'app</h2>`+
       (isIOS() ? `<p>Su iPhone:</p><ol style="margin:0 0 14px;padding-left:20px;line-height:1.6"><li>tocca <b>Condividi</b> (il quadrato con la freccia in su), in basso in Safari</li><li>scorri e scegli <b>Aggiungi alla schermata Home</b></li><li>tocca <b>Aggiungi</b></li></ol><p class="note" style="margin:0 0 12px">Funziona da Safari: se hai aperto il link da un'altra app, aprilo prima in Safari.</p>`
-               : `<p>Apri il menu del browser (⋮ in alto a destra) e scegli <b>Installa app</b> oppure <b>Aggiungi a schermata Home</b>.</p>`)+
+               : `<p>Apri il menu del browser (⋮ in alto a destra) e scegli <b>Installa app</b>. Se c'è solo <b>Aggiungi a schermata Home</b>, scegli quello e poi <b>Installa</b> (non "Crea scorciatoia"): così l'app si apre senza il logo di Chrome.</p>`)+
       `<div class="row"><button class="btn primary" data-act="close">Ok</button></div>`;
   } else if(ui.sheet === 'login'){
     h = `<h2>Accesso staff</h2>`+
