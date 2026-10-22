@@ -142,9 +142,10 @@ const ui = { bline:false, lineDraft:[], view:null, pinchAt:0, trash:[], tool:'de
 /* filtri dei circuiti: gli stessi per tutti i muri e per la ricerca in palestra */
 ui.sq = { ang: '', min: '', max: '', sty: '', feet: '' };
 try{ const f = JSON.parse(localStorage.getItem('circ-filters2') || '{}'); for(const k in ui.sq) if(typeof f[k] === 'string') ui.sq[k] = f[k]; }catch(e){}
-ui.section = 'circ'; ui.home = true; ui.secOver = true; ui.bLevel = 'sectors'; ui.bShow = 'on'; ui.bColor = ''; ui.lastSec = {};
-try{ const f = JSON.parse(localStorage.getItem('boulder-ui') || '{}'); if(f.sec === 'boulder') ui.section = 'boulder'; ui.bShow = f.show || 'on'; ui.bColor = f.c || ''; ui.lastSec = f.last || {}; }catch(e){}
-if(!DIFFS.some(d => d[0] === ui.bColor)) ui.bColor = '';
+ui.section = 'circ'; ui.home = true; ui.secOver = true; ui.bLevel = 'sectors'; ui.bShow = 'on'; ui.bColor = []; ui.lastSec = {};
+try{ const f = JSON.parse(localStorage.getItem('boulder-ui') || '{}'); if(f.sec === 'boulder') ui.section = 'boulder'; ui.bShow = f.show || 'on'; ui.bColor = Array.isArray(f.c) ? f.c : f.c ? [f.c] : []; ui.lastSec = f.last || {}; }catch(e){}
+/* filtro colori dei boulder: più colori insieme (es. dai gialli in su) */
+ui.bColor = (Array.isArray(ui.bColor) ? ui.bColor : []).filter(v => DIFFS.some(d => d[0] === v));
 /* dopo Pubblica o il login la pagina si ricarica: si torna dove si era invece che alla schermata iniziale */
 try{ const r = JSON.parse(sessionStorage.getItem('mr-resume') || 'null'); sessionStorage.removeItem('mr-resume');
   if(r && Date.now() - r.t < 120000){ ui.home = false; ui.section = r.sec === 'boulder' ? 'boulder' : 'circ'; ui.bLevel = r.lvl === 'sector' ? 'sector' : 'sectors';
@@ -2633,7 +2634,7 @@ function renderStage(){
 const bShowEff = () => EDIT ? ui.bShow : 'on';
 function visibleCircuits(w){
   const show = bShowEff();
-  if(isSec(w)) return w.circuits.filter(c => (show === 'all' || (show === 'off') === isOff(c)) && (!ui.bColor || c.diff === ui.bColor) && (!ui.bNew || isNewB(c)));
+  if(isSec(w)) return w.circuits.filter(c => (show === 'all' || (show === 'off') === isOff(c)) && (!ui.bColor.length || !c.diff || ui.bColor.includes(c.diff)) && (!ui.bNew || isNewB(c)));
   return w.circuits.filter(c => cMatch(c) && (!ui.cNew || cLabel(c)));
 }
 const gradeBand = g => { const i = GRADES.indexOf(g || ''); if(i <= 0) return '#5b6068'; if(i <= GRADES.indexOf('5c')) return '#7bd389'; if(i <= GRADES.indexOf('6b+')) return '#ffd166'; if(i <= GRADES.indexOf('7a+')) return '#ff9a3d'; return '#ef476f'; };
@@ -2663,7 +2664,8 @@ function bFilters(w){
   const nNew = w.circuits.filter(isNewB).length;
   const nw = nNew ? `<button class="fchip ${ui.bNew ? 'on' : ''}" data-act="bnew">Novità · ${nNew}</button>` : '';
   return (EDIT ? `<div class="fchips">${st('on','In parete')}${st('off','Smontati')}${st('all','Tutti')}${nw}</div>` : nw ? `<div class="fchips">${nw}</div>` : '')+
-    (ds.length > 1 ? `<div class="fchips">${ds.map(d => `<button class="fdot ${ui.bColor === d[0] ? 'on' : ''}" data-act="bcolor" data-v="${d[0]}" aria-label="${d[1]}" aria-pressed="${ui.bColor === d[0]}" style="background:${d[2]}"></button>`).join('')}</div>` : '');
+    (ds.length > 1 ? `<div class="fchips">${ds.map(d => `<button class="fdot ${ui.bColor.includes(d[0]) ? 'on' : ''}" data-act="bcolor" data-v="${d[0]}" aria-label="${d[1]}" aria-pressed="${ui.bColor.includes(d[0])}" style="background:${d[2]}"></button>`).join('')}</div>`+
+      (ui.bColor.length ? `<div class="sqhead" style="margin:0 0 4px"><small>${sortedVisible(w).length} di ${w.circuits.filter(x => EDIT ? (bShowEff() === 'all' || (bShowEff() === 'off') === isOff(x)) : !isOff(x)).length} boulder: solo ${ui.bColor.map(v => (DIFFS.find(d => d[0] === v) || [, v])[1].toLowerCase()).join(', ')}</small><button class="linklike" data-act="bcolorall">Tutti i colori</button></div>` : '') : '');
 }
 function bRows(w, cls){
   const act = bOver() ? null : curCircuit(), vis = sortedVisible(w);
@@ -3898,7 +3900,7 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['rate','minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
+const PUBLIC_ACTS = ['bcolorall','rate','minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
 const MGR_ACTS = ['qr','qrprint','qrcopy','dash','dashsec','fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
@@ -4053,9 +4055,11 @@ document.addEventListener('click', e => {
       ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); saveBUI(); render(); break;
     }
     case 'bnew': ui.bNew = !ui.bNew; afterFilter(); break;
+    case 'bcolorall': ui.bColor = []; saveBUI(); afterFilter(); break;
     case 'cnew': ui.cNew = !ui.cNew; afterFilter(); break;
     case 'bshow': case 'bcolor':
-      if(a === 'bshow') ui.bShow = b.dataset.v; else ui.bColor = ui.bColor === b.dataset.v ? '' : b.dataset.v;
+      if(a === 'bshow') ui.bShow = b.dataset.v;
+      else { const v = b.dataset.v; ui.bColor = ui.bColor.includes(v) ? ui.bColor.filter(x => x !== v) : ui.bColor.concat(v); if(ui.bColor.length === DIFFS.filter(d => w && w.circuits.some(x => x.diff === d[0])).length) ui.bColor = []; }
       saveBUI(); afterFilter(); break;
     case 'cgen': {
       if(!c || !w || !window.genCircuitName) break;
@@ -4078,6 +4082,8 @@ document.addEventListener('click', e => {
       if(!c || !w || !isSec(w)) break;
       if(/^Boulder \d+$/.test(c.name || '')) c.name = '';
       c.diff = b.dataset.v; c.color = diffOf(c)[2]; assignNum(w, c);
+      /* il boulder non deve sparire dall'elenco perché il suo colore è fuori dal filtro */
+      if(ui.bColor.length && !ui.bColor.includes(c.diff)){ ui.bColor = ui.bColor.concat(c.diff); saveBUI(); }
       touch(); render(); renderSheet(); break;
     }
     case 'hcolor': {
