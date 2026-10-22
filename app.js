@@ -1693,7 +1693,7 @@ function busyMap(w){
   if(e && e.key === key + ':pending') return null;
   busyCache[w.id] = { key: key + ':pending', map: null };
   loadImg(w.img).then(im => {
-    const s = 140 / Math.max(w.w, w.h), bw = Math.max(8, Math.round(w.w*s)), bh = Math.max(8, Math.round(w.h*s));
+    const s = 280 / Math.max(w.w, w.h), bw = Math.max(8, Math.round(w.w*s)), bh = Math.max(8, Math.round(w.h*s));
     const cv = document.createElement('canvas'); cv.width = bw; cv.height = bh;
     const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0, bw, bh);
     const d = g.getImageData(0, 0, bw, bh).data, N = bw*bh, lum = new Float32Array(N), sat = new Float32Array(N);
@@ -1713,14 +1713,19 @@ function busyMap(w){
   }).catch(() => { busyCache[w.id] = { key, map: null }; });
   return null;
 }
-function busyAt(m, x, y, r){
+/* quanta parte della bolla cade su un'altra presa della foto. I punti sopra la presa stessa non contano
+   (la bolla ci sta appoggiata per scelta): altrimenti ogni posizione risultava "mezza piena" e le prese vicine pesavano poco. */
+function busyAt(m, x, y, r, own){
   if(!m) return 0;
   let t = 0, n = 0;
-  for(let k=0;k<13;k++){
-    const a = k*2.4, q = k === 0 ? 0 : Math.sqrt(k/12)*r*0.9;
-    const px = Math.round((x + Math.cos(a)*q)*m.s), py = Math.round((y + Math.sin(a)*q)*m.s);
+  const pad = r*0.2;
+  for(let k=0;k<19;k++){
+    const a = k*2.4, q = k === 0 ? 0 : Math.sqrt(k/18)*r*0.95, sx = x + Math.cos(a)*q, sy = y + Math.sin(a)*q;
+    if(own && polyDist(sx, sy, own) < pad) continue;
+    const px = Math.round(sx*m.s), py = Math.round(sy*m.s);
     if(px < 0 || py < 0 || px >= m.bw || py >= m.bh) continue;
-    t += m.d[py*m.bw + px]; n++;
+    /* valori alti contano di più: un pezzo di presa sotto il numero disturba anche se il resto è pannello */
+    const v = m.d[py*m.bw + px]; t += v > 0.5 ? 1 : v*v*2; n++;
   }
   return n ? t/n : 0;
 }
@@ -1740,14 +1745,16 @@ function bubbleCost(x, y, br, gap, env){
   for(const sg of env.segs){ const d = segDist(x, y, sg[0], sg[1], sg[2], sg[3]); if(d < lim) cost += 2.5*(1 - d/lim); }
   /* due numeri che si toccano si leggono male: costo alto finché non c'è aria tra le due bolle */
   for(const b of env.badges){ const d = Math.hypot(x - b[0], y - b[1]); if(d < br*2.9) cost += 9*(1 - d/(br*2.9)) + (d < br*2.25 ? 8 : 0); else if(d < br*5) cost += 0.8*(1 - (d - br*2.9)/(br*2.1)); }
-  return cost + 3*busyAt(env.busy, x, y, br);
+  /* prese della foto non mappate: è il caso più comune sui muri dei circuiti, quindi pesa come un contorno mappato */
+  return cost + 7*busyAt(env.busy, x, y, br, env.own);
 }
 function placeBubbles(h, W, br, gap, env, n, tw){
   const own = holdPts(h, W), bb = holdBox(h, W), cx = (bb.x0+bb.x1)/2, cy = (bb.y0+bb.y1)/2, N = 72;
+  env.own = own;
   /* lato da cui si arriva: a parità di spazio libero, il numero va verso la presa precedente */
   const dirs = (tw || []).map(q => { if(!q) return null; const vx = q[0] - cx, vy = q[1] - cy, L = Math.hypot(vx, vy); return L > 1 ? [vx/L, vy/L] : null; });
   const hasDir = dirs.some(Boolean);
-  const dirCost = (p, j) => { const d = dirs[j]; if(!d) return 0; const vx = p.x - cx, vy = p.y - cy, L = Math.hypot(vx, vy) || 1; return 2.2*(1 - (vx*d[0] + vy*d[1])/L)/2; };
+  const dirCost = (p, j) => { const d = dirs[j]; if(!d) return 0; const vx = p.x - cx, vy = p.y - cy, L = Math.hypot(vx, vy) || 1; return 1.2*(1 - (vx*d[0] + vy*d[1])/L)/2; };   /* solo a parità di spazio: non deve battere una presa vicina coperta */
   const T = [];
   for(let k=0;k<N;k++){
     const a = -Math.PI/4 + k/N*Math.PI*2, dx = Math.cos(a), dy = Math.sin(a);
@@ -1759,7 +1766,7 @@ function placeBubbles(h, W, br, gap, env, n, tw){
     t -= br*0.32 + gap; x = cx + dx*t; y = cy + dy*t;
     T.push({ x, y, k, c: bubbleCost(x, y, br, gap, env) + (t - t0)/br*0.15 + (hasDir ? 0 : Math.min(k, N-k)*0.007) });
     /* se lì intorno è affollato, la bolla può staccarsi un po' dalla presa (costa qualcosa, ma resta leggibile) */
-    if(n <= 1) for(const ex of [0.9, 1.8]){ const t2 = t + br*ex, x2 = cx + dx*t2, y2 = cy + dy*t2;
+    if(n <= 1) for(const ex of [0.9, 1.8, 2.7]){ const t2 = t + br*ex, x2 = cx + dx*t2, y2 = cy + dy*t2;
       T.push({ x: x2, y: y2, k, far: ex, c: bubbleCost(x2, y2, br, gap, env) + (t2 - t0)/br*0.15 + ex*1.2 + (hasDir ? 0 : Math.min(k, N-k)*0.007) }); }
   }
   if(n <= 1){ let best = T[0], bc = Infinity; for(const p of T){ const cc = p.c + dirCost(p, 0); if(cc < bc){ bc = cc; best = p; } } return [best]; }
@@ -1938,7 +1945,8 @@ function circuitSVG(c, W, alpha, o){
     const env = { W, H: o.H || 1e9, segs, badges: [], shapes: [], busy: o.busy || null };
     /* posizioni: un primo giro in ordine, poi due giri di ritocco in cui ogni numero vede anche quelli venuti dopo */
     /* le posizioni costano (tre giri di ricerca): si ricordano finché il circuito e la vista non cambiano */
-    const ckey = [c.id, W, br, o.lines ? 1 : 0, o.boulder ? 1 : 0, (o.obst || []).length, labels.map(L => L.label + '@' + Math.round(L.h.x) + ',' + Math.round(L.h.y)).join('|'),
+    /* la mappa delle prese della foto arriva dopo il primo disegno: senza questa voce le posizioni calcolate "alla cieca" restavano per sempre */
+    const ckey = [c.id, W, br, o.lines ? 1 : 0, o.boulder ? 1 : 0, o.busy ? 1 : 0, (o.obst || []).length, labels.map(L => L.label + '@' + Math.round(L.h.x) + ',' + Math.round(L.h.y)).join('|'),
       c.holds.map(h => (h.cid || '') + Math.round(h.x) + ',' + Math.round(h.y) + h.role + (h.hand || '') + (h.poly ? h.poly.length : 0)).join('|')].join('#');
     const cached = LBL_CACHE.get(ckey);
     const P = cached ? cached.map(ps => ps.map(p => ({ x: p.x, y: p.y }))) : [];
