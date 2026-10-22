@@ -216,6 +216,19 @@ function openDB(){
     }catch(e){ rej(e); }
   });
 }
+/* ultima versione pubblicata salvata sul telefono: l'app si apre subito (anche senza rete) e poi si aggiorna */
+async function loadPub(){
+  try{
+    const db = await openDB();
+    return await new Promise((res, rej) => { const q = db.transaction('kv').objectStore('kv').get('pub'); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+  }catch(e){ return null; }
+}
+async function savePub(data, rev){
+  try{
+    const db = await openDB();
+    await new Promise((res, rej) => { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put({ data, rev, at: Date.now() }, 'pub'); tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
+  }catch(e){}
+}
 async function loadDraft(){
   try{
     const db = await openDB();
@@ -4450,11 +4463,25 @@ render();
     if(CFG.url && CFG.anonKey && window.supabase){
       SB = window.supabase.createClient(CFG.url, CFG.anonKey);
       renderTop();
+      /* prima la copia salvata sul telefono (apertura immediata, anche offline), poi quella del database */
+      try{
+        const pub = await loadPub();
+        if(pub && pub.data && Array.isArray(pub.data.walls) && (pub.rev || 0) >= S.rev && !S.walls.length){
+          S.walls = pub.data.walls; S.active = pub.data.active || S.active; S.rev = pub.rev;
+          S.prefs = Object.assign(S.prefs, pub.data.prefs || {}); applyViewPrefs();
+          PUBREV = S.rev; PUBWALLS = S.walls;
+          if(!curWall() && S.walls.length) S.active = S.walls[0].id;
+          ui.fromCache = true; render();
+        }
+      }catch(e){}
       /* la versione pubblicata sul database vince su quella scritta nella pagina */
       try{
         const { data: row } = await SB.from('app_state').select('data,rev').eq('id', 1).maybeSingle();
-        if(row && row.data && Array.isArray(row.data.walls) && (row.rev || 0) >= S.rev){
-          S.walls = row.data.walls; S.active = row.data.active || S.active; S.rev = row.rev;
+        if(row && row.data && Array.isArray(row.data.walls)) savePub(row.data, row.rev || 0);
+        if(row && row.data && Array.isArray(row.data.walls) && (row.rev || 0) >= S.rev && !(ui.fromCache && (row.rev || 0) === S.rev)){
+          /* aperta dalla copia salvata: chi sta già guardando un settore ci resta */
+          const keep = ui.fromCache && row.data.walls.some(w => w.id === S.active) ? S.active : null;
+          S.walls = row.data.walls; S.active = keep || row.data.active || S.active; S.rev = row.rev;
           S.prefs = Object.assign(S.prefs, row.data.prefs || {}); applyViewPrefs();
           PUBREV = S.rev; PUBWALLS = S.walls;
           if(!curWall() && S.walls.length) S.active = S.walls[0].id;
