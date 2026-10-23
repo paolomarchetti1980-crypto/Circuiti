@@ -335,6 +335,8 @@ const nextPaint = () => new Promise(r => requestAnimationFrame(() => setTimeout(
 let toastTimer;
 function toast(msg, ms){
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
+  /* a schermo intero la scheda in basso è piena di tasti: l'avviso va in alto */
+  t.classList.toggle('top', !!ui.full);
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, ms || 4500);
 }
 
@@ -2913,6 +2915,8 @@ function render(){
   $('#app').classList.toggle('home', !!ui.home);
   $('#app').classList.toggle('over', bOver());
   $('#app').classList.toggle('ccomp', cCompact());
+  /* colonna laterale sugli schermi larghi (decide il CSS): solo dentro un settore o un muro */
+  $('#app').classList.toggle('side', !ui.home && !bGrid() && !!curWall());
   /* scorrimento col dito: finché la foto non è ingrandita, il gesto orizzontale lo gestisce l'app e non il browser */
   $('#app').classList.toggle('swipeok', newC() && !(ui.zoom > 1.02));
   renderTop(); renderViewbar(); renderPub(); renderStage(); renderChips(); renderTools(); renderFull(); }
@@ -2935,7 +2939,7 @@ function renderFull(){
       `<button class="btn farrow" data-act="fnav" data-d="-1" ${i > 0 ? '' : 'disabled'} aria-label="Precedente">‹</button>`+
       /* al centro: il percorso aperto e la striscia dei percorsi (un pallino ciascuno, si tocca per andarci) */
       `<div class="fstrip"><small class="fwhere">${esc(isSec(w) ? bTitle(c) : c.name)}${list.length > 1 && i >= 0 ? ` · ${i + 1} di ${list.length}` : ''}</small>`+
-      `<div class="fdots">${list.map(x => { const t = acctOn() ? tickOf(x) : null; return `<button class="fd ${x.id === c.id ? 'on' : ''} ${t && t.status === 'fatto' ? 'done' : ''}" data-act="fgo" data-id="${x.id}" aria-label="${esc(isSec(w) ? bTitle(x) : x.name)}" style="--c:${colOf(x)}">${t && t.status === 'fatto' ? '✓' : ''}</button>`; }).join('')}</div></div>`+
+      `<div class="fdots">${list.map(x => { const t = acctOn() ? tickOf(x) : null; return `<button class="fd ${x.id === c.id ? 'on' : ''} ${t && t.status === 'fatto' ? 'done' : ''}" data-act="fgo" data-id="${x.id}" aria-label="${esc(isSec(w) ? bTitle(x) : x.name)}" style="--c:${colOf(x)};color:${inkOn(colOf(x))}">${t && t.status === 'fatto' ? '✓' : ''}</button>`; }).join('')}</div></div>`+
       `<button class="btn farrow" data-act="fnav" data-d="1" ${i >= 0 && i < list.length - 1 ? '' : 'disabled'} aria-label="Successivo">›</button></div>` :
     `<div class="row" style="margin-top:10px;flex-wrap:nowrap">`+
     `<button class="btn" data-act="fnav" data-d="-1" ${i > 0 ? '' : 'disabled'} aria-label="Precedente">‹</button>`+
@@ -3057,7 +3061,6 @@ function tick(status){
   const t = tickOf(c);
   if(t && t.status === status) saveTick(w, c, null);
   else saveTick(w, c, { item_id: c.id, wall_id: w.id, status, vote: status === 'fatto' && t ? t.vote : null, rating: status === 'fatto' && t ? t.rating || null : null, updated_at: new Date().toISOString() });
-  if(status === 'fatto' && !(t && t.status === 'fatto')) toast('Segnato come fatto! Se vuoi, dicci com\'era il grado e quanto ti è piaciuto.');
 }
 function rate(n){
   const w = curWall(), c = curCircuit(), t = tickOf(c); if(!w || !c || !t || t.status !== 'fatto') return;
