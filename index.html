@@ -252,9 +252,9 @@ button,label.btn{cursor:pointer}
 .mbar b{font-size:12px;min-height:14px}.mbar small{color:var(--muted)}
 .mcol{flex:1;width:70%;display:flex;flex-direction:column;justify-content:flex-end;border-radius:5px;overflow:hidden;background:rgba(255,255,255,.05)}
 .mcol i{display:block;width:100%}
-/* schermi larghi (computer, tablet in orizzontale): foto a sinistra, scheda ed elenco in una colonna a destra */
-@media (min-width:900px) and (orientation:landscape){
-  #app.side{display:grid;grid-template-columns:minmax(0,1fr) 400px;grid-template-rows:auto auto auto auto minmax(0,1fr)}
+/* schermi larghi e telefoni in orizzontale: foto a sinistra, scheda ed elenco in una colonna a destra */
+@media (min-width:640px) and (orientation:landscape){
+  #app.side{display:grid;grid-template-columns:minmax(0,1fr) clamp(280px,38vw,400px);grid-template-rows:auto auto auto auto minmax(0,1fr)}
   #app.side>.secbar,#app.side>.top,#app.side>.viewbar,#app.side>.pubbar{grid-column:1/-1}
   #app.side>.stagewrap{grid-column:1;grid-row:5;min-height:0}
   #app.side>.dock,#app.side>.fcard{grid-column:2;grid-row:5;margin:0;border-radius:0;max-height:none;overflow:auto;box-shadow:none;border-left:1px solid var(--line);z-index:2}
@@ -268,5 +268,5 @@ button,label.btn{cursor:pointer}
 </style></head><body><div id="root"></div>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="namegen.js"></script><script id="app-js" src="app.js?v=138"></script>
+<script src="namegen.js"></script><script id="app-js" src="app.js?v=139"></script>
 </body></html>
