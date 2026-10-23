@@ -126,6 +126,12 @@ const NEWC_LIVE = true;
 /* account cliente e "Le mie salite": finché ACCT_LIVE è false li vede solo lo staff, da menu ⋮ → Anteprima con Le mie salite
    (prima bisogna collegare a Supabase un servizio per l'invio delle email) */
 const ACCT_LIVE = false;
+/* link dell'email già usato o scaduto: Supabase torna con #error=…; si spiega in italiano e si pulisce l'indirizzo */
+(() => { try{ const h = location.hash;
+  if(/[#&]error=/.test(h)){ history.replaceState(null, '', location.pathname + location.search);
+    const expired = /otp_expired|expired|invalid/i.test(decodeURIComponent(h));
+    setTimeout(() => toast(expired ? 'Questo link è già stato usato o è scaduto. Se hai già confermato l\'account, entra con email e password dal menu ⋮.' : 'Il link dell\'email non ha funzionato: riprova dal menu ⋮.', 8000), 1500); }
+}catch(e){} })();
 /* link segreto per provare gli account da cliente su un solo telefono: #prova-account-<codice> li accende, #prova-account-off li spegne */
 (() => { try{ const h = location.hash;
   if(h === '#prova-account-6bfacd47'){ localStorage.setItem('mr-acct-test', '1'); history.replaceState(null, '', location.pathname + location.search); setTimeout(() => toast('Prova account cliente attiva su questo telefono.', 4000), 1500); }
