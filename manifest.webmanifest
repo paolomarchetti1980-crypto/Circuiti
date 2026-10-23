@@ -29,5 +29,5 @@
  "id": "./",
  "description": "Circuiti e boulder di Monkey Island Roma, muro per muro e settore per settore.",
  "lang": "it",
- "orientation": "portrait"
+ "orientation": "any"
 }
