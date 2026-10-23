@@ -2933,9 +2933,10 @@ function renderFull(){
     tickPanel(w, c)+
     (newC() ? `<div class="row fnavrow" style="margin-top:10px;flex-wrap:nowrap">`+
       `<button class="btn farrow" data-act="fnav" data-d="-1" ${i > 0 ? '' : 'disabled'} aria-label="Precedente">‹</button>`+
-      `<button class="btn primary" data-act="fexit" style="flex:1">${isSec(w) ? 'Settore' : 'Muro'}</button>`+
-      `<button class="btn farrow" data-act="fnav" data-d="1" ${i >= 0 && i < list.length - 1 ? '' : 'disabled'} aria-label="Successivo">›</button></div>`+
-      (list.length > 1 && i >= 0 ? `<p class="hint" style="text-align:center;margin:6px 0 0;font-size:12px">${i + 1} di ${list.length}</p>` : '') :
+      /* al centro: il percorso aperto e la striscia dei percorsi (un pallino ciascuno, si tocca per andarci) */
+      `<div class="fstrip"><small class="fwhere">${esc(isSec(w) ? bTitle(c) : c.name)}${list.length > 1 && i >= 0 ? ` · ${i + 1} di ${list.length}` : ''}</small>`+
+      `<div class="fdots">${list.map(x => { const t = acctOn() ? tickOf(x) : null; return `<button class="fd ${x.id === c.id ? 'on' : ''} ${t && t.status === 'fatto' ? 'done' : ''}" data-act="fgo" data-id="${x.id}" aria-label="${esc(isSec(w) ? bTitle(x) : x.name)}" style="--c:${colOf(x)}">${t && t.status === 'fatto' ? '✓' : ''}</button>`; }).join('')}</div></div>`+
+      `<button class="btn farrow" data-act="fnav" data-d="1" ${i >= 0 && i < list.length - 1 ? '' : 'disabled'} aria-label="Successivo">›</button></div>` :
     `<div class="row" style="margin-top:10px;flex-wrap:nowrap">`+
     `<button class="btn" data-act="fnav" data-d="-1" ${i > 0 ? '' : 'disabled'} aria-label="Precedente">‹</button>`+
     `<button class="btn primary" data-act="fexit" style="flex:1">${isSec(w) ? 'Elenco boulder' : 'Elenco circuiti'}</button>`+
@@ -3029,7 +3030,8 @@ const loginIntent = () => { try{ return localStorage.getItem('login-intent') || 
 const setIntent = v => { try{ localStorage.setItem('login-intent', v); }catch(e){} };
 const welcomeSeen = () => { try{ return localStorage.getItem('mr-welcome') === '1'; }catch(e){ return false; } };
 async function loadTicks(){
-  let { data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,updated_at');
+  let { data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,grade,done_at,updated_at');
+  if(error) ({ data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,updated_at'));
   if(error) ({ data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,updated_at'));
   ui.ticks = new Map(); ui.ticksErr = !!error;
   (data || []).forEach(t => ui.ticks.set(t.item_id, t));
@@ -3043,7 +3045,8 @@ async function saveTick(w, c, next){
   const prev = tickOf(c);
   if(next) ui.ticks.set(c.id, next); else ui.ticks.delete(c.id);
   render();
-  const r = next ? await SB.from('ticks').upsert({ item_id: c.id, wall_id: w.id, status: next.status, vote: next.vote || null, rating: next.rating || null, updated_at: new Date().toISOString() })
+  if(next){ next.grade = isSec(w) ? (c.diff || null) : (c.grade || null); next.done_at = next.status === 'fatto' ? ((prev && prev.status === 'fatto' && prev.done_at) || new Date().toISOString()) : null; }
+  const r = next ? await SB.from('ticks').upsert({ item_id: c.id, wall_id: w.id, status: next.status, vote: next.vote || null, rating: next.rating || null, grade: next.grade, done_at: next.done_at, updated_at: new Date().toISOString() })
                  : await SB.from('ticks').delete().eq('item_id', c.id);
   if(r && r.error){ if(prev) ui.ticks.set(c.id, prev); else ui.ticks.delete(c.id); render(); toast('Non riesco a salvare: ' + (r.error.message || 'riprova tra poco.')); }
 }
@@ -3107,16 +3110,40 @@ function mineHtml(){
     const onB = S.walls.filter(w => isSec(w) && !w.archived).flatMap(w => w.circuits.filter(c => c.diff && !isOff(c))), ids = new Set(done.map(x => x.c.id));
     prog = DIFFS.map(d => { const tot = onB.filter(c => c.diff === d[0]).length; if(!tot) return ''; const k = onB.filter(c => c.diff === d[0] && ids.has(c.id)).length;
       return `<div class="pbar"><i class="dot" style="background:${d[2]}"></i><span class="pname">${d[1]}</span><span class="ptrack"><span style="width:${Math.round(k / tot * 100)}%;background:${d[2]}"></span></span><b>${k}/${tot}</b></div>`; }).join('');
-    if(prog) prog = `<p class="dlab">Boulder in parete fatti, per colore</p>` + prog;
+    if(prog) prog = `<p class="dlab">In parete adesso: fatti per colore</p>` + prog;
   } else {
     const live = done.filter(x => !x.gone), grades = [...new Set(live.map(x => x.c.grade).filter(Boolean))].sort((x, y) => gradeIdx(x) - gradeIdx(y));
-    if(grades.length) prog = `<p class="dlab">Circuiti fatti, per grado</p><div class="sdots" style="padding:0">${grades.map(g => `<span class="sdot">${gradeBadge(g)} ${live.filter(x => x.c.grade === g).length}</span>`).join('')}</div>`;
+    if(grades.length) prog = `<p class="dlab">Sui muri adesso: fatti per grado</p><div class="sdots" style="padding:0">${grades.map(g => `<span class="sdot">${gradeBadge(g)} ${live.filter(x => x.c.grade === g).length}</span>`).join('')}</div>`;
   }
   const what = bo ? 'un boulder' : 'un circuito';
+  /* da sempre: tutte le salite segnate, anche di blocchi smontati o muri archiviati (il grado è salvato con la salita) */
+  const isB = g => DIFFS.some(d => d[0] === g);
+  const allDone = [...ui.ticks.values()].filter(t => t.status === 'fatto').map(t => {
+    const x = all.find(q => q.t === t); const g = t.grade || (x ? (isSec(x.w) ? x.c.diff : x.c.grade) : null);
+    const kindB = x ? isSec(x.w) : isB(g); return { g, kindB, at: t.done_at || t.updated_at || '' };
+  }).filter(d => d.kindB === bo && d.g);
+  let ever = '';
+  if(allDone.length){
+    const cnt = bo ? DIFFS.filter(d => allDone.some(x => x.g === d[0])).map(d => `<span class="sdot"><i style="background:${d[2]}"></i>${allDone.filter(x => x.g === d[0]).length}</span>`).join('')
+                   : [...new Set(allDone.map(x => x.g))].sort((x, y) => gradeIdx(x) - gradeIdx(y)).map(g => `<span class="sdot">${gradeBadge(g)} ${allDone.filter(x => x.g === g).length}</span>`).join('');
+    const top = bo ? DIFFS.filter(d => allDone.some(x => x.g === d[0])).pop() : null;
+    const topC = !bo ? allDone.map(x => x.g).sort((x, y) => gradeIdx(y) - gradeIdx(x))[0] : null;
+    /* ultimi 6 mesi, una barra per mese divisa per colore (boulder) o unica (circuiti) */
+    const now = new Date(), months = Array.from({ length: 6 }, (_, k) => { const d = new Date(now.getFullYear(), now.getMonth() - 5 + k, 1); return { key: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), lab: d.toLocaleDateString('it-IT', { month: 'short' }) }; });
+    const per = months.map(m => allDone.filter(x => String(x.at).slice(0, 7) === m.key)), mx = Math.max(1, ...per.map(l => l.length));
+    const bars = months.map((m, k) => { const l = per[k];
+      const segs = bo ? DIFFS.map(d => { const n = l.filter(x => x.g === d[0]).length; return n ? `<i style="height:${n / mx * 100}%;background:${d[2]}"></i>` : ''; }).reverse().join('') : (l.length ? `<i style="height:${l.length / mx * 100}%;background:#ff7a1a"></i>` : '');
+      return `<div class="mbar"><b>${l.length || ''}</b><span class="mcol">${segs}</span><small>${m.lab}</small></div>`; }).join('');
+    ever = `<p class="dlab">Da sempre, anche ${bo ? 'gli smontati' : 'i muri archiviati'}</p>`+
+      `<div class="dsum" style="grid-template-columns:repeat(2,1fr)"><div><b>${allDone.length}</b><small>${bo ? 'boulder fatti in tutto' : 'circuiti fatti in tutto'}</small></div>`+
+      `<div><b>${bo ? (top ? `<span class="sdot" style="font-size:22px"><i style="background:${top[2]};width:16px;height:16px"></i>${top[1]}</span>` : '–') : (topC ? esc(topC) : '–')}</b><small>${bo ? 'il colore più duro' : 'il grado più duro'}</small></div></div>`+
+      `<div class="sdots" style="padding:0;margin:8px 0 0">${cnt}</div>`+
+      `<p class="dlab" style="margin-top:14px">Mese per mese</p><div class="mchart">${bars}</div>`;
+  }
   return `<h2>Le mie salite</h2>`+
     `<div class="seg" role="group" aria-label="Sezione" style="margin:0 0 12px"><button data-act="minetab" data-v="boulder" aria-pressed="${bo}">Boulder${nB ? ' · ' + nB : ''}</button><button data-act="minetab" data-v="circ" aria-pressed="${!bo}">Circuiti${nC ? ' · ' + nC : ''}</button></div>`+
-    `<div class="dsum" style="grid-template-columns:repeat(2,1fr)"><div><b>${done.length}</b><small>${bo ? 'boulder fatti' : 'circuiti fatti'}</small></div><div><b>${proj.length}</b><small>progetti</small></div></div>`+
-    prog+
+    `<div class="dsum" style="grid-template-columns:repeat(2,1fr)"><div><b>${done.filter(x => !x.gone).length}</b><small>${bo ? 'fatti tra quelli in parete' : 'fatti tra quelli sui muri'}</small></div><div><b>${proj.length}</b><small>progetti</small></div></div>`+
+    prog + ever+
     `<p class="dlab">Progetti</p>` + (proj.length ? `<div class="list" style="gap:0">${proj.map(row).join('')}</div>` : `<p class="hint">Apri ${what} e tocca ☆ Progetto per ritrovarlo qui.</p>`)+
     `<p class="dlab">Fatti di recente</p>` + (recent.length ? `<div class="list" style="gap:0">${recent.map(row).join('')}</div>` : `<p class="hint">Apri ${what} e tocca ✓ Fatto quando lo chiudi.</p>`)+
     `<div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
@@ -3928,7 +3955,7 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['bcolorall','rate','minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
+const PUBLIC_ACTS = ['fgo','bcolorall','rate','minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
 const MGR_ACTS = ['qr','qrprint','qrcopy','dash','dashsec','fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
@@ -4182,6 +4209,7 @@ document.addEventListener('click', e => {
       if((again || bOver()) && (!EDIT || S.mode === 'view')) setFull(true); else render();
       break;
     }
+    case 'fgo': if(w && ui.full){ const n = w.circuits.find(x => x.id === b.dataset.id); if(n){ w.activeCircuit = n.id; ui.sel = null; save(); render(); focusCircuit(); const d = document.querySelector('.fdots .fd.on'); if(d && d.scrollIntoView) d.scrollIntoView({ inline: 'center', block: 'nearest' }); } } break;
     case 'fexit': if(ui.full){ try{ history.back(); }catch(e){} ui.full = false; ui.zoom = 1; render(); } break;
     case 'fnav': {
       if(!w) break;

@@ -240,6 +240,18 @@ button,label.btn{cursor:pointer}
 .rate{display:flex;gap:3px;flex:1 1 100%}
 .rate button{flex:1;min-width:0;font:inherit;font-weight:700;font-size:14px;padding:8px 0;border-radius:8px;border:1px solid rgba(255,255,255,.18);background:transparent;color:var(--ink);cursor:pointer}
 .rate button.on{background:#ff7a1a;border-color:#ff7a1a;color:#111}
+.fstrip{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:6px;justify-content:center}
+.fwhere{color:var(--muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.fdots{display:flex;gap:7px;max-width:100%;overflow-x:auto;padding:3px 4px;scrollbar-width:none}
+.fdots::-webkit-scrollbar{display:none}
+.fd{flex:none;width:16px;height:16px;border-radius:50%;border:0;padding:0;background:var(--c);box-shadow:0 0 0 1px rgba(255,255,255,.35);cursor:pointer;font-size:10px;font-weight:800;line-height:16px;color:#fff;text-shadow:0 0 2px #000}
+.fd.on{width:22px;height:22px;line-height:22px;box-shadow:0 0 0 2px var(--panel),0 0 0 4px #ff7a1a}
+.mchart{display:flex;gap:8px;align-items:flex-end;height:120px;margin:4px 0 0}
+.mbar{flex:1;display:flex;flex-direction:column;align-items:center;height:100%;gap:3px}
+.mbar b{font-size:12px;min-height:14px}.mbar small{color:var(--muted)}
+.mcol{flex:1;width:70%;display:flex;flex-direction:column;justify-content:flex-end;border-radius:5px;overflow:hidden;background:rgba(255,255,255,.05)}
+.mcol i{display:block;width:100%}
+@media (min-width:700px){.fcard{max-width:560px;margin-left:auto;margin-right:auto;width:100%}}
 .fbbtns{display:flex;flex-direction:column;gap:6px;flex:none}
 .fbkind{display:inline-block;padding:1px 7px;border-radius:999px;background:#24384f;color:#bcd7ff;font-weight:700}
 .fbkind.err{background:#4a1f1f;color:#ffb3b3}
@@ -247,5 +259,5 @@ button,label.btn{cursor:pointer}
 </style></head><body><div id="root"></div>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="namegen.js"></script><script id="app-js" src="app.js?v=135"></script>
+<script src="namegen.js"></script><script id="app-js" src="app.js?v=136"></script>
 </body></html>

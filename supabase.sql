@@ -189,3 +189,7 @@ language sql security definer stable set search_path = public as $$
 $$;
 revoke execute on function public.tick_stats() from public, anon;
 grant execute on function public.tick_stats() to authenticated;
+
+-- ===== Aggiornamento: grado e data della salita salvati con la salita (statistiche "da sempre") =====
+alter table public.ticks add column if not exists grade text;
+alter table public.ticks add column if not exists done_at timestamptz;
