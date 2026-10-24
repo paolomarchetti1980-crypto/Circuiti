@@ -2,13 +2,13 @@
    - pagina, codice e dati pubblicati: prima la rete (così gli aggiornamenti arrivano subito), se manca la rete l'ultima copia salvata
    - foto dei muri: subito dalla copia salvata, aggiornata in sottofondo
    - modello di riconoscimento e librerie: scaricati una volta sola */
-const CACHE = 'circuiti-v140';
+const CACHE = 'circuiti-v141';
 /* modello di riconoscimento e librerie (decine di MB): in una cache a parte che NON si svuota a ogni aggiornamento dell'app */
 const MODELS = 'circuiti-modelli';
 /* foto dei muri, ultimi dati pubblicati e caratteri: anche questi restano tra un aggiornamento e l'altro
    (le foto hanno un nome nuovo ogni volta che cambiano, quindi una copia salvata è sempre giusta) */
 const DATA = 'circuiti-dati';
-const CORE = ['./', './index.html', './app.js?v=140', './namegen.js', './config.js', './manifest.webmanifest', './icon-192-g3.png', './icon-512-g3.png', './icon-maskable-512-g3.png', './apple-touch-icon-g3.png'];
+const CORE = ['./', './index.html', './app.js?v=141', './namegen.js', './config.js', './manifest.webmanifest', './icon-192-g3.png', './icon-512-g3.png', './icon-maskable-512-g3.png', './apple-touch-icon-g3.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).catch(() => {}));
@@ -59,6 +59,7 @@ self.addEventListener('fetch', e => {
   if(u.origin === self.location.origin){
     if(u.pathname.includes('/models/')) return e.respondWith(cacheFirst(req, MODELS));
     if(u.pathname.includes('/img/')) return e.respondWith(staleWhileRevalidate(req));
+    if(u.pathname.includes('/fonts/')) return e.respondWith(cacheFirst(req, DATA));
     return e.respondWith(networkFirst(req, true));
   }
   if(u.hostname.endsWith('.supabase.co')){
@@ -67,5 +68,4 @@ self.addEventListener('fetch', e => {
     return; /* accesso, login, caricamenti: sempre dalla rete */
   }
   if(u.hostname === 'cdn.jsdelivr.net') return e.respondWith(cacheFirst(req, MODELS));
-  if(u.hostname === 'fonts.googleapis.com' || u.hostname === 'fonts.gstatic.com') return e.respondWith(cacheFirst(req, DATA));
 });
