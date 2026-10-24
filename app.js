@@ -16,6 +16,7 @@ const BODY = `
       <svg id="chev" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 5l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
     <button class="btn" id="instBtn" data-act="install" hidden>Installa app</button>
+    <button class="menubtn minebtn" id="mineBtn" data-act="mine" aria-label="Le mie salite" title="Le mie salite" hidden></button>
     <button class="menubtn" id="prevBtn" data-act="preview" hidden></button>
     <button class="menubtn" id="menuBtn" data-act="menu" aria-label="Altro: stampa, condividi, installa">&#8942;</button>
   </header>
@@ -2485,13 +2486,14 @@ function homeScreen(){
     const nc = !bo ? ws.reduce((t, w) => t + w.circuits.filter(c => cLabel(c) === 'Nuovo').length, 0) : 0;
     const nn = bo && !EDIT ? ws.filter(w => secLabel(w) === 'Nuovo').length : 0, ns = bo && EDIT ? ws.filter(w => secLabel(w) === 'Scaduto').length : 0;
     const sub = ws.length ? `${ws.length} ${bo ? (ws.length === 1 ? 'settore' : 'settori') : (ws.length === 1 ? 'muro' : 'muri')} · ${n} ${bo ? 'boulder' : (n === 1 ? 'circuito' : 'circuiti')}${nn ? ` · <span class="hnew">${nn === 1 ? '1 settore nuovo' : nn + ' settori nuovi'}</span>` : ''}${ns ? ` · <span class="hnew">${ns === 1 ? '1 scaduto' : ns + ' scaduti'}</span>` : ''}${nc ? ` · <span class="hnew">${nc} ${nc === 1 ? 'nuovo' : 'nuovi'}</span>` : ''}` : (bo ? 'nessun settore ancora' : 'nessun muro ancora');
-    return `<button class="htile" data-act="pickhome" data-v="${sec}">${img}<span class="hlab"><b>${bo ? 'Boulder' : 'Circuiti'}</b><small>${sub}</small></span></button>`;
+    const mp = myOn() ? myProg(ws) : null;
+    return `<button class="htile" data-act="pickhome" data-v="${sec}">${img}<span class="hlab"><b>${bo ? 'Boulder' : 'Circuiti'}</b><small>${sub}</small>${mp ? progLine(mp, 'big') : ''}</span>${mp ? progBar(mp) : ''}</button>`;
   };
   let mine = '';
   if(acctOn() && !EDIT){ const T = ACC() && ui.ticks ? [...ui.ticks.values()] : [], nd = T.filter(t => t.status === 'fatto').length, np = T.filter(t => t.status === 'progetto').length;
     const nb = ACC() ? earnedBadges().size : 0;
     const sub = !ACC() ? 'segna i percorsi fatti e i progetti, guadagna i badge' : nd || np ? [nd ? nd + (nd === 1 ? ' fatto' : ' fatti') : '', np ? np + (np === 1 ? ' progetto' : ' progetti') : '', nb + ' badge di ' + BADGES.length].filter(Boolean).join(' · ') : 'apri un percorso e tocca ✓ Fatto';
-    mine = `<button class="hmine" data-act="mine">${MINE_SVG}<span><b>Le mie salite</b><small>${sub}</small></span>${ui.badgeNew ? '<i class="mbd"></i>' : ''}<svg width="16" height="16" viewBox="0 0 14 14" aria-hidden="true"><path d="M5 3l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`; }
+    mine = `<button class="hmine" data-act="mine">${CUP_SVG}<span><b>Le mie salite</b><small>${sub}</small></span>${ui.badgeNew ? '<i class="mbd"></i>' : ''}<svg width="16" height="16" viewBox="0 0 14 14" aria-hidden="true"><path d="M5 3l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`; }
   return `<div class="home">${tile('boulder')}${tile('circ')}${mine}</div>`;
 }
 function sectorGrid(){
@@ -2520,7 +2522,7 @@ function sectorGrid(){
       if(EDIT && !w.locked) staff = `<span class="sinfo"><b>prese da preparare</b></span>`;
     }
     return `<button class="scard" data-act="opensec" data-id="${w.id}"><span class="sph"><img src="${esc(w.img)}" alt="" loading="lazy">${mgr ? `<span class="sedit" role="button" data-act="wman" data-id="${w.id}" aria-label="Gestisci ${bo ? 'il settore' : 'il muro'}">Modifica</span>` : ''}</span>`+
-      `<span class="sname">${esc(w.name)}</span><span class="sdots">${info}</span>${staff}</button>`;
+      `<span class="sname">${esc(w.name)}</span><span class="sdots">${info}</span>${myOn() ? (() => { const p = myProg([w]); return progLine(p) + progBar(p); })() : ''}${staff}</button>`;
   }).join('') + (mgr ? `<div class="scard sadd"><span class="sname">+ ${bo ? 'Nuovo settore' : 'Nuovo muro'}</span><span class="sinfo">Carica la foto ${bo ? 'del settore' : 'del muro'}</span><div class="sbtns">${PICK_BTNS}</div></div>` : '') + `</div>`+
     (mgr && arch.length ? `<button class="archrow" data-act="archlist">Archiviati (${arch.length})</button>` : '');
 }
@@ -2620,7 +2622,19 @@ function renderTop(){
   pb.title = inPrev ? 'Torna a tracciare' : 'Anteprima cliente';
   pb.classList.toggle('on', inPrev);
   $('#instBtn').hidden = REAL_EDIT || !canInstall();
+  /* Le mie salite sempre a un tocco, da ogni schermata */
+  const mb = $('#mineBtn'), mOn = acctOn() && !EDIT; mb.hidden = !mOn;
+  if(mOn){ const nd = ACC() && ui.ticks ? [...ui.ticks.values()].filter(t => t.status === 'fatto').length : 0;
+    mb.innerHTML = CUP_SVG + (ui.badgeNew ? '<i class="mbd"></i>' : ''); }
 }
+const CUP_SVG = '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v5a5 5 0 0 1-10 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M7 5H4v1.5A3.5 3.5 0 0 0 7.5 10M17 5h3v1.5A3.5 3.5 0 0 1 16.5 10M12 13v4M8 21h8M9.5 17h5v4h-5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
+/* le salite del cliente sui percorsi in parete adesso: per tenerle sempre sotto gli occhi mentre si naviga */
+const myOn = () => acctOn() && !EDIT && !!ACC() && !!ui.ticks;
+function myProg(ws){ let tot = 0, done = 0, proj = 0;
+  ws.forEach(w => w.circuits.forEach(c => { if(isSec(w) && (!c.diff || isOff(c))) return; tot++; const t = ui.ticks.get(c.id); if(t) t.status === 'fatto' ? done++ : proj++; }));
+  return { tot, done, proj }; }
+const progLine = (p, cls) => p.done || p.proj ? `<span class="myp ${cls || ''}"><b>✓ ${p.done}/${p.tot}</b>${p.proj ? `<i>☆ ${p.proj}</i>` : ''}</span>` : '';
+const progBar = p => p.done ? `<span class="mybar"><i style="width:${Math.round(100 * p.done / Math.max(1, p.tot))}%"></i></span>` : '';
 const MINE_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7.5 12.3l3 3 6-6.3" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const EYE_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M1.5 12S5.5 4.5 12 4.5 22.5 12 22.5 12 18.5 19.5 12 19.5 1.5 12 1.5 12Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg>';
 const WRENCH_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4.5 4.5 0 0 1 5.9-1.1l-3 3 .3 2.2 2.2.3 3-3a4.5 4.5 0 0 1-6 5.9L8.5 22.2a2.1 2.1 0 0 1-3-3l8.6-8.6a4.5 4.5 0 0 1 .6-4.3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
