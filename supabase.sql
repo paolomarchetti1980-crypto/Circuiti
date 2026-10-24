@@ -197,3 +197,8 @@ alter table public.ticks add column if not exists done_at timestamptz;
 -- ===== Badge: prese/movimenti del percorso e progetto chiuso (salite_badge) =====
 alter table public.ticks add column if not exists moves smallint;
 alter table public.ticks add column if not exists from_project boolean not null default false;
+
+-- ===== Circuiti in progetto: punto più alto raggiunto (salite_punto_alto) =====
+alter table public.ticks add column if not exists high smallint;
+alter table public.ticks add column if not exists high_ups smallint not null default 0;
+alter table public.ticks add column if not exists high_at timestamptz;

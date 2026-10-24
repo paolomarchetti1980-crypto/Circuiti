@@ -2275,6 +2275,16 @@ function myMark(c, x, y, m){
   const p = []; for(let i = 0; i < 10; i++){ const a = -Math.PI/2 + i*Math.PI/5, rr = i % 2 ? m*0.3 : m*0.7; p.push((x + rr*Math.cos(a)).toFixed(1) + ',' + (y + rr*Math.sin(a)).toFixed(1)); }
   return `<circle cx="${x}" cy="${y}" r="${m}" fill="#141414" stroke="#f2c200" stroke-width="${m*0.18}"/><polygon points="${p.join(' ')}" fill="#f2c200"/>`;
 }
+/* circuito in progetto: anello giallo sulla presa più alta raggiunta, con bandierina */
+function highSVG(c, W){
+  if(!myOn()) return ''; const t = ui.ticks.get(c.id); if(!t || t.status !== 'progetto' || !t.high) return '';
+  const h = c.holds.filter(q => q.role !== 'start')[t.high - 1]; if(!h) return '';
+  const bb = holdBox(h, W), cx = (bb.x0 + bb.x1) / 2, cy = (bb.y0 + bb.y1) / 2, r = Math.max((bb.x1 - bb.x0), (bb.y1 - bb.y0)) / 2 + W*0.014, lw = Math.max(3, W*0.0038);
+  const fx = cx + r*0.7, fy = cy - r*0.7, fh = W*0.04;
+  return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#000" stroke-opacity=".55" stroke-width="${lw*2.4}"/><circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#f2c200" stroke-width="${lw}"/>`+
+    `<path d="M${fx},${fy}V${fy - fh}" stroke="#000" stroke-opacity=".6" stroke-width="${lw*1.8}" stroke-linecap="round"/><path d="M${fx},${fy}V${fy - fh}" stroke="#fff" stroke-width="${lw*0.8}" stroke-linecap="round"/>`+
+    `<path d="M${fx},${fy - fh}l${fh*0.7},${fh*0.22}l${-fh*0.7},${fh*0.22}z" fill="#f2c200" stroke="#000" stroke-opacity=".5" stroke-width="${lw*0.4}"/>`;
+}
 function overviewSVG(w){
   const W = w.w, list = sortedVisible(w).slice().reverse();
   let s = '', tags = '';
@@ -2571,6 +2581,7 @@ function overlay(w, o){
   }
   if(act && bo) s += lineSVG(act.line || autoLine(act, w), w.w, colOf(act), act);
   if(bo && ui.bline && ui.lineDraft.length > 1) s += lineSVG(ui.lineDraft.flat(), w.w, '#ff3b7a');   /* la bozza è fatta di coppie [x, y]: lineSVG vuole i numeri in fila */
+  if(act && !bo && !o.edit) s += highSVG(act, w.w);   /* sotto ai numeri, che restano leggibili */
   if(act) s += circuitSVG(act, w.w, 1, Object.assign({}, o, { H: w.h, obst: w.holds || [], busy: busyMap(w), mk }));
   if(o.edit && bo && act && ui.cand && ui.cand.cid === act.id){
     const t = Math.max(2, w.w*0.0026);
@@ -3061,7 +3072,8 @@ const loginIntent = () => { try{ return localStorage.getItem('login-intent') || 
 const setIntent = v => { try{ localStorage.setItem('login-intent', v); }catch(e){} };
 const welcomeSeen = () => { try{ return localStorage.getItem('mr-welcome') === '1'; }catch(e){ return false; } };
 async function loadTicks(){
-  let { data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,grade,done_at,moves,from_project,updated_at');
+  let { data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,grade,done_at,moves,from_project,high,high_ups,high_at,updated_at');
+  if(error) ({ data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,grade,done_at,moves,from_project,updated_at'));
   if(error) ({ data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,grade,done_at,updated_at'));
   if(error) ({ data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,updated_at'));
   if(error) ({ data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,updated_at'));
@@ -3081,7 +3093,7 @@ async function saveTick(w, c, next){
     /* per i badge: movimenti del circuito (Chilometraggio) e se era un progetto */
     next.moves = next.status === 'fatto' ? (isSec(w) ? (c.holds || []).length : movesOf(c)) || null : null;
     next.from_project = next.status === 'fatto' && !!prev && (prev.status === 'progetto' || !!prev.from_project); }
-  const r = next ? await SB.from('ticks').upsert({ item_id: c.id, wall_id: w.id, status: next.status, vote: next.vote || null, rating: next.rating || null, grade: next.grade, done_at: next.done_at, moves: next.moves, from_project: next.from_project, updated_at: new Date().toISOString() })
+  const r = next ? await SB.from('ticks').upsert({ item_id: c.id, wall_id: w.id, status: next.status, vote: next.vote || null, rating: next.rating || null, grade: next.grade, done_at: next.done_at, moves: next.moves, from_project: next.from_project, high: next.high || null, high_ups: next.high_ups || 0, high_at: next.high_at || null, updated_at: new Date().toISOString() })
                  : await SB.from('ticks').delete().eq('item_id', c.id);
   if(r && r.error){ if(prev) ui.ticks.set(c.id, prev); else ui.ticks.delete(c.id); render(); toast('Non riesco a salvare: ' + (r.error.message || 'riprova tra poco.')); return; }
   if(before){ const now = earnedBadges(), got = [...now].filter(id => !before.has(id)); if(got.length){ const b = BADGES.find(x => x.id === got[got.length - 1]); toast('Nuovo badge: ' + b.name + '!', 4000); ui.badgeNew = true; } }
@@ -3092,7 +3104,7 @@ function tick(status){
   if(!ui.ticks) ui.ticks = new Map();
   const t = tickOf(c);
   if(t && t.status === status) saveTick(w, c, null);
-  else saveTick(w, c, { item_id: c.id, wall_id: w.id, status, vote: status === 'fatto' && t ? t.vote : null, rating: status === 'fatto' && t ? t.rating || null : null, updated_at: new Date().toISOString() });
+  else saveTick(w, c, { item_id: c.id, wall_id: w.id, status, vote: status === 'fatto' && t ? t.vote : null, rating: status === 'fatto' && t ? t.rating || null : null, high: t ? t.high || null : null, high_ups: t ? t.high_ups || 0 : 0, high_at: t ? t.high_at || null : null, updated_at: new Date().toISOString() });
 }
 function rate(n){
   const w = curWall(), c = curCircuit(), t = tickOf(c); if(!w || !c || !t || t.status !== 'fatto') return;
@@ -3102,6 +3114,20 @@ function rate(n){
 function vote(v){
   const w = curWall(), c = curCircuit(), t = tickOf(c); if(!w || !c || !t || t.status !== 'fatto') return;
   saveTick(w, c, Object.assign({}, t, { vote: t.vote === v ? null : v, updated_at: new Date().toISOString() }));
+}
+/* circuiti in progetto: fin dove sei arrivato (movimento N di M). Si salva dopo una pausa, così le frecce si possono toccare di fila */
+let hiTimer = null;
+function setHigh(d){
+  const w = curWall(), c = curCircuit(), t = tickOf(c); if(!w || !c || !t || t.status !== 'progetto' || isSec(w)) return;
+  const M = movesOf(c); if(!M) return;
+  const old = t.high || 0, n = Math.max(0, Math.min(M, old + d)); if(n === old) return;
+  ui.hiBase = ui.hiBase != null ? ui.hiBase : old;   /* record di partenza di questa serie di tocchi */
+  Object.assign(t, { high: n || null, updated_at: new Date().toISOString() });
+  render(); if(ui.sheet) renderSheet();
+  clearTimeout(hiTimer); hiTimer = setTimeout(() => { const base = ui.hiBase || 0; ui.hiBase = null; const cur = tickOf(c); if(!cur || cur.status !== 'progetto') return;
+    const up = (cur.high || 0) > base && base > 0;   /* un passo avanti su un record già segnato */
+    const next = Object.assign({}, cur, (cur.high || 0) > base ? { high_at: new Date().toISOString(), high_ups: (cur.high_ups || 0) + (up ? 1 : 0) } : {});
+    saveTick(w, c, next); if(up) toast('Nuovo record: movimento ' + cur.high + ' di ' + movesOf(c) + '!'); }, 900);
 }
 const tickMark = c => { if(!newC() || !acctOn()) return ''; const t = tickOf(c); return t ? (t.status === 'fatto' ? '<span class="tk done" aria-label="fatto">✓</span>' : '<span class="tk proj" aria-label="progetto">☆</span>') : ''; };
 function tickPanel(w, c){
@@ -3116,6 +3142,8 @@ function tickPanel(w, c){
   const t = tickOf(c), st = t ? t.status : '';
   return `<div class="tickrow"><button class="tbtn ${st === 'fatto' ? 'on' : ''}" data-act="tick" data-v="fatto" aria-pressed="${st === 'fatto'}">✓ Fatto</button>`+
     `<button class="tbtn ${st === 'progetto' ? 'on proj' : ''}" data-act="tick" data-v="progetto" aria-pressed="${st === 'progetto'}">☆ Progetto</button></div>`+
+    (st === 'progetto' && !isSec(w) && movesOf(c) ? (() => { const M = movesOf(c), h = t.high || 0;
+      return `<div class="voterow"><small>Fin dove sei arrivato?${t.high_at ? ` <span class="muted">record del ${fmtDate(t.high_at.slice(0, 10))}</span>` : ''}</small><div class="hirow"><button class="btn" data-act="hi" data-v="-1" aria-label="Un movimento in meno" ${h ? '' : 'disabled'}>‹</button><span class="hival"><b>${h ? 'movimento ' + h : 'non segnato'}</b><small>di ${M}</small></span><button class="btn" data-act="hi" data-v="1" aria-label="Un movimento in più" ${h < M ? '' : 'disabled'}>›</button></div><span class="mybar hib"><i style="width:${Math.round(100 * h / M)}%"></i></span></div>`; })() : '')+
     (st === 'fatto' ? `<div class="voterow"><small>Il grado ti è sembrato</small><div class="seg">${[['facile','Facile'],['giusto','Giusto'],['duro','Duro']].map(o => `<button data-act="vote" data-v="${o[0]}" aria-pressed="${t.vote === o[0]}">${o[1]}</button>`).join('')}</div></div>`+
       `<div class="voterow"><small>Quanto ti è piaciuto?${t.rating ? ` <b>${t.rating}/10</b>` : ''}</small><div class="rate">${Array.from({ length: 10 }, (_, k) => k + 1).map(n => `<button data-act="rate" data-v="${n}" aria-pressed="${t.rating === n}" class="${t.rating && n <= t.rating ? 'on' : ''}">${n}</button>`).join('')}</div></div>` : '');
 }
@@ -3146,7 +3174,7 @@ function badgeStats(){
   const bestSec = secs.reduce((m, w) => { const on = w.circuits.filter(c => c.diff && !isOff(c)); if(on.length < 3) return m; const k = on.filter(c => { const t = ui.ticks && ui.ticks.get(c.id); return t && t.status === 'fatto'; }).length; return Math.max(m, on.length - k === 0 ? 0 : -(on.length - k)) ; }, -999);
   return { n: D.length, nB: D.filter(x => x.isB).length, nC: D.filter(x => !x.isB).length, moves: D.filter(x => !x.isB).reduce((t, x) => t + (x.mv || 0), 0),
     colors: new Set(D.filter(x => x.isB).map(x => x.g)), secDone: secDone.size, secTot: secs.length, cleanSec, missToClean: bestSec === -999 ? null : -bestSec,
-    weeks: best, proj: D.some(x => x.t.from_project), rated: T.filter(t => t.status === 'fatto' && t.rating && t.vote).length,
+    weeks: best, proj: D.some(x => x.t.from_project), hiUps: T.reduce((n, t) => n + (t.high_ups || 0), 0), rated: T.filter(t => t.status === 'fatto' && t.rating && t.vote).length,
     early: D.some(x => x.at && x.at.getHours() < 9), late: D.some(x => x.at && x.at.getHours() >= 22), bestDay: Math.max(0, ...Object.values(days)) };
 }
 const BADGES = [
@@ -3159,6 +3187,7 @@ const BADGES = [
   { id: 'pulito', f: 'var', name: 'Settore pulito', desc: 'Tutti i boulder in parete di un settore', ok: s => s.cleanSec >= 1, left: s => s.missToClean != null ? 'te ne mancano ' + s.missToClean + ' nel settore più vicino' : 'chiudi tutti i boulder di un settore' },
   { id: 'doppia', f: 'var', name: 'Doppia anima', desc: 'Almeno 10 boulder e 10 circuiti', ok: s => s.nB >= 10 && s.nC >= 10, left: s => Math.min(s.nB, 10) + '/10 boulder · ' + Math.min(s.nC, 10) + '/10 circuiti' },
   ...[['verde','Primo verde'],['giallo','Primo giallo'],['rosso','Primo rosso'],['nero','Primo nero']].map(([c, n]) => ({ id: 'c_' + c, f: 'prog', name: n, desc: 'Il primo boulder ' + c + ' chiuso', ok: s => s.colors.has(c), left: s => 'chiudi un boulder ' + c, dot: (DIFFS.find(d => d[0] === c) || [])[2] })),
+  ...[5, 20].map(k => ({ id: 'hi' + k, f: 'prog', name: k === 5 ? 'Un passo più in là' : 'Testardo', desc: k + ' volte hai migliorato il tuo punto più alto su un circuito in progetto', ok: s => s.hiUps >= k, left: s => s.hiUps + ' di ' + k, big: String(k) })),
   { id: 'proj', f: 'prog', name: 'Progetto chiuso', desc: 'Un percorso passato da Progetto a Fatto', ok: s => s.proj, left: s => 'segna un progetto, poi chiudilo' },
   ...[10, 50].map(k => ({ id: 'r' + k, f: 'gym', name: k === 10 ? 'Occhio critico' : 'Giudice di parete', desc: k + ' percorsi votati, con voto e parere sul grado', ok: s => s.rated >= k, left: s => s.rated + ' di ' + k, big: String(k) })),
   ...[100, 250, 500, 1000, 2500, 5000].map(k => ({ id: 'm' + k, f: 'km', name: k.toLocaleString('it-IT') + ' movimenti', desc: k.toLocaleString('it-IT') + ' movimenti sui circuiti fatti', ok: s => s.moves >= k, left: s => s.moves.toLocaleString('it-IT') + ' di ' + k.toLocaleString('it-IT'), big: k >= 1000 ? String(k / 1000).replace('.', ',') + 'k' : String(k) })),
@@ -3232,7 +3261,8 @@ function mineHtml(){
     tabs(nB, nC)+
     `<div class="dsum" style="grid-template-columns:repeat(2,1fr)"><div><b>${done.filter(x => !x.gone).length}</b><small>${bo ? 'fatti tra quelli in parete' : 'fatti tra quelli sui muri'}</small></div><div><b>${proj.length}</b><small>progetti</small></div></div>`+
     prog + ever+
-    `<p class="dlab">Progetti</p>` + (proj.length ? `<div class="list" style="gap:0">${proj.map(row).join('')}</div>` : `<p class="hint">Apri ${what} e tocca ☆ Progetto per ritrovarlo qui.</p>`)+
+    `<p class="dlab">Progetti</p>` + (proj.length ? `<div class="list" style="gap:0">${proj.map(x => { const M = !isSec(x.w) ? movesOf(x.c) : 0, h = x.t.high || 0;
+      return M && h ? row(x).replace('</small></span>', `</small><span class="hiline"><span class="mybar hib"><i style="width:${Math.round(100 * h / M)}%"></i></span><b>${h}/${M}</b></span></span>`) : row(x); }).join('')}</div>` : `<p class="hint">Apri ${what} e tocca ☆ Progetto per ritrovarlo qui.</p>`)+
     `<p class="dlab">Fatti di recente</p>` + (recent.length ? `<div class="list" style="gap:0">${recent.map(row).join('')}</div>` : `<p class="hint">Apri ${what} e tocca ✓ Fatto quando lo chiudi.</p>`)+
     `<div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
 }
@@ -4043,7 +4073,7 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['prevtoday','fgo','bcolorall','rate','minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
+const PUBLIC_ACTS = ['hi','prevtoday','fgo','bcolorall','rate','minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
 const MGR_ACTS = ['qr','qrprint','qrcopy','dash','dashsec','fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
@@ -4139,6 +4169,7 @@ document.addEventListener('click', e => {
     case 'prevnew': ui.prevNew = true; setViewAs('cliente'); ui.wIdx = 0; openSheet('welcome'); break;
     case 'tick': tick(b.dataset.v); break;
     case 'vote': vote(b.dataset.v); break;
+    case 'hi': setHigh(+b.dataset.v || 0); break;
     case 'rate': rate(b.dataset.v); break;
     case 'mine': ui.confirm = null; ui.mineTab = null; openSheet('mine'); break;
     case 'minetab': ui.mineTab = ['boulder', 'circ', 'badge'].includes(b.dataset.v) ? b.dataset.v : 'circ'; renderSheet(); break;
