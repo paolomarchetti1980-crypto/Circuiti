@@ -2268,6 +2268,13 @@ function cleanLine(raw, W){
 }
 /* livello 2: tutte le linee del settore, ognuna col numero del blocco in cima */
 function bPts(c, w){ return c.line || autoLine(c, w); }
+/* sulla foto del settore: ✓ verde sui boulder fatti, ☆ gialla sui progetti, in alto a destra del cartellino */
+function myMark(c, x, y, m){
+  if(!myOn()) return ''; const t = ui.ticks.get(c.id); if(!t) return '';
+  if(t.status === 'fatto') return `<circle cx="${x}" cy="${y}" r="${m}" fill="#23b45a" stroke="#fff" stroke-width="${m*0.22}"/><path d="M${x-m*0.48},${y+m*0.02}l${m*0.34},${m*0.34}l${m*0.62},${-m*0.66}" fill="none" stroke="#fff" stroke-width="${m*0.3}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  const p = []; for(let i = 0; i < 10; i++){ const a = -Math.PI/2 + i*Math.PI/5, rr = i % 2 ? m*0.3 : m*0.7; p.push((x + rr*Math.cos(a)).toFixed(1) + ',' + (y + rr*Math.sin(a)).toFixed(1)); }
+  return `<circle cx="${x}" cy="${y}" r="${m}" fill="#141414" stroke="#f2c200" stroke-width="${m*0.18}"/><polygon points="${p.join(' ')}" fill="#f2c200"/>`;
+}
 function overviewSVG(w){
   const W = w.w, list = sortedVisible(w).slice().reverse();
   let s = '', tags = '';
@@ -2278,7 +2285,7 @@ function overviewSVG(w){
     if(!at) return;
     const r = W*0.028;
     tags += `<g><circle cx="${at[0]}" cy="${at[1]}" r="${r}" fill="${col}" stroke="${haloOf(col)}" stroke-opacity=".7" stroke-width="${r*0.16}"/>`+
-      `<text x="${at[0]}" y="${at[1]}" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed,Barlow,sans-serif" font-weight="700" font-size="${r*1.25}" fill="${inkOn(col)}">${c.num || '?'}</text></g>`;
+      `<text x="${at[0]}" y="${at[1]}" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed,Barlow,sans-serif" font-weight="700" font-size="${r*1.25}" fill="${inkOn(col)}">${c.num || '?'}</text>${myMark(c, at[0] + r*0.78, at[1] - r*0.78, r*0.5)}</g>`;
   });
   return s + tags;
 }
