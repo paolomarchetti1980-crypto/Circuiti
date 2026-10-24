@@ -193,3 +193,7 @@ grant execute on function public.tick_stats() to authenticated;
 -- ===== Aggiornamento: grado e data della salita salvati con la salita (statistiche "da sempre") =====
 alter table public.ticks add column if not exists grade text;
 alter table public.ticks add column if not exists done_at timestamptz;
+
+-- ===== Badge: prese/movimenti del percorso e progetto chiuso (salite_badge) =====
+alter table public.ticks add column if not exists moves smallint;
+alter table public.ticks add column if not exists from_project boolean not null default false;

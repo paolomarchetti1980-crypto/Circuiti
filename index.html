@@ -268,6 +268,11 @@ button,label.btn{cursor:pointer}
   #app.side .dock::before{display:none}
 }
 .toast.top{bottom:auto;top:calc(70px + env(safe-area-inset-top,0px))}
+.bgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.badge{display:flex;flex-direction:column;align-items:center;text-align:center;gap:3px;padding:10px 6px;border-radius:12px;background:rgba(255,255,255,.04)}
+.badge b{font:700 14px/1.1 "Barlow Semi Condensed",Barlow,sans-serif}
+.badge small{color:var(--muted);font-size:11px;line-height:1.25}
+.badge:not(.ok) b{color:var(--muted)}
 .fbbtns{display:flex;flex-direction:column;gap:6px;flex:none}
 .fbkind{display:inline-block;padding:1px 7px;border-radius:999px;background:#24384f;color:#bcd7ff;font-weight:700}
 .fbkind.err{background:#4a1f1f;color:#ffb3b3}
@@ -275,5 +280,5 @@ button,label.btn{cursor:pointer}
 </style></head><body><div id="root"></div>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="namegen.js"></script><script id="app-js" src="app.js?v=141"></script>
+<script src="namegen.js"></script><script id="app-js" src="app.js?v=142"></script>
 </body></html>

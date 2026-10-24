@@ -3034,7 +3034,8 @@ const loginIntent = () => { try{ return localStorage.getItem('login-intent') || 
 const setIntent = v => { try{ localStorage.setItem('login-intent', v); }catch(e){} };
 const welcomeSeen = () => { try{ return localStorage.getItem('mr-welcome') === '1'; }catch(e){ return false; } };
 async function loadTicks(){
-  let { data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,grade,done_at,updated_at');
+  let { data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,grade,done_at,moves,from_project,updated_at');
+  if(error) ({ data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,grade,done_at,updated_at'));
   if(error) ({ data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,updated_at'));
   if(error) ({ data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,updated_at'));
   ui.ticks = new Map(); ui.ticksErr = !!error;
@@ -3046,13 +3047,17 @@ async function loadTickSum(){
 }
 const tickOf = c => (c && ui.ticks && ui.ticks.get(c.id)) || null;
 async function saveTick(w, c, next){
-  const prev = tickOf(c);
+  const prev = tickOf(c), before = acctOn() ? earnedBadges() : null;
   if(next) ui.ticks.set(c.id, next); else ui.ticks.delete(c.id);
   render();
-  if(next){ next.grade = isSec(w) ? (c.diff || null) : (c.grade || null); next.done_at = next.status === 'fatto' ? ((prev && prev.status === 'fatto' && prev.done_at) || new Date().toISOString()) : null; }
-  const r = next ? await SB.from('ticks').upsert({ item_id: c.id, wall_id: w.id, status: next.status, vote: next.vote || null, rating: next.rating || null, grade: next.grade, done_at: next.done_at, updated_at: new Date().toISOString() })
+  if(next){ next.grade = isSec(w) ? (c.diff || null) : (c.grade || null); next.done_at = next.status === 'fatto' ? ((prev && prev.status === 'fatto' && prev.done_at) || new Date().toISOString()) : null;
+    /* per i badge: prese (boulder) o movimenti (circuiti) del percorso, e se era un progetto */
+    next.moves = next.status === 'fatto' ? (isSec(w) ? (c.holds || []).length : movesOf(c)) || null : null;
+    next.from_project = next.status === 'fatto' && !!prev && (prev.status === 'progetto' || !!prev.from_project); }
+  const r = next ? await SB.from('ticks').upsert({ item_id: c.id, wall_id: w.id, status: next.status, vote: next.vote || null, rating: next.rating || null, grade: next.grade, done_at: next.done_at, moves: next.moves, from_project: next.from_project, updated_at: new Date().toISOString() })
                  : await SB.from('ticks').delete().eq('item_id', c.id);
-  if(r && r.error){ if(prev) ui.ticks.set(c.id, prev); else ui.ticks.delete(c.id); render(); toast('Non riesco a salvare: ' + (r.error.message || 'riprova tra poco.')); }
+  if(r && r.error){ if(prev) ui.ticks.set(c.id, prev); else ui.ticks.delete(c.id); render(); toast('Non riesco a salvare: ' + (r.error.message || 'riprova tra poco.')); return; }
+  if(before){ const now = earnedBadges(), got = [...now].filter(id => !before.has(id)); if(got.length){ const b = BADGES.find(x => x.id === got[got.length - 1]); toast('Nuovo badge: ' + b.name + '!', 4000); ui.badgeNew = true; } }
 }
 function tick(status){
   const w = curWall(), c = curCircuit(); if(!w || !c) return;
@@ -3094,6 +3099,57 @@ function mineItems(){
   ui.ticks.forEach(t => { const w = S.walls.find(x => x.id === t.wall_id), c = w && w.circuits.find(x => x.id === t.item_id); if(w && c) out.push({ t, w, c, gone: !!w.archived || (isSec(w) && isOff(c)) }); });
   return out;
 }
+/* ---------- badge: calcolati dalle salite del cliente, nessun dato in più ---------- */
+const B_FAM = { cost: ['Costanza', '#ff7a1a'], var: ['Varietà', '#22c3e6'], prog: ['Progressi', '#e5312b'], gym: ['Per la palestra', '#23b45a'], km: ['Chilometraggio', '#8a4dff'], ora: ['Orari', '#f2c200'], sed: ['Sedute', '#ff5fa2'] };
+function badgeStats(){
+  const T = ui.ticks ? [...ui.ticks.values()] : [], done = T.filter(t => t.status === 'fatto');
+  const find = t => { const w = S.walls.find(x => x.id === t.wall_id), c = w && w.circuits.find(x => x.id === t.item_id); return { w, c }; };
+  const D = done.map(t => { const { w, c } = find(t); const g = t.grade || (c ? (w && isSec(w) ? c.diff : c.grade) : null);
+    const isB = w ? isSec(w) : DIFFS.some(d => d[0] === g);
+    const mv = t.moves || (c ? (isB ? (c.holds || []).length : movesOf(c)) : 0);
+    return { t, w, c, g, isB, mv, at: t.done_at ? new Date(t.done_at) : t.updated_at ? new Date(t.updated_at) : null }; });
+  const dayKey = d => d ? d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate() : '';
+  const days = {}; D.forEach(x => { const k = dayKey(x.at); if(k) days[k] = (days[k] || 0) + 1; });
+  const weekKey = d => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return Math.round(x.getTime() / 6048e5); };
+  const weeks = [...new Set(D.filter(x => x.at).map(x => weekKey(x.at)))].sort((a, b) => a - b);
+  let run = 0, best = 0, prev = null; weeks.forEach(w => { run = prev !== null && w === prev + 1 ? run + 1 : 1; best = Math.max(best, run); prev = w; });
+  const secs = S.walls.filter(w => isSec(w) && !w.archived);
+  const secDone = new Set(D.filter(x => x.isB && x.w).map(x => x.w.id));
+  const cleanSec = secs.filter(w => { const on = w.circuits.filter(c => c.diff && !isOff(c)); return on.length >= 3 && on.every(c => { const t = ui.ticks && ui.ticks.get(c.id); return t && t.status === 'fatto'; }); }).length;
+  const bestSec = secs.reduce((m, w) => { const on = w.circuits.filter(c => c.diff && !isOff(c)); if(on.length < 3) return m; const k = on.filter(c => { const t = ui.ticks && ui.ticks.get(c.id); return t && t.status === 'fatto'; }).length; return Math.max(m, on.length - k === 0 ? 0 : -(on.length - k)) ; }, -999);
+  return { n: D.length, nB: D.filter(x => x.isB).length, nC: D.filter(x => !x.isB).length, moves: D.reduce((t, x) => t + (x.mv || 0), 0),
+    colors: new Set(D.filter(x => x.isB).map(x => x.g)), secDone: secDone.size, secTot: secs.length, cleanSec, missToClean: bestSec === -999 ? null : -bestSec,
+    weeks: best, proj: D.some(x => x.t.from_project), rated: T.filter(t => t.status === 'fatto' && t.rating && t.vote).length,
+    early: D.some(x => x.at && x.at.getHours() < 9), late: D.some(x => x.at && x.at.getHours() >= 22), bestDay: Math.max(0, ...Object.values(days)) };
+}
+const BADGES = [
+  { id: 'primo', f: 'cost', name: 'Primo passo', desc: 'Il primo percorso fatto', ok: s => s.n >= 1, left: s => 'segna il tuo primo percorso' },
+  ...[10, 50, 100, 250].map(k => ({ id: 's' + k, f: 'cost', name: k + ' salite', desc: k + ' percorsi fatti, boulder e circuiti', ok: s => s.n >= k, left: s => 'ancora ' + (k - s.n), big: String(k) })),
+  { id: 'w4', f: 'cost', name: 'Abitudine', desc: 'Salite in 4 settimane di fila', ok: s => s.weeks >= 4, left: s => s.weeks + ' di 4 settimane', big: '4' },
+  { id: 'w12', f: 'cost', name: 'Habitué', desc: 'Salite in 12 settimane di fila', ok: s => s.weeks >= 12, left: s => s.weeks + ' di 12 settimane', big: '12' },
+  { id: 'arco', f: 'var', name: 'Arcobaleno', desc: 'Almeno un boulder per colore, dal bianco al rosso', ok: s => ['bianco','blu','verde','giallo','rosso'].every(c => s.colors.has(c)), left: s => 'mancano: ' + ['bianco','blu','verde','giallo','rosso'].filter(c => !s.colors.has(c)).join(', ') },
+  { id: 'giro', f: 'var', name: 'Giramondo', desc: 'Almeno un boulder in ogni settore', ok: s => s.secTot > 0 && s.secDone >= s.secTot, left: s => s.secDone + ' di ' + s.secTot + ' settori' },
+  { id: 'pulito', f: 'var', name: 'Settore pulito', desc: 'Tutti i boulder in parete di un settore', ok: s => s.cleanSec >= 1, left: s => s.missToClean != null ? 'te ne mancano ' + s.missToClean + ' nel settore più vicino' : 'chiudi tutti i boulder di un settore' },
+  { id: 'doppia', f: 'var', name: 'Doppia anima', desc: 'Almeno 10 boulder e 10 circuiti', ok: s => s.nB >= 10 && s.nC >= 10, left: s => Math.min(s.nB, 10) + '/10 boulder · ' + Math.min(s.nC, 10) + '/10 circuiti' },
+  ...[['verde','Primo verde'],['giallo','Primo giallo'],['rosso','Primo rosso'],['nero','Primo nero']].map(([c, n]) => ({ id: 'c_' + c, f: 'prog', name: n, desc: 'Il primo boulder ' + c + ' chiuso', ok: s => s.colors.has(c), left: s => 'chiudi un boulder ' + c, dot: (DIFFS.find(d => d[0] === c) || [])[2] })),
+  { id: 'proj', f: 'prog', name: 'Progetto chiuso', desc: 'Un percorso passato da Progetto a Fatto', ok: s => s.proj, left: s => 'segna un progetto, poi chiudilo' },
+  ...[10, 50].map(k => ({ id: 'r' + k, f: 'gym', name: k === 10 ? 'Occhio critico' : 'Giudice di parete', desc: k + ' percorsi votati, con voto e parere sul grado', ok: s => s.rated >= k, left: s => s.rated + ' di ' + k, big: String(k) })),
+  ...[100, 250, 500, 1000, 2500, 5000].map(k => ({ id: 'm' + k, f: 'km', name: (k >= 1000 ? (k / 1000).toLocaleString('it-IT') + 'k' : k) + ' prese', desc: k.toLocaleString('it-IT') + ' prese e movimenti sui percorsi fatti', ok: s => s.moves >= k, left: s => s.moves.toLocaleString('it-IT') + ' di ' + k.toLocaleString('it-IT'), big: k >= 1000 ? String(k / 1000).replace('.', ',') + 'k' : String(k) })),
+  { id: 'early', f: 'ora', name: 'Mattiniero', desc: 'Un percorso fatto prima delle 9', ok: s => s.early, left: s => 'prima delle 9 del mattino' },
+  { id: 'late', f: 'ora', name: 'Nottambulo', desc: 'Un percorso fatto dopo le 22', ok: s => s.late, left: s => 'dopo le 22' },
+  ...[5, 10, 20].map(k => ({ id: 'd' + k, f: 'sed', name: k === 5 ? 'Bella sessione' : k === 10 ? 'Seduta piena' : 'Maratona', desc: k + ' percorsi fatti nello stesso giorno', ok: s => s.bestDay >= k, left: s => 'record: ' + s.bestDay + ' in un giorno', big: String(k) }))
+];
+function earnedBadges(){ const st = badgeStats(); return new Set(BADGES.filter(b => b.ok(st)).map(b => b.id)); }
+function badgesHtml(){
+  const st = badgeStats(), got = BADGES.filter(b => b.ok(st)).length;
+  const medal = (b, ok) => { const col = B_FAM[b.f][1];
+    const inner = b.dot ? `<circle cx="24" cy="24" r="9" fill="${b.dot}" stroke="#fff" stroke-opacity=".6"/>` : b.big ? `<text x="24" y="24" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed, Arial" font-weight="700" font-size="${b.big.length > 3 ? 11 : b.big.length > 2 ? 13 : 16}" fill="#111">${b.big}</text>` :
+      `<path d="M24 13l3.2 6.6 7.2 1-5.2 5 1.3 7.2L24 29.4l-6.5 3.4 1.3-7.2-5.2-5 7.2-1z" fill="#111"/>`;
+    return `<svg viewBox="0 0 48 48" width="52" height="52" aria-hidden="true"><circle cx="24" cy="24" r="21" fill="${ok ? col : '#3a3e44'}"/><circle cx="24" cy="24" r="16.5" fill="none" stroke="${ok ? '#fff' : '#555'}" stroke-opacity=".55" stroke-width="1.5"/>${ok ? inner : inner.replace(/fill="#111"/g, 'fill="#666"')}</svg>`; };
+  return `<p class="dlab" style="margin-top:4px">Badge ottenuti: ${got} di ${BADGES.length} · ${st.moves.toLocaleString('it-IT')} prese toccate</p>`+
+    Object.keys(B_FAM).map(f => `<p class="dlab">${B_FAM[f][0]}</p><div class="bgrid">${BADGES.filter(b => b.f === f).map(b => { const ok = b.ok(st);
+      return `<div class="badge ${ok ? 'ok' : ''}" title="${esc(b.desc)}">${medal(b, ok)}<b>${esc(b.name)}</b><small>${esc(ok ? b.desc : b.left(st))}</small></div>`; }).join('')}</div>`).join('');
+}
 function mineHtml(){
   const a = ACC();
   if(!a) return `<h2>Le mie salite</h2><p>Segna i boulder e i circuiti che hai fatto e quelli che vuoi provare, e tieni d'occhio i tuoi progressi.</p>`+
@@ -3103,6 +3159,8 @@ function mineHtml(){
   if(ui.ticksErr) return `<h2>Le mie salite</h2><p>Le salite non sono ancora disponibili. Riprova più tardi.</p><div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
   /* due sezioni, come nell'app: Boulder e Circuiti */
   const tab = ui.mineTab || (ui.section === 'boulder' ? 'boulder' : 'circ'), bo = tab === 'boulder';
+  const tabs = (nB0, nC0) => `<div class="seg" role="group" aria-label="Sezione" style="margin:0 0 12px"><button data-act="minetab" data-v="boulder" aria-pressed="${tab === 'boulder'}">Boulder${nB0 ? ' · ' + nB0 : ''}</button><button data-act="minetab" data-v="circ" aria-pressed="${tab === 'circ'}">Circuiti${nC0 ? ' · ' + nC0 : ''}</button><button data-act="minetab" data-v="badge" aria-pressed="${tab === 'badge'}">Badge${ui.badgeNew ? ' •' : ''}</button></div>`;
+  if(tab === 'badge'){ ui.badgeNew = false; const al = mineItems(); return `<h2>Le mie salite</h2>` + tabs(al.filter(x => isSec(x.w) && x.t.status === 'fatto').length, al.filter(x => !isSec(x.w) && x.t.status === 'fatto').length) + badgesHtml() + `<div class="row"><button class="btn" data-act="close">Chiudi</button></div>`; }
   const all = mineItems(), items = all.filter(x => isSec(x.w) === bo);
   const done = items.filter(x => x.t.status === 'fatto'), proj = items.filter(x => x.t.status === 'progetto' && !x.gone);
   const nB = all.filter(x => isSec(x.w) && x.t.status === 'fatto').length, nC = all.filter(x => !isSec(x.w) && x.t.status === 'fatto').length;
@@ -3144,7 +3202,7 @@ function mineHtml(){
       `<p class="dlab" style="margin-top:14px">Mese per mese</p><div class="mchart">${bars}</div>`;
   }
   return `<h2>Le mie salite</h2>`+
-    `<div class="seg" role="group" aria-label="Sezione" style="margin:0 0 12px"><button data-act="minetab" data-v="boulder" aria-pressed="${bo}">Boulder${nB ? ' · ' + nB : ''}</button><button data-act="minetab" data-v="circ" aria-pressed="${!bo}">Circuiti${nC ? ' · ' + nC : ''}</button></div>`+
+    tabs(nB, nC)+
     `<div class="dsum" style="grid-template-columns:repeat(2,1fr)"><div><b>${done.filter(x => !x.gone).length}</b><small>${bo ? 'fatti tra quelli in parete' : 'fatti tra quelli sui muri'}</small></div><div><b>${proj.length}</b><small>progetti</small></div></div>`+
     prog + ever+
     `<p class="dlab">Progetti</p>` + (proj.length ? `<div class="list" style="gap:0">${proj.map(row).join('')}</div>` : `<p class="hint">Apri ${what} e tocca ☆ Progetto per ritrovarlo qui.</p>`)+
@@ -4056,7 +4114,7 @@ document.addEventListener('click', e => {
     case 'vote': vote(b.dataset.v); break;
     case 'rate': rate(b.dataset.v); break;
     case 'mine': ui.confirm = null; ui.mineTab = null; openSheet('mine'); break;
-    case 'minetab': ui.mineTab = b.dataset.v === 'boulder' ? 'boulder' : 'circ'; renderSheet(); break;
+    case 'minetab': ui.mineTab = ['boulder', 'circ', 'badge'].includes(b.dataset.v) ? b.dataset.v : 'circ'; renderSheet(); break;
     case 'acct': ui.acctMode = 'in'; ui.acctWhy = false; openSheet('acct'); break;
     case 'acctmode': ui.acctMode = b.dataset.v; if(ui.sheet !== 'acct') openSheet('acct'); else renderSheet(); break;
     case 'acctgo': acctGo(); break;
