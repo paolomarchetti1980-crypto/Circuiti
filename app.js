@@ -16,7 +16,6 @@ const BODY = `
       <svg id="chev" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 5l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
     <button class="btn" id="instBtn" data-act="install" hidden>Installa app</button>
-    <button class="menubtn minebtn" id="mineBtn" data-act="mine" aria-label="Le mie salite" title="Le mie salite" hidden></button>
     <button class="menubtn" id="prevBtn" data-act="preview" hidden></button>
     <button class="menubtn" id="menuBtn" data-act="menu" aria-label="Altro: stampa, condividi, installa">&#8942;</button>
   </header>
@@ -2621,10 +2620,6 @@ function renderTop(){
   pb.title = inPrev ? 'Torna a tracciare' : 'Anteprima cliente';
   pb.classList.toggle('on', inPrev);
   $('#instBtn').hidden = REAL_EDIT || !canInstall();
-  /* Le mie salite sempre a un tocco, da ogni schermata */
-  const mb = $('#mineBtn'), mOn = acctOn() && !EDIT; mb.hidden = !mOn;
-  if(mOn){ const nd = ACC() && ui.ticks ? [...ui.ticks.values()].filter(t => t.status === 'fatto').length : 0;
-    mb.innerHTML = MINE_SVG + (nd ? `<i class="mbn">${nd > 99 ? '99+' : nd}</i>` : '') + (ui.badgeNew ? '<i class="mbd"></i>' : ''); }
 }
 const MINE_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7.5 12.3l3 3 6-6.3" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const EYE_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M1.5 12S5.5 4.5 12 4.5 22.5 12 22.5 12 18.5 19.5 12 19.5 1.5 12 1.5 12Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg>';
