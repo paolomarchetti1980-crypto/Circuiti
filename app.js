@@ -180,7 +180,9 @@ const inkOn = c => lum(c) > 0.6 ? '#111111' : '#ffffff';
 /* due sezioni: "circ" (muri con circuiti) e "boulder" (settori con linee boulder); i settori sono muri con kind:'sector' */
 const isSec = w => !!w && w.kind === 'sector';
 const secOf = w => isSec(w) ? 'boulder' : 'circ';
-const secWalls = () => S.walls.filter(w => secOf(w) === ui.section && !w.archived);
+/* un muro dei circuiti con le prese ancora da preparare lo vede solo il gestore (né tracciatori né clienti) */
+const wallShown = w => !w.archived && (secOf(w) === 'boulder' || !!w.locked || (EDIT && isMgr()));
+const secWalls = () => S.walls.filter(w => secOf(w) === ui.section && wallShown(w));
 /* muri e settori archiviati: spariti per i clienti, il gestore li ripristina o li elimina da "Archiviati" */
 const archWalls = () => S.walls.filter(w => secOf(w) === ui.section && w.archived);
 const curWall = () => { const l = secWalls(); return l.find(w => w.id === S.active) || l[0] || null; };
@@ -2500,7 +2502,7 @@ function overviewHit(w, x, y, tol){
 /* schermata iniziale: lo schermo diviso in due, Boulder sopra e Circuiti sotto */
 function homeScreen(){
   const tile = sec => {
-    const ws = S.walls.filter(w => secOf(w) === sec && !w.archived), bo = sec === 'boulder';
+    const ws = S.walls.filter(w => secOf(w) === sec && wallShown(w)), bo = sec === 'boulder';
     const n = ws.reduce((t, w) => t + (bo ? w.circuits.filter(c => !isOff(c)).length : w.circuits.length), 0);
     const img = ws[0] ? `<img src="${esc(ws[0].img)}" alt="">` : '';
     const nc = !bo ? ws.reduce((t, w) => t + w.circuits.filter(c => cLabel(c) === 'Nuovo').length, 0) : 0;
@@ -2539,7 +2541,7 @@ function sectorGrid(){
       const n = w.circuits.length;
       const cn = w.circuits.filter(c => cLabel(c) === 'Nuovo').length;
       info = `<small>${n ? n + (n === 1 ? ' circuito' : ' circuiti') : 'nessun circuito'}${gs.length ? ' · ' + esc(gs[0]) + (gs.length > 1 && gs[gs.length-1] !== gs[0] ? '–' + esc(gs[gs.length-1]) : '') : ''}</small>${cn ? `<span class="snew">${cn} ${cn === 1 ? 'nuovo' : 'nuovi'}</span>` : ''}`;
-      if(EDIT && !w.locked) staff = `<span class="sinfo"><b>prese da preparare</b></span>`;
+      if(EDIT && !w.locked) staff = `<span class="sinfo"><b>prese da preparare</b> · lo vedi solo tu</span>`;
     }
     return `<button class="scard" data-act="opensec" data-id="${w.id}"><span class="sph"><img src="${esc(w.img)}" alt="" loading="lazy">${mgr ? `<span class="sedit" role="button" data-act="wman" data-id="${w.id}" aria-label="Gestisci ${bo ? 'il settore' : 'il muro'}">Modifica</span>` : ''}</span>`+
       `<span class="sname">${esc(w.name)}</span><span class="sdots">${info}</span>${myOn() ? (() => { const p = myProg([w]); return progLine(p) + progBar(p); })() : ''}${staff}</button>`;
@@ -2697,7 +2699,7 @@ function renderStage(){
   const sv = $('#ov');
   sv.setAttribute('viewBox', `0 0 ${w.w} ${w.h}`);
   const editing = EDIT && S.mode === 'edit';
-  sv.innerHTML = overlay(w, { over: bOver(), numbers: editing || S.prefs.numbers || newC(), lines: S.prefs.lines, others: EDIT && S.prefs.others, edit: editing, dim: dimOn(editing), wall: EDIT && S.mode === 'wall' });
+  sv.innerHTML = overlay(w, { over: bOver(), numbers: editing || S.prefs.numbers || newC(), lines: S.prefs.lines, others: EDIT, edit: editing, dim: dimOn(editing), wall: EDIT && S.mode === 'wall' });
   fit();
 }
 /* il cliente vede solo i boulder in parete: gli smontati servono allo staff */
@@ -2862,14 +2864,9 @@ function renderTools(){
   if(EDIT && S.mode !== 'view' && bOver()){ el.innerHTML = ''; return; }   /* foto d'insieme dello staff: si sceglie il boulder dall'elenco */
   if(!EDIT || S.mode === 'view'){
     const p = S.prefs;
-    /* per i clienti un solo interruttore, le linee dei circuiti (spente di base): numeri e oscuramento sempre attivi */
-    if(newC()){ el.innerHTML = c && !isSec(w) ? `<div class="mini"><button class="btn ${p.lines ? 'on' : ''}" data-act="pref" data-k="lines">Linee</button></div>` : ''; return; }
-    el.innerHTML = c ? `<div class="mini">`+
-      (isSec(w) ? '' : `<button class="btn ${p.numbers ? 'on' : ''}" data-act="pref" data-k="numbers">Numeri</button>`+
-      `<button class="btn ${p.lines ? 'on' : ''}" data-act="pref" data-k="lines">Linee</button>`)+
-      (EDIT ? `<button class="btn ${p.others ? 'on' : ''}" data-act="pref" data-k="others">${isSec(w) ? 'Altri boulder' : 'Altri circuiti'}</button>` : '')+
-      `<button class="btn ${p.dim ? 'on' : ''}" data-act="pref" data-k="dim">${isSec(w) ? 'Oscura settore' : 'Oscura muro'}</button>`+
-      `</div>` : '';
+    /* un solo interruttore, le linee dei circuiti (spente di base): numeri e oscuramento sono sempre attivi.
+       I vecchi tasti Numeri / Altri circuiti / Oscura muro non servono più: questa vista ormai è solo dei clienti */
+    el.innerHTML = c && !isSec(w) ? `<div class="mini"><button class="btn ${p.lines ? 'on' : ''}" data-act="pref" data-k="lines">Linee</button></div>` : '';
     return;
   }
   const h = c && ui.sel != null ? c.holds[ui.sel] : null;
@@ -3683,7 +3680,7 @@ async function composeBlock(w, c, o){
   const keep = w.activeCircuit; w.activeCircuit = c.id;
   try{
     const photo = await loadImg(w.img);
-    const inner = overlay(w, Object.assign({ numbers: S.prefs.numbers, lines: S.prefs.lines, others: EDIT && S.prefs.others, edit: false, dim: S.prefs.dim }, o || {}));
+    const inner = overlay(w, Object.assign({ numbers: S.prefs.numbers, lines: S.prefs.lines, others: EDIT, edit: false, dim: S.prefs.dim }, o || {}));
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w.w}" height="${w.h}" viewBox="0 0 ${w.w} ${w.h}">${inner}</svg>`;
     const ov = await loadImg('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg));
     const cv = document.createElement('canvas'); cv.width = w.w; cv.height = w.h;
