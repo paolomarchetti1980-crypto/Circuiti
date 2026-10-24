@@ -334,8 +334,11 @@ function busy(label){
 /* lascia al telefono il tempo di disegnare il segnale prima di un calcolo pesante */
 const nextPaint = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 30)));
 let toastTimer;
-function toast(msg, ms){
+function toast(msg, ms, undo){
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
+  /* avviso con Annulla: per rimediare a un tocco sbagliato senza chiedere conferme */
+  if(undo){ const b = document.createElement('button'); b.className = 'undo'; b.textContent = 'Annulla';
+    b.addEventListener('click', e => { e.stopPropagation(); t.hidden = true; clearTimeout(toastTimer); undo(); }); t.append(' ', b); }
   /* a schermo intero la scheda in basso è piena di tasti: l'avviso va in alto */
   t.classList.toggle('top', !!ui.full);
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, ms || 4500);
@@ -3085,24 +3088,28 @@ async function loadTickSum(){
   try{ let { data, error } = await SB.rpc('tick_stats'); if(error) ({ data, error } = await SB.rpc('tick_summary')); if(!error && Array.isArray(data)){ ui.tsum = new Map(data.map(r => [r.item_id, r])); render(); } }catch(e){}
 }
 const tickOf = c => (c && ui.ticks && ui.ticks.get(c.id)) || null;
-async function saveTick(w, c, next){
+async function saveTick(w, c, next, restore){
   const prev = tickOf(c), before = acctOn() ? earnedBadges() : null;
   if(next) ui.ticks.set(c.id, next); else ui.ticks.delete(c.id);
   render();
-  if(next){ next.grade = isSec(w) ? (c.diff || null) : (c.grade || null); next.done_at = next.status === 'fatto' ? ((prev && prev.status === 'fatto' && prev.done_at) || new Date().toISOString()) : null;
+  if(next && !restore){ next.grade = isSec(w) ? (c.diff || null) : (c.grade || null); next.done_at = next.status === 'fatto' ? ((prev && prev.status === 'fatto' && prev.done_at) || new Date().toISOString()) : null;
     /* per i badge: movimenti del circuito (Chilometraggio) e se era un progetto */
     next.moves = next.status === 'fatto' ? (isSec(w) ? (c.holds || []).length : movesOf(c)) || null : null;
     next.from_project = next.status === 'fatto' && !!prev && (prev.status === 'progetto' || !!prev.from_project); }
   const r = next ? await SB.from('ticks').upsert({ item_id: c.id, wall_id: w.id, status: next.status, vote: next.vote || null, rating: next.rating || null, grade: next.grade, done_at: next.done_at, moves: next.moves, from_project: next.from_project, high: next.high || null, high_ups: next.high_ups || 0, high_at: next.high_at || null, updated_at: new Date().toISOString() })
                  : await SB.from('ticks').delete().eq('item_id', c.id);
   if(r && r.error){ if(prev) ui.ticks.set(c.id, prev); else ui.ticks.delete(c.id); render(); toast('Non riesco a salvare: ' + (r.error.message || 'riprova tra poco.')); return; }
-  if(before){ const now = earnedBadges(), got = [...now].filter(id => !before.has(id)); if(got.length){ const b = BADGES.find(x => x.id === got[got.length - 1]); toast('Nuovo badge: ' + b.name + '!', 4000); ui.badgeNew = true; } }
+  if(before && !restore){ const now = earnedBadges(), got = [...now].filter(id => !before.has(id)); if(got.length){ const b = BADGES.find(x => x.id === got[got.length - 1]); toast('Nuovo badge: ' + b.name + '!', 4000); ui.badgeNew = true; } }
 }
 function tick(status){
   const w = curWall(), c = curCircuit(); if(!w || !c) return;
   if(!ACC()){ ui.acctMode = 'new'; ui.acctWhy = true; openSheet('acct'); return; }
   if(!ui.ticks) ui.ticks = new Map();
   const t = tickOf(c);
+  /* togliere un Fatto (o un Progetto con il record) fa perdere data, voto e gradimento: si può annullare */
+  const loses = t && (t.status === 'fatto' ? (t.status === status || status === 'progetto') : t.status === status && !!t.high);
+  if(loses){ const old = Object.assign({}, t), nm = blockTitle(w, c);
+    setTimeout(() => toast((old.status === 'fatto' ? 'Tolto il Fatto da ' : 'Tolto il Progetto da ') + nm, 6000, () => saveTick(w, c, old, true)), 50); }
   if(t && t.status === status) saveTick(w, c, null);
   else saveTick(w, c, { item_id: c.id, wall_id: w.id, status, vote: status === 'fatto' && t ? t.vote : null, rating: status === 'fatto' && t ? t.rating || null : null, high: t ? t.high || null : null, high_ups: t ? t.high_ups || 0 : 0, high_at: t ? t.high_at || null : null, updated_at: new Date().toISOString() });
 }
