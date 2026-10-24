@@ -111,11 +111,11 @@ let PUBREV = S.rev;
 let PUBWALLS = [];
 /* preferenze di visualizzazione (numeri, linee, altri blocchi, oscura): sono di chi guarda, restano sul suo telefono
    e non vengono pubblicate. I numeri partono accesi. */
-const VIEW_KEYS = ['numbers', 'lines', 'others', 'dim'];
+const VIEW_KEYS = ['numbers', 'lines', 'others', 'othersV', 'dim'];   /* others = staff mentre traccia, othersV = chi guarda */
 function applyViewPrefs(){
   let v = {};
   try{ v = JSON.parse(localStorage.getItem('view-prefs') || '{}') || {}; }catch(e){}
-  Object.assign(S.prefs, { numbers: true, lines: false, others: true, dim: true }, v);
+  Object.assign(S.prefs, { numbers: true, lines: false, others: true, othersV: false, dim: true }, v);
 }
 function saveViewPrefs(){ const v = {}; VIEW_KEYS.forEach(k => v[k] = !!S.prefs[k]); try{ localStorage.setItem('view-prefs', JSON.stringify(v)); }catch(e){} }   /* muri come sono pubblicati adesso */
 let EDIT = false, SB = null, BASE = null, ME = null;
@@ -2567,7 +2567,6 @@ function overlay(w, o){
   if(bo) o = Object.assign({}, o, { numbers: false, lines: false, boulder: true });
   let s = '';
   const mk = bo ? wallMarks(w) : null;
-  if(o.others) visibleCircuits(w).forEach(c => { if(c !== act) s += circuitSVG(c, w.w, 0.28, {numbers:false, lines:false, boulder:bo, H: w.h, mk}); });
   if(o.dim && act && act.holds.length){
     /* foto oscurata tranne le prese del blocco: una maschera (e non un tracciato pari/dispari),
        così una presa montata su un volume del blocco resta chiara anche lei */
@@ -2584,6 +2583,8 @@ function overlay(w, o){
     /* boulder: sui volumi e sulle prese grandi del blocco si oscurano anche le prese d'altro colore montate sopra */
     if(bo) act.holds.forEach(h => { const fm = foreignMask(w, act, h); if(fm) s += `<image href="${fm.url}" xlink:href="${fm.url}" x="${fm.x}" y="${fm.y}" width="${fm.w}" height="${fm.h}" preserveAspectRatio="none" opacity="${(op/0.62).toFixed(2)}"/>`; });
   }
+  /* gli altri circuiti sopra all'oscuramento, in trasparenza: se no sparirebbero nel buio */
+  if(o.others) visibleCircuits(w).forEach(c => { if(c !== act) s += circuitSVG(c, w.w, o.dim ? 0.45 : 0.28, {numbers:false, lines:false, boulder:bo, H: w.h, mk}); });
   if(act && bo) s += lineSVG(act.line || autoLine(act, w), w.w, colOf(act), act);
   if(bo && ui.bline && ui.lineDraft.length > 1) s += lineSVG(ui.lineDraft.flat(), w.w, '#ff3b7a');   /* la bozza è fatta di coppie [x, y]: lineSVG vuole i numeri in fila */
   if(act && !bo && !o.edit) s += highSVG(act, w.w);   /* sotto ai numeri, che restano leggibili */
@@ -2699,7 +2700,7 @@ function renderStage(){
   const sv = $('#ov');
   sv.setAttribute('viewBox', `0 0 ${w.w} ${w.h}`);
   const editing = EDIT && S.mode === 'edit';
-  sv.innerHTML = overlay(w, { over: bOver(), numbers: editing || S.prefs.numbers || newC(), lines: S.prefs.lines, others: EDIT, edit: editing, dim: dimOn(editing), wall: EDIT && S.mode === 'wall' });
+  sv.innerHTML = overlay(w, { over: bOver(), numbers: editing || S.prefs.numbers, lines: S.prefs.lines, others: EDIT ? S.prefs.others : S.prefs.othersV, edit: editing, dim: dimOn(editing), wall: EDIT && S.mode === 'wall' });
   fit();
 }
 /* il cliente vede solo i boulder in parete: gli smontati servono allo staff */
@@ -2864,9 +2865,9 @@ function renderTools(){
   if(EDIT && S.mode !== 'view' && bOver()){ el.innerHTML = ''; return; }   /* foto d'insieme dello staff: si sceglie il boulder dall'elenco */
   if(!EDIT || S.mode === 'view'){
     const p = S.prefs;
-    /* un solo interruttore, le linee dei circuiti (spente di base): numeri e oscuramento sono sempre attivi.
-       I vecchi tasti Numeri / Altri circuiti / Oscura muro non servono più: questa vista ormai è solo dei clienti */
-    el.innerHTML = c && !isSec(w) ? `<div class="mini"><button class="btn ${p.lines ? 'on' : ''}" data-act="pref" data-k="lines">Linee</button></div>` : '';
+    /* circuiti: numeri (accesi di base), linee (spente) e altri circuiti del muro in trasparenza (spenti). Si ricordano su questo telefono */
+    const tg = (k, l) => `<button class="btn ${p[k] ? 'on' : ''}" data-act="pref" data-k="${k}" aria-pressed="${!!p[k]}">${l}</button>`;
+    el.innerHTML = c && !isSec(w) ? `<div class="mini">${tg('numbers', 'Numeri')}${tg('lines', 'Linee')}${w.circuits.length > 1 ? tg('othersV', 'Altri circuiti') : ''}</div>` : '';
     return;
   }
   const h = c && ui.sel != null ? c.holds[ui.sel] : null;
@@ -2923,7 +2924,7 @@ function renderTools(){
     (sec ? `<button class="btn" data-act="bdraw" ${c ? '' : 'disabled'}>Disegna a mano</button>` : '')+
     (sec ? `<button class="btn" data-act="bline" ${c ? '' : 'disabled'}>${c && c.line ? 'Rifai linea' : 'Linea'}</button>` : '')+
     (first ? '' : `<button class="btn" data-act="undo">Annulla ultima</button>`)+
-    dimBtn+`</div>`;
+    dimBtn+(sec ? '' : `<button class="btn ${S.prefs.others ? 'on' : ''}" data-act="pref" data-k="others" aria-pressed="${!!S.prefs.others}">Altri circuiti</button>`)+`</div>`;
 }
 /* regole delle modalità (Muro = preparazione delle prese, Traccia, Guarda):
    - i settori boulder non hanno la fase Muro;
