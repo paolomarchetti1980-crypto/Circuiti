@@ -2634,7 +2634,7 @@ function renderTop(){
   if(mOn){ const nd = ACC() && ui.ticks ? [...ui.ticks.values()].filter(t => t.status === 'fatto').length : 0;
     mb.innerHTML = CUP_SVG + (ui.badgeNew ? '<i class="mbd"></i>' : ''); }
 }
-const CUP_SVG = '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v5a5 5 0 0 1-10 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M7 5H4v1.5A3.5 3.5 0 0 0 7.5 10M17 5h3v1.5A3.5 3.5 0 0 1 16.5 10M12 13v4M8 21h8M9.5 17h5v4h-5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
+const CUP_SVG = '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 20L9 8.5l3.5 6 2.5-3.5L21.5 20z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 8.5V3.5l4 1.6-4 1.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';   /* montagna con bandierina in vetta */
 /* le salite del cliente sui percorsi in parete adesso: per tenerle sempre sotto gli occhi mentre si naviga */
 const myOn = () => acctOn() && !EDIT && !!ACC() && !!ui.ticks;
 function myProg(ws){ let tot = 0, done = 0, proj = 0;
