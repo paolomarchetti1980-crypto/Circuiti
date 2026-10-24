@@ -13,3 +13,5 @@ oppure chi apre il link segreto di prova. Prima di accenderli per tutti:
 - [ ] Prova completa da cliente: registrazione, conferma, entra, Fatto/Progetto/voto, esci, cancella account
 - [ ] Pulizia: cancellare gli **account e le salite di prova** (compresi quelli fatti in anteprima con gli account dello staff)
 - [ ] App: `ACCT_LIVE = true` in app.js, pubblicare, provare da un telefono non dello staff
+
+- [ ] Badge: rivedere soglie e nomi dopo le prime settimane di uso (oggi nomi descrittivi, soglie provvisorie).
