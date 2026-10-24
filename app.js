@@ -3543,8 +3543,17 @@ function renderSheet(){
     /* stampa solo dentro un settore o un muro: dalla schermata iniziale non si stampa un percorso che non si vede */
     const inside = !ui.home && !bGrid() && !!w, bo = w ? isSec(w) : BO(), n = inside ? sortedVisible(w).length : 0, cc = inside ? c : null, one = bo ? 'questo boulder' : 'questo circuito';
     const row = (act, label, sub, dis) => `<button class="wrow" data-act="${act}" ${dis ? 'disabled' : ''}><span>${label}</span><small>${sub || ''}</small></button>`;
+    const gest = REAL_EDIT && ME.role === 'gestore' && ui.viewAs !== 'tracciatore', mgr = EDIT && isMgr();
+    /* in alto quello che serve al gestore, raccolto sotto "Gestione"; poi stampa, app e account */
+    const G = (mgr && S.walls.some(isSec) ? row('dash', 'Pannello settori', 'età dei boulder, gradi presenti e mancanti, chi traccia') : '')+
+      (SB && gest ? row('fblist', 'Segnalazioni ricevute', 'problemi segnalati ed errori dell\'app') : '')+
+      (mgr && S.walls.some(w => !w.archived) ? row('qr', 'QR code', 'da attaccare ai muri: chi li inquadra apre quel settore') : '')+
+      (SB && gest ? row('staff', 'Staff', 'chi può tracciare e pubblicare') : '')+
+      (SB && gest ? row('hist', 'Versioni precedenti', 'le ultime pubblicazioni, da ripristinare') : '')+
+      (REAL_EDIT && ME.role === 'gestore' ? (ui.viewAs === 'tracciatore' ? row('viewas" data-v="gestore', 'Torna gestore', 'stai vedendo l\'app come un tracciatore') : row('viewas" data-v="tracciatore', 'Vedi come tracciatore', 'per controllare cosa può fare lo staff')) : '');
     h = `<h2>Altro</h2>`+
-      (n ? `<div class="list">`+
+      (G ? `<h3 class="mhead">Gestione</h3><div class="list">${G}</div>` : '')+
+      (n ? `<h3 class="mhead">Stampa e condividi</h3><div class="list">`+
       (cc ? row('printone', 'Stampa ' + one, esc(blockTitle(w, cc))) : '')+
       row('printall', bo ? 'Stampa i boulder del settore' : 'Stampa i circuiti del muro', n + (n === 1 ? ' pagina' : ' pagine') + ' · filtri compresi')+
       (cc ? row('img', 'Condividi immagine', 'da salvare o mandare') : '')+
@@ -3552,15 +3561,9 @@ function renderSheet(){
       `<h3 class="mhead">App</h3><div class="list">`+
       (canInstall() ? row('install', "Installa l'app", 'sulla schermata Home') : '')+
       (SB ? row('fbnew', 'Segnala un problema', 'o un suggerimento: arriva al gestore') : '')+
-      (SB && REAL_EDIT && ME.role === 'gestore' ? row('fblist', 'Segnalazioni ricevute', 'problemi segnalati ed errori dell\'app') : '')+
-      (REAL_EDIT && ME.role === 'gestore' ? (ui.viewAs === 'tracciatore' ? row('viewas" data-v="gestore', 'Torna gestore', 'stai vedendo l\'app come un tracciatore') : row('viewas" data-v="tracciatore', 'Vedi come tracciatore', 'per controllare cosa può fare lo staff')) : '')+
       `</div><h3 class="mhead">Account</h3><div class="list">`+
       (SB && !REAL_EDIT ? row('login', 'Accesso staff', ui.authEmail ? 'sei entrato come ' + esc(ui.authEmail) + ', che non è nello staff' : 'per gestore e tracciatori') : '')+
       (SB && !REAL_EDIT && ui.authEmail ? row('logout', 'Esci', esc(ui.authEmail)) : '')+
-      (SB && REAL_EDIT && ME.role === 'gestore' ? row('staff', 'Staff', 'chi può tracciare e pubblicare') : '')+
-      (EDIT && isMgr() && S.walls.some(w => !w.archived) ? row('qr', 'QR code', 'da attaccare ai muri: chi li inquadra apre quel settore') : '')+
-      (EDIT && isMgr() && S.walls.some(isSec) ? row('dash', 'Pannello settori', 'età dei boulder, gradi presenti e mancanti, chi traccia') : '')+
-      (SB && REAL_EDIT && ME.role === 'gestore' ? row('hist', 'Versioni precedenti', 'le ultime pubblicazioni, da ripristinare') : '')+
       (SB && (REAL_EDIT || ui.authEmail) ? row('setpass', 'Imposta password', 'per entrare senza aspettare l\'email') : '')+
       (SB && REAL_EDIT ? row('logout', 'Esci', ME ? esc(ME.email) + ' · ' + (ME.role === 'gestore' ? 'gestore' : 'tracciatore') : '') : '')+
       `</div>`+
