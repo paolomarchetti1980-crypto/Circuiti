@@ -268,6 +268,15 @@ button,label.btn{cursor:pointer}
   #app.side .dock::before{display:none}
 }
 .toast.top{bottom:auto;top:calc(70px + env(safe-area-inset-top,0px))}
+.minebtn{position:relative;color:var(--accent,#ff7a1a)}
+.minebtn .mbn{position:absolute;right:-5px;top:-5px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--accent,#ff7a1a);color:#111;font:700 11px/18px Barlow,sans-serif;font-style:normal}
+.mbd{position:absolute;left:-3px;top:-3px;width:10px;height:10px;border-radius:50%;background:#e5312b;box-shadow:0 0 0 2px var(--bg,#111)}
+.hmine{position:relative;flex:none;display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:18px;background:var(--panel);color:var(--ink);padding:14px 16px;text-align:left}
+.hmine>svg:first-child{color:var(--accent,#ff7a1a);width:30px;height:30px;flex:none}
+.hmine span{flex:1;display:flex;flex-direction:column;gap:2px}
+.hmine b{font:700 24px/1 "Barlow Semi Condensed",Barlow,sans-serif}
+.hmine small{font:600 14px Barlow,sans-serif;color:var(--muted)}
+.hmine .mbd{left:10px;top:10px}
 .bgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .badge{display:flex;flex-direction:column;align-items:center;text-align:center;gap:3px;padding:10px 6px;border-radius:12px;background:rgba(255,255,255,.04)}
 .badge b{font:700 14px/1.1 "Barlow Semi Condensed",Barlow,sans-serif}
@@ -280,5 +289,5 @@ button,label.btn{cursor:pointer}
 </style></head><body><div id="root"></div>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="namegen.js"></script><script id="app-js" src="app.js?v=143"></script>
+<script src="namegen.js"></script><script id="app-js" src="app.js?v=144"></script>
 </body></html>

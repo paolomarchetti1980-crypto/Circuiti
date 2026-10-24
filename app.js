@@ -16,6 +16,7 @@ const BODY = `
       <svg id="chev" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 5l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
     <button class="btn" id="instBtn" data-act="install" hidden>Installa app</button>
+    <button class="menubtn minebtn" id="mineBtn" data-act="mine" aria-label="Le mie salite" title="Le mie salite" hidden></button>
     <button class="menubtn" id="prevBtn" data-act="preview" hidden></button>
     <button class="menubtn" id="menuBtn" data-act="menu" aria-label="Altro: stampa, condividi, installa">&#8942;</button>
   </header>
@@ -2487,7 +2488,12 @@ function homeScreen(){
     const sub = ws.length ? `${ws.length} ${bo ? (ws.length === 1 ? 'settore' : 'settori') : (ws.length === 1 ? 'muro' : 'muri')} · ${n} ${bo ? 'boulder' : (n === 1 ? 'circuito' : 'circuiti')}${nn ? ` · <span class="hnew">${nn === 1 ? '1 settore nuovo' : nn + ' settori nuovi'}</span>` : ''}${ns ? ` · <span class="hnew">${ns === 1 ? '1 scaduto' : ns + ' scaduti'}</span>` : ''}${nc ? ` · <span class="hnew">${nc} ${nc === 1 ? 'nuovo' : 'nuovi'}</span>` : ''}` : (bo ? 'nessun settore ancora' : 'nessun muro ancora');
     return `<button class="htile" data-act="pickhome" data-v="${sec}">${img}<span class="hlab"><b>${bo ? 'Boulder' : 'Circuiti'}</b><small>${sub}</small></span></button>`;
   };
-  return `<div class="home">${tile('boulder')}${tile('circ')}</div>`;
+  let mine = '';
+  if(acctOn() && !EDIT){ const T = ACC() && ui.ticks ? [...ui.ticks.values()] : [], nd = T.filter(t => t.status === 'fatto').length, np = T.filter(t => t.status === 'progetto').length;
+    const nb = ACC() ? earnedBadges().size : 0;
+    const sub = !ACC() ? 'segna i percorsi fatti e i progetti, guadagna i badge' : nd || np ? [nd ? nd + (nd === 1 ? ' fatto' : ' fatti') : '', np ? np + (np === 1 ? ' progetto' : ' progetti') : '', nb + ' badge di ' + BADGES.length].filter(Boolean).join(' · ') : 'apri un percorso e tocca ✓ Fatto';
+    mine = `<button class="hmine" data-act="mine">${MINE_SVG}<span><b>Le mie salite</b><small>${sub}</small></span>${ui.badgeNew ? '<i class="mbd"></i>' : ''}<svg width="16" height="16" viewBox="0 0 14 14" aria-hidden="true"><path d="M5 3l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`; }
+  return `<div class="home">${tile('boulder')}${tile('circ')}${mine}</div>`;
 }
 function sectorGrid(){
   const bo = BO(), mgr = EDIT && isMgr(), arch = archWalls();
@@ -2615,7 +2621,12 @@ function renderTop(){
   pb.title = inPrev ? 'Torna a tracciare' : 'Anteprima cliente';
   pb.classList.toggle('on', inPrev);
   $('#instBtn').hidden = REAL_EDIT || !canInstall();
+  /* Le mie salite sempre a un tocco, da ogni schermata */
+  const mb = $('#mineBtn'), mOn = acctOn() && !EDIT; mb.hidden = !mOn;
+  if(mOn){ const nd = ACC() && ui.ticks ? [...ui.ticks.values()].filter(t => t.status === 'fatto').length : 0;
+    mb.innerHTML = MINE_SVG + (nd ? `<i class="mbn">${nd > 99 ? '99+' : nd}</i>` : '') + (ui.badgeNew ? '<i class="mbd"></i>' : ''); }
 }
+const MINE_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7.5 12.3l3 3 6-6.3" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const EYE_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M1.5 12S5.5 4.5 12 4.5 22.5 12 22.5 12 18.5 19.5 12 19.5 1.5 12 1.5 12Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg>';
 const WRENCH_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4.5 4.5 0 0 1 5.9-1.1l-3 3 .3 2.2 2.2.3 3-3a4.5 4.5 0 0 1-6 5.9L8.5 22.2a2.1 2.1 0 0 1-3-3l8.6-8.6a4.5 4.5 0 0 1 .6-4.3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
 function renderViewbar(){
@@ -3467,6 +3478,7 @@ function renderSheet(){
       (SB ? row('fbnew', 'Segnala un problema', 'o un suggerimento: arriva alla palestra') : '')+
       (canInstall() ? row('install', "Installa l'app", 'sulla schermata Home') : '')+
       row('welcome', 'Come funziona', 'rivedi la presentazione')+
+      (REAL_EDIT && ui.viewAs === 'cliente' && ui.prevNew ? row('prevtoday', 'Anteprima senza account', 'l\'app come la vede oggi un cliente') : '')+
       `</div><h3 class="mhead">Stampa e condividi</h3><div class="list">`+
       row('printone', 'Stampa ' + (cw && isSec(cw) ? 'questo boulder' : 'questo circuito'), cc ? esc(blockTitle(cw, cc)) : 'apri prima un percorso', !cc)+
       row('printall', cw && isSec(cw) ? 'Stampa i boulder del settore' : 'Stampa i circuiti del muro', cn ? cn + (cn === 1 ? ' pagina' : ' pagine') : 'apri prima un settore o un muro', !cn)+
@@ -3490,7 +3502,6 @@ function renderSheet(){
       (canInstall() ? row('install', "Installa l'app", 'sulla schermata Home') : '')+
       (SB ? row('fbnew', 'Segnala un problema', 'o un suggerimento: arriva al gestore') : '')+
       (SB && REAL_EDIT && ME.role === 'gestore' ? row('fblist', 'Segnalazioni ricevute', 'problemi segnalati ed errori dell\'app') : '')+
-      (REAL_EDIT && !ui.viewAs ? row('prevnew', 'Anteprima con Le mie salite', 'la parte clienti con gli account: la vedete solo voi dello staff') : '')+
       (REAL_EDIT && ME.role === 'gestore' ? (ui.viewAs === 'tracciatore' ? row('viewas" data-v="gestore', 'Torna gestore', 'stai vedendo l\'app come un tracciatore') : row('viewas" data-v="tracciatore', 'Vedi come tracciatore', 'per controllare cosa può fare lo staff')) : '')+
       `</div><h3 class="mhead">Account</h3><div class="list">`+
       (SB && !REAL_EDIT ? row('login', 'Accesso staff', ui.authEmail ? 'sei entrato come ' + esc(ui.authEmail) + ', che non è nello staff' : 'per gestore e tracciatori') : '')+
@@ -4016,7 +4027,7 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['fgo','bcolorall','rate','minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
+const PUBLIC_ACTS = ['prevtoday','fgo','bcolorall','rate','minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
 const MGR_ACTS = ['qr','qrprint','qrcopy','dash','dashsec','fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
@@ -4252,7 +4263,8 @@ document.addEventListener('click', e => {
     case 'img': makeImage(); break;
     case 'menu': openSheet('menu'); break;
     case 'viewas': setViewAs(b.dataset.v); break;
-    case 'preview': setViewAs(ui.viewAs === 'cliente' ? ME.role : 'cliente'); break;
+    case 'preview': if(ui.viewAs === 'cliente') setViewAs(ME.role); else { ui.prevNew = true; setViewAs('cliente'); } break;
+    case 'prevtoday': ui.prevNew = false; setViewAs('cliente'); break;
     case 'wallmode': if(EDIT && isMgr() && w && !isSec(w)){ S.mode = 'wall'; ui.bLevel = 'sector'; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.redraw = null; ui.tool = 'detect'; ui.sheet = null; renderSheet(); render(); } break;
     case 'printone': printBlocks(false); break;
     case 'printall': printBlocks(true); break;
