@@ -2656,7 +2656,6 @@ function myProg(ws){ let tot = 0, done = 0, proj = 0;
   return { tot, done, proj }; }
 const progLine = (p, cls) => p.done || p.proj ? `<span class="myp ${cls || ''}"><b>✓ ${p.done}/${p.tot}</b>${p.proj ? `<i>☆ ${p.proj}</i>` : ''}</span>` : '';
 const progBar = p => p.done ? `<span class="mybar"><i style="width:${Math.round(100 * p.done / Math.max(1, p.tot))}%"></i></span>` : '';
-const MINE_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7.5 12.3l3 3 6-6.3" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const EYE_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M1.5 12S5.5 4.5 12 4.5 22.5 12 22.5 12 18.5 19.5 12 19.5 1.5 12 1.5 12Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg>';
 const WRENCH_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4.5 4.5 0 0 1 5.9-1.1l-3 3 .3 2.2 2.2.3 3-3a4.5 4.5 0 0 1-6 5.9L8.5 22.2a2.1 2.1 0 0 1-3-3l8.6-8.6a4.5 4.5 0 0 1 .6-4.3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
 function renderViewbar(){
@@ -2774,8 +2773,7 @@ function renderChips(){
     return;
   }
   if(!EDIT || S.mode === 'view'){
-    el.innerHTML = circFilters(w) + circRows(w, 'lrow') +
-      (n ? `<p class="hint" style="text-align:center;margin:8px 0 0;font-size:13px">Tocca un circuito per vederlo sulla foto, tocca la foto per aprirlo a schermo intero.</p>` : '');
+    el.innerHTML = circFilters(w) + circRows(w, 'lrow');   /* sulla foto c'è già "Tocca per schermo intero" */
     return;
   }
   const filtered = !isSec(w) && sqCount() ? ` · filtrati ${n}/${tot}` : '';
@@ -3071,15 +3069,13 @@ function swipeGo(d){
   bind(document.getElementById('box'), false); bind(document.getElementById('fcard'), true);
 })();
 /* ---------- account cliente e "Le mie salite" ---------- */
-const loginIntent = () => { try{ return localStorage.getItem('login-intent') || 'staff'; }catch(e){ return 'staff'; } };
+/* chi entra senza essere nello staff è un cliente, a meno che non abbia usato l'accesso staff su questo telefono:
+   così il link di conferma aperto in un altro browser (succede spesso dall'app della posta) non dà l'avviso dello staff */
+const loginIntent = () => { try{ return localStorage.getItem('login-intent') || 'cliente'; }catch(e){ return 'cliente'; } };
 const setIntent = v => { try{ localStorage.setItem('login-intent', v); }catch(e){} };
 const welcomeSeen = () => { try{ return localStorage.getItem('mr-welcome') === '1'; }catch(e){ return false; } };
 async function loadTicks(){
-  let { data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,grade,done_at,moves,from_project,high,high_ups,high_at,updated_at');
-  if(error) ({ data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,grade,done_at,moves,from_project,updated_at'));
-  if(error) ({ data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,grade,done_at,updated_at'));
-  if(error) ({ data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,updated_at'));
-  if(error) ({ data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,updated_at'));
+  const { data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,grade,done_at,moves,from_project,high,high_ups,high_at,updated_at');
   ui.ticks = new Map(); ui.ticksErr = !!error;
   (data || []).forEach(t => ui.ticks.set(t.item_id, t));
   render(); if(ui.sheet) renderSheet();
@@ -3386,7 +3382,6 @@ function openFromLink(){
 window.addEventListener('hashchange', () => { if(ui.ready && /[#&]m=/.test(location.hash)) openFromLink(); });
 /* ---------- pannello settori (gestore): età, gradi, chi traccia ---------- */
 
-function ageDays(d){ if(!d) return null; const t = Date.parse(d + 'T12:00:00'); return isNaN(t) ? null : Math.max(0, Math.round((Date.now() - t) / 864e5)); }
 function dashHtml(){
   const secs = S.walls.filter(w => isSec(w) && !w.archived);
   const t = todayISO(), lim = new Date(Date.now() + 7*864e5).toISOString().slice(0,10);
@@ -3532,10 +3527,11 @@ function renderSheet(){
       (canInstall() ? row('install', "Installa l'app", 'sulla schermata Home') : '')+
       row('welcome', 'Come funziona', 'rivedi la presentazione')+
       (REAL_EDIT && ui.viewAs === 'cliente' && ui.prevNew ? row('prevtoday', 'Anteprima senza account', 'l\'app come la vede oggi un cliente') : '')+
-      `</div><h3 class="mhead">Stampa e condividi</h3><div class="list">`+
-      row('printone', 'Stampa ' + (cw && isSec(cw) ? 'questo boulder' : 'questo circuito'), cc ? esc(blockTitle(cw, cc)) : 'apri prima un percorso', !cc)+
-      row('printall', cw && isSec(cw) ? 'Stampa i boulder del settore' : 'Stampa i circuiti del muro', cn ? cn + (cn === 1 ? ' pagina' : ' pagine') : 'apri prima un settore o un muro', !cn)+
-      row('img', 'Condividi immagine', cc ? 'da salvare o mandare' : 'apri prima un percorso', !cc)+
+      /* stampa e condividi solo quando c'è qualcosa da stampare: niente voci spente */
+      (cn ? `</div><h3 class="mhead">Stampa e condividi</h3><div class="list">`+
+        (cc ? row('printone', 'Stampa ' + (isSec(cw) ? 'questo boulder' : 'questo circuito'), esc(blockTitle(cw, cc))) : '')+
+        row('printall', isSec(cw) ? 'Stampa i boulder del settore' : 'Stampa i circuiti del muro', cn + (cn === 1 ? ' pagina' : ' pagine'))+
+        (cc ? row('img', 'Condividi immagine', 'da salvare o mandare') : '') : '')+
       (acctOn() || CL ? `</div><h3 class="mhead">Account</h3><div class="list">`+
       (CL ? row('logout', 'Esci', esc(CL.email)) + row('delacct', ui.confirm === 'delacct' ? 'Tocca ancora: cancello account e salite' : 'Cancella il mio account', 'e tutte le tue salite', false) :
         REAL_EDIT ? `<p class="note" style="margin:0">In anteprima le salite si salvano sul tuo account dello staff.</p>` : row('acct', 'Entra o crea un account', 'gratis: serve per le tue salite')) : '')+
@@ -3544,13 +3540,15 @@ function renderSheet(){
         `<div class="row"><button class="btn primary" data-act="close">Chiudi</button></div><p class="note" style="text-align:center"><button class="linklike" data-act="login">Accesso staff</button></p>`)+
       `<p class="note" style="text-align:center;margin:6px 0 0;opacity:.6">versione ${esc(APP_V)}</p>`;
   } else if(ui.sheet === 'menu'){
-    const bo = w ? isSec(w) : BO(), n = w ? sortedVisible(w).length : 0, one = bo ? 'questo boulder' : 'questo circuito';
+    /* stampa solo dentro un settore o un muro: dalla schermata iniziale non si stampa un percorso che non si vede */
+    const inside = !ui.home && !bGrid() && !!w, bo = w ? isSec(w) : BO(), n = inside ? sortedVisible(w).length : 0, cc = inside ? c : null, one = bo ? 'questo boulder' : 'questo circuito';
     const row = (act, label, sub, dis) => `<button class="wrow" data-act="${act}" ${dis ? 'disabled' : ''}><span>${label}</span><small>${sub || ''}</small></button>`;
-    h = `<h2>Altro</h2><div class="list">`+
-      row('printone', 'Stampa ' + one, c ? esc(blockTitle(w, c)) : '', !c)+
-      row('printall', bo ? 'Stampa i boulder del settore' : 'Stampa i circuiti del muro', n ? n + (n === 1 ? ' pagina' : ' pagine') + ' · filtri compresi' : '', !n)+
-      row('img', 'Condividi immagine', 'da salvare o mandare', !c)+
-      `</div><p class="note" style="margin:0 0 12px">Dalla finestra di stampa puoi anche scegliere "Salva come PDF".</p>`+
+    h = `<h2>Altro</h2>`+
+      (n ? `<div class="list">`+
+      (cc ? row('printone', 'Stampa ' + one, esc(blockTitle(w, cc))) : '')+
+      row('printall', bo ? 'Stampa i boulder del settore' : 'Stampa i circuiti del muro', n + (n === 1 ? ' pagina' : ' pagine') + ' · filtri compresi')+
+      (cc ? row('img', 'Condividi immagine', 'da salvare o mandare') : '')+
+      `</div><p class="note" style="margin:0 0 12px">Dalla finestra di stampa puoi anche scegliere "Salva come PDF".</p>` : '')+
       `<h3 class="mhead">App</h3><div class="list">`+
       (canInstall() ? row('install', "Installa l'app", 'sulla schermata Home') : '')+
       (SB ? row('fbnew', 'Segnala un problema', 'o un suggerimento: arriva al gestore') : '')+
@@ -4173,7 +4171,6 @@ document.addEventListener('click', e => {
       (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Copiata: incollala a Claude'), () => { window.prompt('Copia il testo:', txt); });
       break; }
     case 'dash': openSheet('dash'); break;
-    case 'prevnew': ui.prevNew = true; setViewAs('cliente'); ui.wIdx = 0; openSheet('welcome'); break;
     case 'tick': tick(b.dataset.v); break;
     case 'vote': vote(b.dataset.v); break;
     case 'hi': setHigh(+b.dataset.v || 0); break;
