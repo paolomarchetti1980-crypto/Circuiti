@@ -202,3 +202,5 @@ alter table public.ticks add column if not exists from_project boolean not null 
 alter table public.ticks add column if not exists high smallint;
 alter table public.ticks add column if not exists high_ups smallint not null default 0;
 alter table public.ticks add column if not exists high_at timestamptz;
+
+-- (nessuna modifica al database per i piedi obbligati: sono prese con role 'foot' dentro app_state)

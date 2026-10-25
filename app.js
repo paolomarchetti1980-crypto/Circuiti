@@ -62,6 +62,9 @@ const DIFFS = [['bianco','Bianco','#ffffff'],['blu','Blu','#1e6bff'],['verde','V
 const NODIFF = '#8d939b';
 /* circuiti: il colore non ha significato, serve solo a staccare un circuito dal vicino.
    Lo assegna l'app seguendo l'ordine dell'elenco (filtri compresi), così due vicini non sono mai uguali. */
+/* circuiti: piedi obbligati, contorno tratteggiato giallo e bollino con l'impronta. Non sono movimenti: niente numero, niente linea */
+const FOOT_COL = '#ffd400';
+const isFoot = h => h && h.role === 'foot';
 const CPAL = ['#ff7a1a','#1e6bff','#23b45a','#ff5fa2','#22c3e6','#8a4dff','#e5312b'];
 function colOf(c){
   const w = curWall();
@@ -384,7 +387,7 @@ function newCircuit(w){
 }
 function roleFor(c){ return c && c.holds.length ? 'hold' : 'start'; }
 /* mano della prossima presa: l'opposta dell'ultima segnata (si parte con la sinistra) */
-function handFor(c){ const l = c && c.holds.length ? c.holds[c.holds.length-1].hand : null; return l === 'L' ? 'R' : 'L'; }
+function handFor(c){ const hs = c ? c.holds.filter(h => h.hand) : [], l = hs.length ? hs[hs.length-1].hand : null; return l === 'L' ? 'R' : 'L'; }
 
 /* SEG-START */
 function enhanceLocal(px, W, H, R, gain){
@@ -1866,7 +1869,7 @@ function circuitSVG(c, W, alpha, o){
   let s = `<g opacity="${alpha}">`;
   if(o.lines && c.holds.length > 1){
     const lw = Math.max(3, W*0.0032), P = q => q[0].toFixed(1)+','+q[1].toFixed(1);
-    const st = c.holds.filter(h => h.role === 'start'), rest = c.holds.filter(h => h.role !== 'start');
+    const st = c.holds.filter(h => h.role === 'start'), rest = c.holds.filter(h => h.role !== 'start' && !isFoot(h));
     const paths = [];
     if(st.length >= 2 && rest.length){
       /* partenze a Y: ogni partenza raggiunge un punto d'incontro, da lì un solo tratto verso la prima presa */
@@ -1874,7 +1877,7 @@ function circuitSVG(c, W, alpha, o){
       const J = [mx + (f.x - mx)*0.45, my + (f.y - my)*0.45];
       st.forEach(h => paths.push([[h.x, h.y], J]));
       paths.push([J].concat(rest.map(h => [h.x, h.y])));
-    } else paths.push(c.holds.map(h => [h.x, h.y]));
+    } else paths.push(c.holds.filter(h => !isFoot(h)).map(h => [h.x, h.y]));
     paths.forEach(pl => { for(let k=1;k<pl.length;k++) segs.push([pl[k-1][0], pl[k-1][1], pl[k][0], pl[k][1]]); });
     const d = paths.map(pl => 'M' + pl.map(P).join('L')).join('');
     s += `<path d="${d}" fill="none" stroke="${ha}" stroke-opacity=".5" stroke-width="${lw*2.6}" stroke-linecap="round" stroke-linejoin="round"/>`;
@@ -1891,7 +1894,7 @@ function circuitSVG(c, W, alpha, o){
     (grp[key] = grp[key] || []).push(i);
   });
   const starts = []; c.holds.forEach((h,i) => { if(h.role === 'start') starts.push(i); });
-  if(starts.length > 1 && !o.boulder && !(o.lines && c.holds.some(h => h.role !== 'start'))){
+  if(starts.length > 1 && !o.boulder && !(o.lines && c.holds.some(h => h.role !== 'start' && !isFoot(h)))){
  for(let k=1;k<starts.length;k++){ const a = c.holds[starts[k-1]], b = c.holds[starts[k]]; segs.push([a.x, a.y, b.x, b.y]); }
     const p = starts.map(i => c.holds[i].x.toFixed(1)+','+c.holds[i].y.toFixed(1)).join(' ');
     const lw = Math.max(3, W*0.0032);
@@ -1903,7 +1906,8 @@ function circuitSVG(c, W, alpha, o){
   const sCen = sHolds.length > 1 ? [sHolds.reduce((t,q) => t + q.x, 0)/sHolds.length, sHolds.reduce((t,q) => t + q.y, 0)/sHolds.length] : null;
  const handCol = h => !o.boulder && h.hand === 'L' ? S.prefs.handL : !o.boulder && h.hand === 'R' ? S.prefs.handR : base;
   c.holds.forEach((h,i) => {
-    let col = !o.boulder && h.hand === 'L' ? S.prefs.handL : !o.boulder && h.hand === 'R' ? S.prefs.handR : base, ha = haloOf(col);
+    let col = isFoot(h) ? FOOT_COL : !o.boulder && h.hand === 'L' ? S.prefs.handL : !o.boulder && h.hand === 'R' ? S.prefs.handR : base, ha = isFoot(h) ? '#000' : haloOf(col);
+    const dash = isFoot(h) ? ` stroke-dasharray="${(sw*2.4).toFixed(1)} ${(sw*1.5).toFixed(1)}"` : '';
     const key = h.cid != null ? ('c'+h.cid) : ('p'+Math.round(h.x)+'_'+Math.round(h.y));
     const g = h.role === 'hold' ? grp[key] : null, gi = g ? g.indexOf(i) : 0;
     /* passaggi sulla stessa presa: ogni "livello" è un contorno, dal più grande al più piccolo.
@@ -1946,14 +1950,14 @@ function circuitSVG(c, W, alpha, o){
       const poly = sc(h.poly);
       const d = polyPath(poly);
       s += `<path d="${d}" fill="${col}" fill-opacity="0" stroke="${ha}" stroke-opacity=".55" stroke-width="${sw+hw*2}" stroke-linejoin="round"/>`+
-           `<path d="${d}" fill="none" stroke="${col}" stroke-width="${sw}" stroke-linejoin="round"/>`;
+           `<path d="${d}" fill="none" stroke="${col}" stroke-width="${isFoot(h) ? sw*1.2 : sw}" stroke-linejoin="round"${dash}/>`;
     } else {
       const rr = rIn(h.r*W), rsw = Math.max(2, rr*0.10), rhw = rsw*0.55;
       s += `<circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${ha}" stroke-opacity=".55" stroke-width="${rsw+rhw*2}"/>`+
-           `<circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${col}" stroke-width="${rsw}"/>`;
+           `<circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${col}" stroke-width="${rsw}"${dash}/>`;
     }
     if(marks){ marks.forEach(q => { segs.push(q); s += tack(q, col, tw, 1); }); return; }
-    let label = h.role === 'start' ? (starts.length > 1 && !o.boulder ? 'S' + (starts.indexOf(i)+1) : 'S') : h.role === 'top' ? 'T' : '';
+    let label = h.role === 'start' ? (starts.length > 1 && !o.boulder ? 'S' + (starts.indexOf(i)+1) : 'S') : h.role === 'top' ? 'T' : isFoot(h) ? 'P' : '';
     /* presa precedente del percorso (diversa da questa): il numero si mette dal lato da cui si arriva */
     const prevOf = j => { const me = c.holds[j]; for(let k = j - 1; k >= 0; k--){ const q = c.holds[k]; if(me.cid != null ? q.cid !== me.cid : (Math.abs(q.x - me.x) > 1 || Math.abs(q.y - me.y) > 1)) return [q.x, q.y]; } return null; };
     if(!label && o.numbers && h.role === 'hold'){
@@ -2006,16 +2010,22 @@ function circuitSVG(c, W, alpha, o){
         s += ps.map(p => `<circle cx="${p.x}" cy="${p.y}" r="${br + hw/2}" fill="#ffffff" fill-opacity=".8"/>`).join('')+
              L.segs.map((g2, k) => `<circle cx="${ps[k].x}" cy="${ps[k].y}" r="${br - hw/2}" fill="${g2.col}"/>`).join('')+
              L.segs.map((g2, k) => { const nx = ps[k+1] ? ps[k].x - (ps[k+1].x - ps[k].x)*0.12 : ps[k].x, ny = ps[k+1] ? ps[k].y - (ps[k+1].y - ps[k].y)*0.12 : ps[k].y;
-               return `<text x="${nx}" y="${ny}" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed, Arial, sans-serif" font-weight="700" font-size="${br*(String(g2.n).length > 1 ? 0.95 : 1.15)}" fill="${inkOn(g2.col)}">${g2.n}</text>`; }).join('');
+               return `<text x="${nx}" y="${ny}" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed, Arial, sans-serif" font-weight="700" font-size="${br*1.02}" fill="${inkOn(g2.col)}">${g2.n}</text>`; }).join('');
         return;
       }
       const bx = pos.x.toFixed(1), by = pos.y.toFixed(1);
       /* forme diverse: partenza quadrata, arrivo a rombo, prese intermedie tonde */
+      if(L.label === 'P'){   /* piede obbligato: bollino giallo con l'impronta */
+        const k = br/10;
+        s += `<circle cx="${bx}" cy="${by}" r="${br*0.92}" fill="${FOOT_COL}" stroke="#000" stroke-opacity=".7" stroke-width="${br*0.22}"/>`+
+          `<g fill="#141414" transform="translate(${bx} ${by}) scale(${k.toFixed(3)})"><path d="M-1.6,7.2c-2.6,0-3.6-2.4-3.2-5.2.4-2.6,1.2-5.3,3.6-5.3s3.4,2.2,3.3,4.6C2,4.2,1,7.2-1.6,7.2z"/><circle cx="-2.6" cy="-6.2" r="1.25"/><circle cx="-0.2" cy="-6.9" r="1.1"/><circle cx="1.9" cy="-6.1" r="1"/><circle cx="3.4" cy="-4.4" r=".9"/></g>`;
+        return;
+      }
       const isS = /^S\d*$/.test(L.label), isT = L.label === 'T', bst = `fill="${L.col}" stroke="${L.ha}" stroke-opacity=".7" stroke-width="${br*0.22}"`;
       s += (isS ? `<rect x="${(pos.x - br*0.95).toFixed(1)}" y="${(pos.y - br*0.95).toFixed(1)}" width="${(br*1.9).toFixed(1)}" height="${(br*1.9).toFixed(1)}" rx="${(br*0.32).toFixed(1)}" ${bst}/>` :
             isT ? `<path d="M${bx},${(pos.y - br*1.32).toFixed(1)}L${(pos.x + br*1.32).toFixed(1)},${by}L${bx},${(pos.y + br*1.32).toFixed(1)}L${(pos.x - br*1.32).toFixed(1)},${by}Z" stroke-linejoin="round" ${bst}/>` :
             `<circle cx="${bx}" cy="${by}" r="${br}" ${bst}/>`)+
-           `<text x="${bx}" y="${by}" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed, Arial, sans-serif" font-weight="700" font-size="${br*(L.label.length>1?(L.label.length>3?0.62:0.8):1.25)}" fill="${inkOn(L.col)}">${L.label}</text>`;
+           `<text x="${bx}" y="${by}" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed, Arial, sans-serif" font-weight="700" font-size="${br*(L.label.length>3?0.62:L.label.length>2?0.8:1.02)}" fill="${inkOn(L.col)}">${L.label}</text>`;
     });
   }
   return s + '</g>';
@@ -2283,7 +2293,7 @@ function myMark(c, x, y, m){
 /* circuito in progetto: anello giallo sulla presa più alta raggiunta, con bandierina */
 function highSVG(c, W){
   if(!myOn()) return ''; const t = ui.ticks.get(c.id); if(!t || t.status !== 'progetto' || !t.high) return '';
-  const h = c.holds.filter(q => q.role !== 'start')[t.high - 1]; if(!h) return '';
+  const h = moveHolds(c)[t.high - 1]; if(!h) return '';
   const bb = holdBox(h, W), cx = (bb.x0 + bb.x1) / 2, cy = (bb.y0 + bb.y1) / 2, r = Math.max((bb.x1 - bb.x0), (bb.y1 - bb.y0)) / 2 + W*0.014, lw = Math.max(3, W*0.0038);
   const fx = cx + r*0.7, fy = cy - r*0.7, fh = W*0.04;
   return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#000" stroke-opacity=".55" stroke-width="${lw*2.4}"/><circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#f2c200" stroke-width="${lw}"/>`+
@@ -2724,8 +2734,9 @@ function bMeta(c){
   return [holdColText(c), c.setter || '', isOff(c) ? 'smontato ' + fmtDate(c.dateRemoved) : c.dateSet ? fmtDate(c.dateSet) : '', t].filter(Boolean).map(esc).join(' · ');
 }
 /* movimenti: ogni passaggio dopo la partenza (sulla stessa presa si può passare più volte) */
-const movesOf = c => (c.holds || []).filter(h => h.role !== 'start').length;
-const movesText = c => { const n = movesOf(c); return n === 1 ? '1 movimento' : n + ' movimenti'; };
+const moveHolds = c => (c.holds || []).filter(h => h.role === 'hold' || h.role === 'top');
+const movesOf = c => moveHolds(c).length;
+const movesText = c => { const n = movesOf(c), f = (c.holds || []).filter(isFoot).length; return (n === 1 ? '1 movimento' : n + ' movimenti') + (f ? ' · ' + (f === 1 ? '1 piede obbligato' : f + ' piedi obbligati') : ''); };
 function circMeta(c){
   if(curWall() && isSec(curWall())) return bMeta(c);
   return [c.angle != null ? c.angle + '°' : '', c.style || '', c.feet ? 'piedi ' + c.feet : '', movesText(c)].filter(Boolean).map(esc).join(' · ');
@@ -2892,8 +2903,8 @@ function renderTools(){
       `<button class="btn" data-act="bcancel">Esci</button></div>`;
     return;
   }
-  const roles = `<div class="seg" role="group" aria-label="Tipo di presa">${rb('start', sec ? 'Punto di partenza' : 'Partenza')}${rb('hold','Presa')}${rb('top','Arrivo')}</div>`;
-  const hands = sec ? '' : `<div class="seg" role="group" aria-label="Mano">${hb('L',dot(S.prefs.handL)+'Sinistra')}${hb('R',dot(S.prefs.handR)+'Destra')}</div>`;
+  const roles = `<div class="seg" role="group" aria-label="Tipo di presa">${rb('start', sec ? 'Punto di partenza' : 'Partenza')}${rb('hold','Presa')}${rb('top','Arrivo')}${sec ? '' : rb('foot','Piede')}</div>`;
+  const hands = sec || role === 'foot' ? '' : `<div class="seg" role="group" aria-label="Mano">${hb('L',dot(S.prefs.handL)+'Sinistra')}${hb('R',dot(S.prefs.handR)+'Destra')}</div>`;
   const dimBtn = `<button class="btn ${ui.editDim ? 'on' : ''}" data-act="editdim" aria-pressed="${!!ui.editDim}">Oscura</button>`;
   if(h){
     /* presa selezionata: tutto ciò che la riguarda, e "Fatto" per tornare a segnare */
@@ -2914,6 +2925,7 @@ function renderTools(){
   if(sec && ui.nextRole === 'start') hint = `<!--s-->Punto di partenza: tocca la presa vicino al bordo, dove va il segno. Da 1 a 4 segni (mani e piedi), anche tutti sulla stessa presa${c ? ` · segnati ${startMarks(c)}/4` : ''}. Poi passa a Presa.`;
   if(!first && !hint.startsWith('<!--s-->')) hint += ' Tocca una presa già segnata per modificarla.';
   const candOn = sec && c && ui.cand && ui.cand.cid === c.id;
+  if(!sec && ui.nextRole === 'foot' && !h) hint = 'Piede obbligato: tocca le prese da usare solo con i piedi. Restano tratteggiate in giallo con l\'impronta, senza numero. Poi torna su Presa.';
   if(candOn) hint = `${ui.cand.list.length} prese proposte (tratteggiate): tocca quelle del blocco per aggiungerle, oppure aggiungile tutte e togli poi quelle che non c'entrano.`;
   if(sec && !candOn) hint += ` <span style="opacity:.75">${samStatus(w)}</span>`;
   el.innerHTML = `<p class="hint">${hint}</p>`+
@@ -4070,9 +4082,10 @@ $('#stage').addEventListener('click', async e => {
   const ci2 = catHit(w, x, y, ctol);
   if(ci2 >= 0){
     const ch = w.holds[ci2];
-    c.holds.push({ x: ch.x, y: ch.y, sx: ch.sx || ch.x, sy: ch.sy || ch.y, r: S.prefs.r, role: ui.nextRole, ts: 1, poly: ch.poly.slice(), cid: ch.id, ...(ui.nextHand ? { hand: ui.nextHand } : {}) });
-    ui.nextRole = 'hold';
-    if(ui.nextHand === 'L') ui.nextHand = 'R'; else if(ui.nextHand === 'R') ui.nextHand = 'L';
+    const ft = ui.nextRole === 'foot';
+    c.holds.push({ x: ch.x, y: ch.y, sx: ch.sx || ch.x, sy: ch.sy || ch.y, r: S.prefs.r, role: ui.nextRole, ts: 1, poly: ch.poly.slice(), cid: ch.id, ...(ui.nextHand && !ft ? { hand: ui.nextHand } : {}) });
+    if(!ft){ ui.nextRole = 'hold';   /* i piedi si segnano di fila: si resta su Piede finché non si cambia */
+      if(ui.nextHand === 'L') ui.nextHand = 'R'; else if(ui.nextHand === 'R') ui.nextHand = 'L'; }
     ui.sel = null; touch(); render(); return;
   }
   toast('Qui non c\'è una presa del muro. Per aggiungerla: menu ⋮ → Prese del muro.');
@@ -4371,7 +4384,7 @@ document.addEventListener('click', e => {
     }
     case 'role': {
       const h = c && ui.sel != null ? c.holds[ui.sel] : null;
-      if(h){ h.role = b.dataset.v; if(h.role !== 'start') delete h.marks; touch(); } else ui.nextRole = b.dataset.v;
+      if(h){ h.role = b.dataset.v; if(h.role !== 'start') delete h.marks; if(h.role === 'foot') delete h.hand; else if(!h.hand && w && !isSec(w) && h.role === 'hold') h.hand = ui.nextHand || 'L'; touch(); } else ui.nextRole = b.dataset.v;
       render(); break;
     }
     case 'size': {
