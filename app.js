@@ -3105,7 +3105,7 @@ async function saveTick(w, c, next, restore){
   const r = next ? await SB.from('ticks').upsert({ item_id: c.id, wall_id: w.id, status: next.status, vote: next.vote || null, rating: next.rating || null, grade: next.grade, done_at: next.done_at, moves: next.moves, from_project: next.from_project, high: next.high || null, high_ups: next.high_ups || 0, high_at: next.high_at || null, updated_at: new Date().toISOString() })
                  : await SB.from('ticks').delete().eq('item_id', c.id);
   if(r && r.error){ if(prev) ui.ticks.set(c.id, prev); else ui.ticks.delete(c.id); render(); toast('Non riesco a salvare: ' + (r.error.message || 'riprova tra poco.')); return; }
-  if(before && !restore){ const now = earnedBadges(), got = [...now].filter(id => !before.has(id)); if(got.length){ const b = BADGES.find(x => x.id === got[got.length - 1]); toast('Nuovo badge: ' + b.name + '!', 4000); ui.badgeNew = true; } }
+  if(before && !restore){ const now = earnedBadges(), got = [...now].filter(id => !before.has(id)); if(got.length){ const b = BADGES.find(x => x.id === got[got.length - 1]); badgeCelebrate(b); ui.badgeNew = true; } }
 }
 function tick(status){
   const w = curWall(), c = curCircuit(); if(!w || !c) return;
@@ -3211,15 +3211,79 @@ const BADGES = [
   ...[5, 10, 20].map(k => ({ id: 'd' + k, f: 'sed', name: k === 5 ? 'Bella sessione' : k === 10 ? 'Seduta piena' : 'Maratona', desc: k + ' percorsi fatti nello stesso giorno', ok: s => s.bestDay >= k, left: s => 'record: ' + s.bestDay + ' in un giorno', big: String(k) }))
 ];
 function earnedBadges(){ const st = badgeStats(); return new Set(BADGES.filter(b => b.ok(st)).map(b => b.id)); }
+/* aspetto dei badge: toppa esagonale "ricamata" nel colore del gruppo, dentro il metallo (bronzo, argento, oro) secondo la difficoltà.
+   Quelli da prendere sono grigi, con il bordo che si riempie man mano che ci si avvicina */
+const B_ICO = {
+  peak: '<path d="M-11 9L-3-5l4 6 3-4 7 12z"/><path d="M-3-5v-6l5 2-5 2"/>',
+  fire: '<path d="M0-11c3 5 8 7 8 13a8 8 0 0 1-16 0c0-4 2-6 4-8 0 3 1 5 3 5-1-4 0-7 1-10z"/>',
+  rainbow: '<g fill="none" stroke-width="3"><path d="M-11 6a11 11 0 0 1 22 0" stroke="#e5312b"/><path d="M-7.5 6a7.5 7.5 0 0 1 15 0" stroke="#f2c200"/><path d="M-4 6a4 4 0 0 1 8 0" stroke="#1e6bff"/></g>',
+  pin: '<path d="M0 11S-8 2-8-3a8 8 0 0 1 16 0c0 5-8 14-8 14z"/><circle cy="-3" r="3" fill="var(--bg)"/>',
+  check: '<path d="M-10 0l6 6L10-8" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>',
+  two: '<circle cx="-4.5" r="6"/><circle cx="4.5" r="6" fill="none" stroke="currentColor" stroke-width="2.6"/>',
+  up: '<path d="M0-11l9 10h-5v10h-8V-1h-5z"/>',
+  star: '<path d="M0-11l3.2 6.6 7.2 1-5.2 5 1.3 7.2L0 5.4l-6.5 3.4 1.3-7.2-5.2-5 7.2-1z"/>',
+  eye: '<path d="M-11 0s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle r="4" fill="var(--bg)"/><circle r="2"/>',
+  hold: '<path d="M-9 4c-3-6 0-13 7-14 7-1 12 4 11 10-1 7-8 11-13 9-2-1-4-2-5-5z"/><circle cx="1" cy="-1" r="2.6" fill="var(--bg)"/>',
+  foot: '<path d="M-2 10c-4 0-5-3.4-4.5-7.3.6-3.7 1.7-7.5 5-7.5s4.8 3 4.6 6.5C2.8 5.9 1.4 10-2 10z"/><circle cx="-3.6" cy="-8.6" r="1.8"/><circle cx="-.3" cy="-9.6" r="1.6"/><circle cx="2.6" cy="-8.5" r="1.4"/><circle cx="4.8" cy="-6.1" r="1.3"/>',
+  sun: '<circle r="5"/><g stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M0-11v3M0 8v3M-11 0h3M8 0h3M-7.8-7.8l2 2M5.8 5.8l2 2M-7.8 7.8l2-2M5.8-5.8l2-2"/></g>',
+  moon: '<path d="M3-10a10 10 0 1 0 7 15A8 8 0 0 1 3-10z"/>',
+  bolt: '<path d="M2-12L-8 2h7l-3 10L8-3H1z"/>'
+};
+const B_METAL = { b: ['#e0a466', '#8a5524'], s: ['#eef1f4', '#8c949e'], g: ['#ffe27a', '#c08a00'] };
+/* per ogni badge: metallo, disegno e quanto manca (da 0 a 1) */
+const B_LOOK = (() => {
+  const L = {}, ser = (ids, ico, pr) => { const n = ids.length, T = n === 1 ? ['s'] : n === 2 ? ['b', 'g'] : n === 3 ? ['b', 's', 'g'] : n === 4 ? ['b', 's', 'g', 'g'] : ['b', 'b', 's', 's', 'g', 'g'];
+    ids.forEach((id, k) => { L[id] = { t: T[k], i: ico, pr: pr ? (st => pr(st, id)) : null }; }); };
+  const num = id => +id.replace(/\D/g, '');
+  ser(['primo'], 'peak', st => Math.min(1, st.n)); L.primo.t = 'b';
+  ser(['s10', 's50', 's100', 's250'], 'peak', (st, id) => st.n / num(id));
+  ser(['w4', 'w12'], 'fire', (st, id) => st.weeks / num(id)); L.w4.t = 's';
+  L.arco = { t: 's', i: 'rainbow', pr: st => ['bianco','blu','verde','giallo','rosso'].filter(c => st.colors.has(c)).length / 5 };
+  L.giro = { t: 's', i: 'pin', pr: st => st.secTot ? st.secDone / st.secTot : 0 };
+  L.pulito = { t: 'g', i: 'check', pr: null };
+  L.doppia = { t: 's', i: 'two', pr: st => (Math.min(st.nB, 10) + Math.min(st.nC, 10)) / 20 };
+  ['verde', 'giallo', 'rosso', 'nero'].forEach((c, k) => { L['c_' + c] = { t: ['b', 's', 'g', 'g'][k], i: null, pr: null }; });
+  L.proj = { t: 'b', i: 'star', pr: null };
+  ser(['hi5', 'hi20'], 'up', (st, id) => st.hiUps / num(id)); L.hi5.t = 's';
+  ser(['r10', 'r50'], 'eye', (st, id) => st.rated / num(id));
+  ser(['m100', 'm250', 'm500', 'm1000', 'm2500', 'm5000'], 'hold', (st, id) => st.moves / num(id));
+  L.early = { t: 'b', i: 'sun', pr: null }; L.late = { t: 'b', i: 'moon', pr: null };
+  ser(['d5', 'd10', 'd20'], 'bolt', (st, id) => st.bestDay / num(id));
+  ser(['ft1', 'ft10', 'ft25'], 'foot', (st, id) => st.nFeet / num(id));
+  return L;
+})();
+let medalN = 0;
+function medalSVG(b, ok, st, size){
+  const lk = B_LOOK[b.id] || { t: 's', i: 'star' }, fam = B_FAM[b.f][1], id = 'md' + (medalN++);
+  const [m1, m2] = B_METAL[lk.t], hex = r => { const p = []; for(let k = 0; k < 6; k++){ const a = Math.PI / 180 * (60*k - 90); p.push((r*Math.cos(a)).toFixed(1) + ',' + (r*Math.sin(a)).toFixed(1)); } return p.join(' '); };
+  const pr = !ok && lk.pr && st ? Math.max(0, Math.min(1, lk.pr(st) || 0)) : 0;
+  const ink = ok ? '#1a1a1a' : '#62676e', bg = ok ? m1 : '#3b3f45';
+  const glyph = b.dot ? `<circle r="9" fill="${ok ? b.dot : '#55595f'}" stroke="${ok ? '#000' : '#666'}" stroke-opacity=".5" stroke-width="1.5"/>` :
+    `<g transform="scale(1.45)" fill="${ink}" color="${ink}" style="--bg:${bg}">${ok ? B_ICO[lk.i] || B_ICO.star : (B_ICO[lk.i] || B_ICO.star).replace(/stroke="#[0-9a-f]{6}"/g, 'stroke="#62676e"')}</g>`;
+  return `<svg viewBox="-60 -62 120 124" width="${size || 76}" height="${Math.round((size || 76) * 1.03)}" aria-hidden="true">`+
+    `<defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${ok ? m1 : '#4a4e55'}"/><stop offset="1" stop-color="${ok ? m2 : '#2e3136'}"/></linearGradient></defs>`+
+    `<polygon points="${hex(56)}" fill="#1d1f23" stroke="${ok ? fam : '#34383e'}" stroke-width="7" stroke-linejoin="round"/>`+
+    (pr > 0 ? `<polygon points="${hex(56)}" fill="none" stroke="${fam}" stroke-width="7" stroke-linejoin="round" pathLength="100" stroke-dasharray="${(pr*100).toFixed(1)} 100" transform="rotate(0)"/>` : '')+
+    `<polygon points="${hex(48)}" fill="none" stroke="${ok ? '#fff' : '#555'}" stroke-opacity=".6" stroke-width="1.8" stroke-dasharray="4 3"/>`+
+    `<polygon points="${hex(41)}" fill="url(#${id})"/>`+
+    (ok ? `<path d="M-26-20 L-6-32" stroke="#fff" stroke-opacity=".45" stroke-width="5" stroke-linecap="round"/>` : '')+
+    `<g transform="translate(0 ${b.big ? -7 : 0})">${glyph}</g>`+
+    (b.big ? `<text y="29" text-anchor="middle" font-family="Barlow Semi Condensed, Arial" font-weight="700" font-size="${b.big.length > 3 ? 14 : 17}" fill="${ink}">${b.big}</text>` : '')+
+    `</svg>`;
+}
+/* sblocco: la medaglia compare grande al centro, poi si chiude da sola (o con un tocco) */
+function badgeCelebrate(b){
+  let el = document.getElementById('bcele'); if(el) el.remove();
+  el = document.createElement('div'); el.id = 'bcele'; el.className = 'bcele';
+  el.innerHTML = `<div class="bcin">${medalSVG(b, true, null, 168)}<small>Nuovo badge</small><b>${esc(b.name)}</b><span>${esc(b.desc)}</span></div>`;
+  el.addEventListener('click', () => el.remove());
+  document.body.appendChild(el); setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 450); }, 3200);
+}
 function badgesHtml(){
   const st = badgeStats(), got = BADGES.filter(b => b.ok(st)).length;
-  const medal = (b, ok) => { const col = B_FAM[b.f][1];
-    const inner = b.foot && !b.big ? `<g fill="#111" transform="translate(24 25) scale(1.25)"><path d="M-1.6,7.2c-2.6,0-3.6-2.4-3.2-5.2.4-2.6,1.2-5.3,3.6-5.3s3.4,2.2,3.3,4.6C2,4.2,1,7.2-1.6,7.2z"/><circle cx="-2.6" cy="-6.2" r="1.25"/><circle cx="-0.2" cy="-6.9" r="1.1"/><circle cx="1.9" cy="-6.1" r="1"/><circle cx="3.4" cy="-4.4" r=".9"/></g>` : b.dot ? `<circle cx="24" cy="24" r="9" fill="${b.dot}" stroke="#fff" stroke-opacity=".6"/>` : b.big ? `<text x="24" y="24" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed, Arial" font-weight="700" font-size="${b.big.length > 3 ? 11 : b.big.length > 2 ? 13 : 16}" fill="#111">${b.big}</text>` :
-      `<path d="M24 13l3.2 6.6 7.2 1-5.2 5 1.3 7.2L24 29.4l-6.5 3.4 1.3-7.2-5.2-5 7.2-1z" fill="#111"/>`;
-    return `<svg viewBox="0 0 48 48" width="52" height="52" aria-hidden="true"><circle cx="24" cy="24" r="21" fill="${ok ? col : '#3a3e44'}"/><circle cx="24" cy="24" r="16.5" fill="none" stroke="${ok ? '#fff' : '#555'}" stroke-opacity=".55" stroke-width="1.5"/>${ok ? inner : inner.replace(/fill="#111"/g, 'fill="#666"')}</svg>`; };
   return `<p class="dlab" style="margin-top:4px">Badge ottenuti: ${got} di ${BADGES.length} · ${st.moves.toLocaleString('it-IT')} movimenti sui circuiti</p>`+
     Object.keys(B_FAM).map(f => `<p class="dlab">${B_FAM[f][0]}</p><div class="bgrid">${BADGES.filter(b => b.f === f).map(b => { const ok = b.ok(st);
-      return `<div class="badge ${ok ? 'ok' : ''}" title="${esc(b.desc)}">${medal(b, ok)}<b>${esc(b.name)}</b><small>${esc(ok ? b.desc : b.left(st))}</small></div>`; }).join('')}</div>`).join('');
+      return `<div class="badge ${ok ? 'ok' : ''}" title="${esc(b.desc)}">${medalSVG(b, ok, st)}<b>${esc(b.name)}</b><small>${esc(ok ? b.desc : b.left(st))}</small></div>`; }).join('')}</div>`).join('');
 }
 function mineHtml(){
   const a = ACC();

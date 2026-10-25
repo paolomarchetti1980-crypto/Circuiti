@@ -296,6 +296,14 @@ button,label.btn{cursor:pointer}
 .hiline{display:flex;align-items:center;gap:8px;margin-top:4px}
 .hiline .mybar.hib{flex:1;margin:0}
 .hiline b{font:700 13px Barlow,sans-serif;color:#f2c200}
+.bcele{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(10,11,13,.86);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);animation:bcf .25s ease-out}
+.bcele.out{opacity:0;transition:opacity .4s}
+.bcin{display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;padding:0 24px;animation:bcp .6s cubic-bezier(.2,1.6,.4,1)}
+.bcin small{margin-top:10px;font:700 14px Barlow,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.bcin b{font:700 34px/1.05 "Barlow Semi Condensed",Barlow,sans-serif;color:#fff}
+.bcin span{color:#ccc;font-size:16px;max-width:280px}
+@keyframes bcf{from{opacity:0}}
+@keyframes bcp{0%{transform:scale(.2) rotate(-12deg);opacity:0}100%{transform:none;opacity:1}}
 .bgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .badge{display:flex;flex-direction:column;align-items:center;text-align:center;gap:3px;padding:10px 6px;border-radius:12px;background:rgba(255,255,255,.04)}
 .badge b{font:700 14px/1.1 "Barlow Semi Condensed",Barlow,sans-serif}
@@ -308,5 +316,5 @@ button,label.btn{cursor:pointer}
 </style></head><body><div id="root"></div>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="namegen.js"></script><script id="app-js" src="app.js?v=156"></script>
+<script src="namegen.js"></script><script id="app-js" src="app.js?v=157"></script>
 </body></html>
