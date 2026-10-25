@@ -3168,7 +3168,7 @@ function mineItems(){
   return out;
 }
 /* ---------- badge: calcolati dalle salite del cliente, nessun dato in più ---------- */
-const B_FAM = { cost: ['Costanza', '#ff7a1a'], var: ['Varietà', '#22c3e6'], prog: ['Progressi', '#e5312b'], gym: ['Per la palestra', '#23b45a'], km: ['Chilometraggio', '#8a4dff'], ora: ['Orari', '#f2c200'], sed: ['Sedute', '#ff5fa2'] };
+const B_FAM = { cost: ['Costanza', '#ff7a1a'], var: ['Varietà', '#22c3e6'], prog: ['Progressi', '#e5312b'], gym: ['Per la palestra', '#23b45a'], km: ['Chilometraggio', '#8a4dff'], tec: ['Tecnica', '#ffd400'], ora: ['Orari', '#5b8cff'], sed: ['Sedute', '#ff5fa2'] };
 function badgeStats(){
   const T = ui.ticks ? [...ui.ticks.values()] : [], done = T.filter(t => t.status === 'fatto');
   const find = t => { const w = S.walls.find(x => x.id === t.wall_id), c = w && w.circuits.find(x => x.id === t.item_id); return { w, c }; };
@@ -3187,7 +3187,7 @@ function badgeStats(){
   const bestSec = secs.reduce((m, w) => { const on = w.circuits.filter(c => c.diff && !isOff(c)); if(on.length < 3) return m; const k = on.filter(c => { const t = ui.ticks && ui.ticks.get(c.id); return t && t.status === 'fatto'; }).length; return Math.max(m, on.length - k === 0 ? 0 : -(on.length - k)) ; }, -999);
   return { n: D.length, nB: D.filter(x => x.isB).length, nC: D.filter(x => !x.isB).length, moves: D.filter(x => !x.isB).reduce((t, x) => t + (x.mv || 0), 0),
     colors: new Set(D.filter(x => x.isB).map(x => x.g)), secDone: secDone.size, secTot: secs.length, cleanSec, missToClean: bestSec === -999 ? null : -bestSec,
-    weeks: best, proj: D.some(x => x.t.from_project), hiUps: T.reduce((n, t) => n + (t.high_ups || 0), 0), rated: T.filter(t => t.status === 'fatto' && t.rating && t.vote).length,
+    weeks: best, proj: D.some(x => x.t.from_project), hiUps: T.reduce((n, t) => n + (t.high_ups || 0), 0), nFeet: D.filter(x => !x.isB && x.c && x.c.holds.some(isFoot)).length, rated: T.filter(t => t.status === 'fatto' && t.rating && t.vote).length,
     early: D.some(x => x.at && x.at.getHours() < 9), late: D.some(x => x.at && x.at.getHours() >= 22), bestDay: Math.max(0, ...Object.values(days)) };
 }
 const BADGES = [
@@ -3204,6 +3204,8 @@ const BADGES = [
   { id: 'proj', f: 'prog', name: 'Progetto chiuso', desc: 'Un percorso passato da Progetto a Fatto', ok: s => s.proj, left: s => 'segna un progetto, poi chiudilo' },
   ...[10, 50].map(k => ({ id: 'r' + k, f: 'gym', name: k === 10 ? 'Occhio critico' : 'Giudice di parete', desc: k + ' percorsi votati, con voto e parere sul grado', ok: s => s.rated >= k, left: s => s.rated + ' di ' + k, big: String(k) })),
   ...[100, 250, 500, 1000, 2500, 5000].map(k => ({ id: 'm' + k, f: 'km', name: k.toLocaleString('it-IT') + ' movimenti', desc: k.toLocaleString('it-IT') + ' movimenti sui circuiti fatti', ok: s => s.moves >= k, left: s => s.moves.toLocaleString('it-IT') + ' di ' + k.toLocaleString('it-IT'), big: k >= 1000 ? String(k / 1000).replace('.', ',') + 'k' : String(k) })),
+  /* circuiti con piedi obbligati chiusi */
+  ...[[1, 'Piede fino'], [10, 'Piedi di velluto'], [25, 'Ballerino']].map(([k, n]) => ({ id: 'ft' + k, f: 'tec', name: n, desc: k === 1 ? 'Il primo circuito con piedi obbligati' : k + ' circuiti con piedi obbligati', ok: s => s.nFeet >= k, left: s => k === 1 ? 'chiudi un circuito con piedi obbligati' : s.nFeet + ' di ' + k, big: k > 1 ? String(k) : null, foot: true })),
   { id: 'early', f: 'ora', name: 'Mattiniero', desc: 'Un percorso fatto prima delle 9', ok: s => s.early, left: s => 'prima delle 9 del mattino' },
   { id: 'late', f: 'ora', name: 'Nottambulo', desc: 'Un percorso fatto dopo le 22', ok: s => s.late, left: s => 'dopo le 22' },
   ...[5, 10, 20].map(k => ({ id: 'd' + k, f: 'sed', name: k === 5 ? 'Bella sessione' : k === 10 ? 'Seduta piena' : 'Maratona', desc: k + ' percorsi fatti nello stesso giorno', ok: s => s.bestDay >= k, left: s => 'record: ' + s.bestDay + ' in un giorno', big: String(k) }))
@@ -3212,7 +3214,7 @@ function earnedBadges(){ const st = badgeStats(); return new Set(BADGES.filter(b
 function badgesHtml(){
   const st = badgeStats(), got = BADGES.filter(b => b.ok(st)).length;
   const medal = (b, ok) => { const col = B_FAM[b.f][1];
-    const inner = b.dot ? `<circle cx="24" cy="24" r="9" fill="${b.dot}" stroke="#fff" stroke-opacity=".6"/>` : b.big ? `<text x="24" y="24" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed, Arial" font-weight="700" font-size="${b.big.length > 3 ? 11 : b.big.length > 2 ? 13 : 16}" fill="#111">${b.big}</text>` :
+    const inner = b.foot && !b.big ? `<g fill="#111" transform="translate(24 25) scale(1.25)"><path d="M-1.6,7.2c-2.6,0-3.6-2.4-3.2-5.2.4-2.6,1.2-5.3,3.6-5.3s3.4,2.2,3.3,4.6C2,4.2,1,7.2-1.6,7.2z"/><circle cx="-2.6" cy="-6.2" r="1.25"/><circle cx="-0.2" cy="-6.9" r="1.1"/><circle cx="1.9" cy="-6.1" r="1"/><circle cx="3.4" cy="-4.4" r=".9"/></g>` : b.dot ? `<circle cx="24" cy="24" r="9" fill="${b.dot}" stroke="#fff" stroke-opacity=".6"/>` : b.big ? `<text x="24" y="24" dy=".35em" text-anchor="middle" font-family="Barlow Semi Condensed, Arial" font-weight="700" font-size="${b.big.length > 3 ? 11 : b.big.length > 2 ? 13 : 16}" fill="#111">${b.big}</text>` :
       `<path d="M24 13l3.2 6.6 7.2 1-5.2 5 1.3 7.2L24 29.4l-6.5 3.4 1.3-7.2-5.2-5 7.2-1z" fill="#111"/>`;
     return `<svg viewBox="0 0 48 48" width="52" height="52" aria-hidden="true"><circle cx="24" cy="24" r="21" fill="${ok ? col : '#3a3e44'}"/><circle cx="24" cy="24" r="16.5" fill="none" stroke="${ok ? '#fff' : '#555'}" stroke-opacity=".55" stroke-width="1.5"/>${ok ? inner : inner.replace(/fill="#111"/g, 'fill="#666"')}</svg>`; };
   return `<p class="dlab" style="margin-top:4px">Badge ottenuti: ${got} di ${BADGES.length} · ${st.moves.toLocaleString('it-IT')} movimenti sui circuiti</p>`+
