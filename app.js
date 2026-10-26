@@ -4805,7 +4805,10 @@ render();
       }catch(e){}
       /* la versione pubblicata sul database vince su quella scritta nella pagina */
       try{
-        const { data: row } = await SB.from('app_state').select('data,rev').eq('id', 1).maybeSingle();
+        /* con la copia sul telefono si chiede prima solo il numero di versione (pochi byte): tutti i dati si riscaricano solo se avete pubblicato qualcosa */
+        let same = false;
+        if(ui.fromCache){ const { data: rv, error: re } = await SB.from('app_state').select('rev').eq('id', 1).maybeSingle(); same = !re && rv && (rv.rev || 0) === S.rev; }
+        const { data: row } = same ? { data: null } : await SB.from('app_state').select('data,rev').eq('id', 1).maybeSingle();
         if(row && row.data && Array.isArray(row.data.walls)){ savePub(row.data, row.rev || 0); prunePhotos(row.data.walls); }
         if(row && row.data && Array.isArray(row.data.walls) && (row.rev || 0) >= S.rev && !(ui.fromCache && (row.rev || 0) === S.rev)){
           /* aperta dalla copia salvata: chi sta già guardando un settore ci resta */
