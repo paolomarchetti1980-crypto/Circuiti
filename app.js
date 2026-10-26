@@ -3311,8 +3311,10 @@ function medalSVG(b, ok, st, size){
   const ink = ok ? '#1a1a1a' : '#62676e', bg = ok ? m1 : '#3b3f45';
   /* pietra miliare: colonnino squadrato sul suo basamento, con il numero inciso sopra (niente numero sotto) */
   const stone = lk.i === 'stone' ? `<g transform="translate(0 -2) scale(${(1.1 + 0.35 * ((lk.sc || 1) - 0.78) / 0.5).toFixed(2)})" fill="none" stroke="${ink}" stroke-width="2.4" stroke-linejoin="round">`+
+    `<defs><clipPath id="${id}c"><path d="M-11 13V-13h22v26z"/></clipPath></defs>`+
+    `<path d="M-22 10L16-28l5.5 5.5L-16.5 15.5z" fill="${ink}" stroke="none" clip-path="url(#${id}c)"/>`+   /* la banda trasversale, come sui cartelli stradali */
     `<path d="M-11 13V-13l2.6-3.6h16.8L11-13v26z"/><path d="M-11-13h22"/><path d="M-15 13h30v8H-15z"/>`+
-    `<text y="4" text-anchor="middle" font-family="Barlow Semi Condensed, Arial" font-weight="700" font-size="${!b.big ? 13 : b.big.length > 3 ? 9.5 : b.big.length > 2 ? 11 : 13}" fill="${ink}" stroke="none">${b.big || ''}</text></g>` : null;
+    `<text y="10" text-anchor="middle" font-family="Barlow Semi Condensed, Arial" font-weight="700" font-size="${!b.big ? 12 : b.big.length > 3 ? 9 : b.big.length > 2 ? 10.5 : 12}" fill="${ink}" stroke="${bg}" stroke-width="2.4" paint-order="stroke">${b.big || ''}</text></g>` : null;
   const glyph = stone ? stone : b.dot ? `<circle r="9" fill="${ok ? b.dot : '#55595f'}" stroke="${ok ? '#000' : '#666'}" stroke-opacity=".5" stroke-width="1.5"/>` :
     `<g transform="scale(${(1.45 * (lk.sc || 1)).toFixed(2)})" fill="${ink}" color="${ink}" style="--bg:${bg}">${ok ? B_ICO[lk.i] || B_ICO.star : (B_ICO[lk.i] || B_ICO.star).replace(/stroke="#[0-9a-f]{6}"/g, 'stroke="#62676e"').replace(/fill="#fff"/g, 'fill="#4f545b"').replace(/fill="#[0-9a-f]{6}"/g, 'fill="#62676e"')}</g>`;
   return `<svg viewBox="-60 -62 120 124" width="${size || 76}" height="${Math.round((size || 76) * 1.03)}" aria-hidden="true">`+
