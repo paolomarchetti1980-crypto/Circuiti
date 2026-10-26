@@ -1604,7 +1604,11 @@ function autoAccept(w, holds, res, volArea){
         const D = Math.sqrt(polyArea(h.poly))*0.03, vs = []; for(let i = 0; i < poly.length; i += Math.max(2, 2*Math.floor(poly.length/40))) vs.push([poly[i], poly[i+1]]);
         const near = vs.filter(([x, y]) => hp.some((a, i) => { const b = hp[(i+1) % hp.length], dx = b[0]-a[0], dy = b[1]-a[1], L2 = dx*dx + dy*dy || 1, t = Math.max(0, Math.min(1, ((x-a[0])*dx + (y-a[1])*dy)/L2)); return Math.hypot(x - a[0] - t*dx, y - a[1] - t*dy) < D; })).length;
         if(near > vs.length*0.3) return false; } const a = polyLab(P, poly), b = polyLab(P, h.poly, (x, y) => inPoly(poly, x, y) || holds.some(o => o !== h && o.poly && polyArea(o.poly) < volArea && inPoly(o.poly, x, y)));
-      if(a && b){ const dl = (a[0] - b[0])*0.5, d = Math.hypot(dl, a[1] - b[1], a[2] - b[2]); if(d < 14) return false; } } }
+      if(a && b){ const dl = (a[0] - b[0])*0.5, d = Math.hypot(dl, a[1] - b[1], a[2] - b[2]); if(d < 14) return false;
+        /* versione prudente: sopra un volume si tengono solo prese di colore deciso e di forma compatta
+           (le chiazze di vernice grigia o bianca e le macchie sfrangiate si scartano: quelle prese si aggiungono col tocco) */
+        if(Math.hypot(a[1], a[2]) < 16) return false;
+        if((res.solid || polyArea(poly)/(hullAreaFlat(poly) || 1)) < 0.78) return false; } } }
   let over = 0, inside = 0;
   for(const h of holds){
     if(!h.poly) continue;
