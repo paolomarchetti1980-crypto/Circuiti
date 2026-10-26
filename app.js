@@ -966,22 +966,18 @@ async function refineAuto(w, list){
     if(ui.scan.i % 40 === 0){ touch(); render(); }
   }
   list.forEach(h => { delete h._so; });
-  /* seconda passata: le prese piccole, riguardate più da vicino (metodo scelto con SMALL_MODE: 'A' ingrandimento, 'B' colore) */
-  const mode = window.SMALL_MODE || '';
-  if(!mode || ui.scan.stop) return;
+  /* seconda passata: le prese piccole, riguardate da vicino (riquadri del 18% invece del 40%): i contorni arrivano al bordo vero.
+     Provato anche col colore: non migliorava niente */
+  if(ui.scan.stop) return;
   const L = Math.max(w.w, w.h), small = list.filter(h => h.poly && polyArea(h.poly) < (L*0.045)*(L*0.045));
   const F = fineGrid(w);
   small.sort((a, b) => (Math.floor(a.y/(F.T*0.75)) - Math.floor(b.y/(F.T*0.75))) || (Math.floor(a.x/(F.T*0.75)) - Math.floor(b.x/(F.T*0.75))));
   ui.scan.i = 0; ui.scan.total = small.length; renderTools();
-  const im = mode.includes('B') ? await loadImg(w.img) : null;
   for(const h of small){
     if(ui.scan.stop) break;
     const op0 = []; for(let i = 0; i < h.poly.length; i += 2) op0.push([h.poly[i], h.poly[i+1]]);
     let op = null;
-    if(mode.includes('A')){ try{ const rf = await samRefine(w, op0, h.x, h.y, true); if(rf && rf.length >= 3 && polyIoU(rf, op0) >= 0.6) op = rf; }catch(e){} }
-    if(mode.includes('B')){ try{ const A0 = polyArea(h.poly), res = colorRegion(im, w, h.x, h.y, Math.max(20, Math.sqrt(A0)*1.6));
-      if(res && !res.weak && !res.touch && res.pts && res.pts.length >= 3){ const base = op || op0, ca = polyArea(res.pts.flat());
-        if(polyIoU(res.pts, base) >= 0.6 && ca >= polyArea(base.flat())*0.95 && ca <= polyArea(base.flat())*1.6) op = res.pts; } }catch(e){} }
+    try{ const rf = await samRefine(w, op0, h.x, h.y, true); if(rf && rf.length >= 3 && polyIoU(rf, op0) >= 0.6) op = rf; }catch(e){}
     if(op){ h.poly = []; op.forEach(p => h.poly.push(Math.round(p[0]), Math.round(p[1]))); }
     ui.scan.i++;
     if(ui.scan.i % 3 === 0){ renderTools(); await new Promise(r => setTimeout(r, 0)); }
