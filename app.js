@@ -3424,10 +3424,12 @@ function acctHtml(){
     (ui.acctWhy ? `<p>Per segnare le tue salite serve un account: è gratis e ti chiediamo solo email e password.</p>` : '')+
     `<label class="field">Email<input id="aemail" type="email" autocomplete="email" inputmode="email" value="${esc(ui.acctEmail || '')}"></label>`+
     `<label class="field">Password${nw ? ' (almeno 8 caratteri)' : ''}<input id="apass" type="password" autocomplete="${nw ? 'new-password' : 'current-password'}"></label>`+
+    /* sotto i 14 anni l'account lo crea un genitore, con la sua email: la scelta si salva con l'account */
+    (nw ? `<div class="agebox"><small>Chi crea l'account?</small><div class="seg" role="group" aria-label="Età"><button data-act="acctage" data-v="14" aria-pressed="${ui.acctAge === '14'}">Ho almeno 14 anni</button><button data-act="acctage" data-v="gen" aria-pressed="${ui.acctAge === 'gen'}">Un genitore, per un figlio sotto i 14</button></div></div>` : '')+
     `<div class="row"><button class="btn primary" data-act="acctgo">${nw ? 'Crea account' : 'Entra'}</button>`+
     `<button class="btn" data-act="acctmode" data-v="${nw ? 'in' : 'new'}">${nw ? 'Ho già un account' : 'Crea un account'}</button></div>`+
     (nw ? '' : `<p class="note"><button class="linklike" data-act="acctmode" data-v="reset">Password dimenticata?</button></p>`)+
-    `<p class="note">Salviamo solo la tua email e le tue salite. I pareri sul grado arrivano ai tracciatori in forma anonima. Puoi cancellare l'account quando vuoi dal menu.</p>`;
+    `<p class="note">Salviamo solo la tua email e le tue salite. I pareri sul grado arrivano ai tracciatori in forma anonima. Puoi cancellare l'account quando vuoi dal menu; se non lo usi per 2 anni lo cancelliamo noi.</p>`;
 }
 async function acctGo(){
   const em = document.getElementById('aemail'), pw = document.getElementById('apass');
@@ -3435,9 +3437,10 @@ async function acctGo(){
   ui.acctEmail = email;
   if(!/^\S+@\S+\.\S+$/.test(email)){ toast('Scrivi un\'email valida.'); return; }
   if(password.length < (nw ? 8 : 1)){ toast(nw ? 'La password deve avere almeno 8 caratteri.' : 'Scrivi la password.'); return; }
+  if(nw && !ui.acctAge){ toast('Dicci chi crea l\'account: sotto i 14 anni deve farlo un genitore.'); return; }
   setIntent('cliente');
   if(nw){
-    const { data, error } = await SB.auth.signUp({ email, password, options: { emailRedirectTo: appBase() } });
+    const { data, error } = await SB.auth.signUp({ email, password, options: { emailRedirectTo: appBase(), data: { eta: ui.acctAge === 'gen' ? 'genitore per figlio sotto i 14' : 'almeno 14 anni', eta_il: new Date().toISOString() } } });
     if(error){ toast(/registered|exists/i.test(error.message || '') ? 'Hai già un account con questa email: entra.' : 'Registrazione non riuscita: ' + error.message); if(/registered|exists/i.test(error.message || '')){ ui.acctMode = 'in'; renderSheet(); } return; }
     if(data && data.session){ rememberPlace(); location.reload(); return; }
     ui.acctMode = 'sent'; renderSheet(); return;
@@ -3820,6 +3823,13 @@ function renderSheet(){
   } else { ui.sheet = null; el.hidden = true; return; }
   const cb0 = $('#cropbox'), keep = cb0 ? [cb0.scrollLeft, cb0.scrollTop] : null;
   card.innerHTML = h;
+  /* password: un occhio per vederla in chiaro mentre la si scrive */
+  card.querySelectorAll('input[type=password]').forEach(inp => {
+    const w = document.createElement('span'); w.className = 'pwrap'; inp.parentNode.insertBefore(w, inp); w.appendChild(inp);
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'peye'; b.setAttribute('aria-label', 'Mostra la password'); b.innerHTML = EYE_SVG;
+    b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); const show = inp.type === 'password'; inp.type = show ? 'text' : 'password'; b.classList.toggle('on', show); b.setAttribute('aria-label', show ? 'Nascondi la password' : 'Mostra la password'); inp.focus(); });
+    w.appendChild(b);
+  });
   const cb1 = $('#cropbox');
   if(cb1 && keep){ cb1.scrollLeft = keep[0]; cb1.scrollTop = keep[1]; }
   el.hidden = false;
@@ -4228,7 +4238,7 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['badges','hi','prevtoday','fgo','bcolorall','rate','minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
+const PUBLIC_ACTS = ['acctage','badges','hi','prevtoday','fgo','bcolorall','rate','minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
 const MGR_ACTS = ['qr','qrprint','qrcopy','dash','dashsec','fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
@@ -4330,6 +4340,7 @@ document.addEventListener('click', e => {
     case 'badges': ui.nbShown = null; openSheet('badges'); break;
     case 'acct': ui.acctMode = 'in'; ui.acctWhy = false; openSheet('acct'); break;
     case 'acctmode': ui.acctMode = b.dataset.v; if(ui.sheet !== 'acct') openSheet('acct'); else renderSheet(); break;
+    case 'acctage': { $('#toast').hidden = true; const em = document.getElementById('aemail'), pw = document.getElementById('apass'); ui.acctEmail = em ? em.value : ui.acctEmail; const pv = pw ? pw.value : ''; ui.acctAge = b.dataset.v; renderSheet(); const p2 = document.getElementById('apass'); if(p2) p2.value = pv; break; }
     case 'acctgo': acctGo(); break;
     case 'acctreset': acctReset(); break;
     case 'delacct': if(CL) delAccount(); break;

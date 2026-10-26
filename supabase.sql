@@ -204,3 +204,26 @@ alter table public.ticks add column if not exists high_ups smallint not null def
 alter table public.ticks add column if not exists high_at timestamptz;
 
 -- (nessuna modifica al database per i piedi obbligati: sono prese con role 'foot' dentro app_state)
+
+-- ===== Account clienti inattivi da 24 mesi: cancellati ogni domenica notte (salite comprese, per cascata). Lo staff è escluso =====
+create extension if not exists pg_cron;
+create or replace function public.purge_inactive_clients() returns integer
+language plpgsql security definer set search_path = public, auth as $$
+declare n integer;
+begin
+  with last_act as (
+    select u.id, greatest(
+      u.created_at,
+      coalesce(u.last_sign_in_at, u.created_at),
+      coalesce((select max(greatest(s.updated_at, s.refreshed_at::timestamptz)) from auth.sessions s where s.user_id = u.id), u.created_at),
+      coalesce((select max(t.updated_at) from public.ticks t where t.user_id = u.id), u.created_at)) as at
+    from auth.users u
+    where not exists (select 1 from public.editors e where lower(e.email) = lower(u.email))
+  ), del as (
+    delete from auth.users u using last_act l where u.id = l.id and l.at < now() - interval '24 months' returning u.id
+  )
+  select count(*) into n from del;
+  return n;
+end $$;
+revoke all on function public.purge_inactive_clients() from public, anon, authenticated;
+select cron.schedule('pulizia-account-inattivi', '17 3 * * 0', $$select public.purge_inactive_clients()$$);
