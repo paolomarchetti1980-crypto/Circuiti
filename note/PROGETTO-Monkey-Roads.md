@@ -51,6 +51,7 @@ Monkey Roads è la web app di **Monkey Island Roma**, la palestra di boulder di 
 ### Staff
 - Carica la foto del muro: JPG, PNG, WebP, HEIC e anche i RAW delle fotocamere, come i NEF.
 - **Risoluzione delle foto (dal 26/10):** il ritaglio si fa sulla foto originale, letta fino a 4096 px. Si salvano due versioni: 3000 px per lo staff e la rilevazione delle prese, 1600 px per i clienti. I muri caricati prima sono rimasti a 1100–1500 px.
+- **Rilevazione (dal 27/10):** al tocco, se il riconoscimento non trova la presa (o prende solo il bullone) si usa il colore. Nel rilevamento automatico: le prese sopra i volumi vengono separate (solo colore deciso e forma compatta, così le chiazze di vernice si scartano) e c'è una seconda passata ingrandita per le prese piccole (contorni pieni, rilevamento circa un terzo più lento).
 - Rileva le prese e prepara il muro ("Blocca muro e traccia"). Finché il muro non è pronto lo vede solo il gestore.
 - **Tracciatura:** partenza (quadrato), prese con mano sinistra o destra, arrivo (rombo), **piedi obbligati** (tratteggio giallo con l'impronta). I numeri hanno tutti la stessa misura; mentre si traccia si possono vedere gli altri circuiti in trasparenza.
 - **Boulder:** colore, soprannome, tracciatore, date di montaggio e smontaggio, caratteristiche a gruppi (Parete, Movimento, Prese, Richiede), note. Il vecchio menu "Stile" è stato tolto per i boulder e resta per i circuiti.
