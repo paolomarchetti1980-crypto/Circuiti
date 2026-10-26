@@ -3295,8 +3295,7 @@ const B_LOOK = (() => {
   ser(['hi5', 'hi20'], 'up', (st, id) => st.hiUps / num(id)); L.hi5.t = 's';
   ser(['g1', 'g10', 'g50', 'g100'], ['heart', 'heart', 'heart', 'hearts'], (st, id) => st.nRate / num(id), true); L.g100.sc = 1.15;
   ser(['p1', 'p10', 'p50', 'p100'], ['scale', 'scale', 'scale', 'wig'], (st, id) => st.nVote / num(id), true); L.p100.sc = 1.1;
-  ser(['m100', 'm250', 'm500', 'm1000', 'm2500', 'm5000'], ['post1', 'post2', 'post3', 'post4', 'post5', 'post6'], (st, id) => st.moves / num(id));
-  ['m100', 'm250', 'm500', 'm1000', 'm2500', 'm5000'].forEach(id => { L[id].sc = 1.08; });
+  ser(['m100', 'm250', 'm500', 'm1000', 'm2500', 'm5000'], 'stone', (st, id) => st.moves / num(id), true);
   ser(['early', 'early10', 'early30'], ['sun1', 'sun2', 'sun3'], (st, id) => st.early / num(id));
   ser(['late', 'late10', 'late30'], ['moon1', 'moon2', 'moon3'], (st, id) => st.late / num(id));
   ser(['d5', 'd10', 'd20'], ['bolt', 'bolt2', 'bolt3'], (st, id) => st.bestDay / num(id));
@@ -3310,7 +3309,11 @@ function medalSVG(b, ok, st, size){
   const [m1, m2] = B_METAL[lk.t], hex = r => { const p = []; for(let k = 0; k < 6; k++){ const a = Math.PI / 180 * (60*k - 90); p.push((r*Math.cos(a)).toFixed(1) + ',' + (r*Math.sin(a)).toFixed(1)); } return p.join(' '); };
   const pr = !ok && lk.pr && st ? Math.max(0, Math.min(1, lk.pr(st) || 0)) : 0;
   const ink = ok ? '#1a1a1a' : '#62676e', bg = ok ? m1 : '#3b3f45';
-  const glyph = b.dot ? `<circle r="9" fill="${ok ? b.dot : '#55595f'}" stroke="${ok ? '#000' : '#666'}" stroke-opacity=".5" stroke-width="1.5"/>` :
+  /* pietra miliare: colonnino squadrato sul suo basamento, con il numero inciso sopra (niente numero sotto) */
+  const stone = lk.i === 'stone' ? `<g transform="translate(0 -2) scale(${(1.1 + 0.35 * ((lk.sc || 1) - 0.78) / 0.5).toFixed(2)})" fill="none" stroke="${ink}" stroke-width="2.4" stroke-linejoin="round">`+
+    `<path d="M-11 13V-13l2.6-3.6h16.8L11-13v26z"/><path d="M-11-13h22"/><path d="M-15 13h30v8H-15z"/>`+
+    `<text y="4" text-anchor="middle" font-family="Barlow Semi Condensed, Arial" font-weight="700" font-size="${!b.big ? 13 : b.big.length > 3 ? 9.5 : b.big.length > 2 ? 11 : 13}" fill="${ink}" stroke="none">${b.big || ''}</text></g>` : null;
+  const glyph = stone ? stone : b.dot ? `<circle r="9" fill="${ok ? b.dot : '#55595f'}" stroke="${ok ? '#000' : '#666'}" stroke-opacity=".5" stroke-width="1.5"/>` :
     `<g transform="scale(${(1.45 * (lk.sc || 1)).toFixed(2)})" fill="${ink}" color="${ink}" style="--bg:${bg}">${ok ? B_ICO[lk.i] || B_ICO.star : (B_ICO[lk.i] || B_ICO.star).replace(/stroke="#[0-9a-f]{6}"/g, 'stroke="#62676e"').replace(/fill="#fff"/g, 'fill="#4f545b"').replace(/fill="#[0-9a-f]{6}"/g, 'fill="#62676e"')}</g>`;
   return `<svg viewBox="-60 -62 120 124" width="${size || 76}" height="${Math.round((size || 76) * 1.03)}" aria-hidden="true">`+
     `<defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${ok ? m1 : '#4a4e55'}"/><stop offset="1" stop-color="${ok ? m2 : '#2e3136'}"/></linearGradient></defs>`+
@@ -3319,8 +3322,8 @@ function medalSVG(b, ok, st, size){
     `<polygon points="${hex(48)}" fill="none" stroke="${ok ? '#fff' : '#555'}" stroke-opacity=".6" stroke-width="1.8" stroke-dasharray="4 3"/>`+
     `<polygon points="${hex(41)}" fill="url(#${id})"/>`+
     (ok ? `<path d="M-26-20 L-6-32" stroke="#fff" stroke-opacity=".45" stroke-width="5" stroke-linecap="round"/>` : '')+
-    `<g transform="translate(0 ${b.big ? -7 : 0})">${glyph}</g>`+
-    (b.big ? `<text y="29" text-anchor="middle" font-family="Barlow Semi Condensed, Arial" font-weight="700" font-size="${b.big.length > 3 ? 14 : 17}" fill="${ink}">${b.big}</text>` : '')+
+    `<g transform="translate(0 ${b.big && !stone ? -7 : 0})">${glyph}</g>`+
+    (b.big && !stone ? `<text y="29" text-anchor="middle" font-family="Barlow Semi Condensed, Arial" font-weight="700" font-size="${b.big.length > 3 ? 14 : 17}" fill="${ink}">${b.big}</text>` : '')+
     `</svg>`;
 }
 /* sblocco: la medaglia compare grande al centro, poi si chiude da sola (o con un tocco) */
