@@ -350,24 +350,58 @@ function toast(msg, ms, undo){
 }
 
 /* ---------- foto ---------- */
-function readPhoto(file){
-  return new Promise((res,rej) => {
-    const fr = new FileReader();
-    fr.onerror = rej;
-    fr.onload = () => {
-      const im = new Image();
-      im.onerror = rej;
-      im.onload = () => {
-        const k = Math.min(1, 2000 / Math.max(im.width, im.height));
-        const w = Math.round(im.width*k), h = Math.round(im.height*k);
-        const c = document.createElement('canvas'); c.width = w; c.height = h;
-        c.getContext('2d').drawImage(im, 0, 0, w, h);
-        res({ w, h, img: c.toDataURL('image/jpeg', 0.86) });
-      };
-      im.src = fr.result;
+/* foto dei muri: tutto quello che il browser sa aprire (JPG, PNG, WebP, HEIC su iPhone...).
+   I RAW delle fotocamere (NEF Nikon, CR2/CR3 Canon, ARW Sony, DNG...) il browser non li apre: dentro però c'è
+   un'anteprima JPEG a piena risoluzione, che basta e avanza (la foto si riduce comunque a 2000 pixel) */
+const RAW_EXT = /\.(nef|nrw|cr2|cr3|arw|srf|sr2|dng|orf|rw2|pef|raf|srw|raw)$/i;
+async function rawPreview(file){
+  const buf = new Uint8Array(await file.arrayBuffer()), dv = new DataView(buf.buffer);
+  const cands = []; let orient = 1;
+  /* 1) RAW in formato TIFF (quasi tutti): anteprime indicate dai tag 0x0201/0x0202, anche nelle sotto-cartelle 0x014A */
+  if((buf[0] === 0x49 && buf[1] === 0x49) || (buf[0] === 0x4D && buf[1] === 0x4D)){
+    const le = buf[0] === 0x49, u16 = o => dv.getUint16(o, le), u32 = o => dv.getUint32(o, le);
+    const seen = new Set(), walk = (off, depth) => {
+      if(!off || off + 2 > buf.length || seen.has(off) || depth > 4) return; seen.add(off);
+      const n = u16(off); let jo = 0, jl = 0, so = 0, sl = 0; const subs = [];
+      for(let k = 0; k < n; k++){ const e = off + 2 + k*12; if(e + 12 > buf.length) break;
+        const tag = u16(e), type = u16(e + 2), cnt = u32(e + 4), val = type === 3 && cnt === 1 ? u16(e + 8) : u32(e + 8);
+        if(tag === 0x0201) jo = val; else if(tag === 0x0202) jl = val;
+        else if(tag === 0x0111 && cnt === 1) so = val; else if(tag === 0x0117 && cnt === 1) sl = val;
+        else if(tag === 0x0112 && depth === 0) orient = val;
+        else if(tag === 0x014A){ if(cnt === 1) subs.push(val); else for(let q = 0; q < cnt; q++) subs.push(u32(val + q*4)); } }
+      if(jo && jl) cands.push([jo, jl]); if(so && sl) cands.push([so, sl]);
+      subs.forEach(sb => walk(sb, depth + 1));
+      if(depth === 0 && off + 2 + n*12 + 4 <= buf.length) walk(u32(off + 2 + n*12), 0);
     };
-    fr.readAsDataURL(file);
-  });
+    walk(u32(4), 0);
+  }
+  /* 2) se non c'era (CR3, RAF, ...): i JPEG trovati nel file, misurati leggendone i blocchi (così una miniatura non si confonde con la foto) */
+  const jpegEnd = k => { let p = k + 2;
+    while(p + 4 <= buf.length){ if(buf[p] !== 0xFF) return -1; const m = buf[p+1];
+      if(m === 0xD9) return p + 2;
+      if(m >= 0xD0 && m <= 0xD7){ p += 2; continue; }
+      p += 2 + ((buf[p+2] << 8) | buf[p+3]);
+      if(m === 0xDA){ while(p + 1 < buf.length){ if(buf[p] === 0xFF && buf[p+1] !== 0 && !(buf[p+1] >= 0xD0 && buf[p+1] <= 0xD7)) break; p++; } } }
+    return -1; };
+  if(!cands.length) for(let k = 0; k < buf.length - 3; k++){
+    if(buf[k] === 0xFF && buf[k+1] === 0xD8 && buf[k+2] === 0xFF){ const e = jpegEnd(k); if(e > 0){ cands.push([k, e - k]); k = e - 1; } }
+  }
+  const ok = cands.filter(([o, l]) => o + l <= buf.length && buf[o] === 0xFF && buf[o+1] === 0xD8).sort((a, b) => b[1] - a[1]);
+  if(!ok.length) throw new Error('nessuna anteprima');
+  return { blob: new Blob([buf.subarray(ok[0][0], ok[0][0] + ok[0][1])], { type: 'image/jpeg' }), orient };
+}
+function loadBlobImg(blob){ return new Promise((res, rej) => { const u = URL.createObjectURL(blob), im = new Image(); im.onload = () => res(im); im.onerror = () => { URL.revokeObjectURL(u); rej(new Error('img')); }; im.src = u; }); }
+async function readPhoto(file){
+  let im, orient = 1;
+  try{ if(RAW_EXT.test(file.name || '')) throw 0; im = await loadBlobImg(file); }
+  catch(e){ const r = await rawPreview(file); orient = r.orient; im = await loadBlobImg(r.blob); }
+  const rot = orient === 6 || orient === 8, W0 = rot ? im.height : im.width, H0 = rot ? im.width : im.height;
+  const k = Math.min(1, 2000 / Math.max(W0, H0)), w = Math.round(W0*k), h = Math.round(H0*k);
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
+  /* orientamento dello scatto (solo per i RAW: per le foto normali lo applica già il browser) */
+  if(orient === 3){ g.translate(w, h); g.rotate(Math.PI); } else if(orient === 6){ g.translate(w, 0); g.rotate(Math.PI/2); } else if(orient === 8){ g.translate(0, h); g.rotate(-Math.PI/2); }
+  g.drawImage(im, 0, 0, rot ? h : w, rot ? w : h);
+  return { w, h, img: c.toDataURL('image/jpeg', 0.86) };
 }
 const loadImg1 = src => new Promise((res,rej) => { const i = new Image(); if(!/^data:/.test(src)) i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = rej; i.src = src; });
 /* se una copia salvata male blocca la lettura dei pixel, riprova scavalcandola */
@@ -2631,7 +2665,7 @@ function fit(){
 }
 /* il vero <input type=file> sta SOPRA il bottone (trasparente): il tocco arriva direttamente all'input,
    senza passare da <label for>, che alcune viste integrate (es. l'app Claude) ignorano */
-const PICK_BTNS = `<span class="btn primary big pick">Scegli dalla galleria<input type="file" accept="image/*" data-pick="1" aria-label="Scegli dalla galleria"></span>
+const PICK_BTNS = `<span class="btn primary big pick">Scegli dalla galleria<input type="file" accept="image/*,.nef,.nrw,.cr2,.cr3,.arw,.dng,.orf,.rw2,.pef,.raf,.srw" data-pick="1" aria-label="Scegli dalla galleria"></span>
   <span class="btn big pick">Scatta una foto<input type="file" accept="image/*" capture="environment" data-pick="1" aria-label="Scatta una foto"></span>`;
 function renderTop(){
   const w = curWall();
@@ -4639,7 +4673,7 @@ async function onFile(e){
     const p = await readPhoto(f);
     ui.crop = { w: p.w, h: p.h, img: p.img, pts: [], closed: false };
     openSheet('crop');
-  }catch(err){ toast('Non riesco a leggere questa foto. Prova con un altro file.'); }
+  }catch(err){ toast('Non riesco a leggere questa foto. Vanno bene JPG, PNG, WebP, HEIC e i RAW delle fotocamere (NEF, CR2, ARW, DNG...): prova a esportarla in JPG.'); }
 }
 async function finishCrop(all){
   const cr = ui.crop; if(!cr) return;
