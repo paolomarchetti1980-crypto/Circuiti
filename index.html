@@ -304,6 +304,18 @@ button,label.btn{cursor:pointer}
 .bcin span{color:#ccc;font-size:16px;max-width:280px}
 @keyframes bcf{from{opacity:0}}
 @keyframes bcp{0%{transform:scale(.2) rotate(-12deg);opacity:0}100%{transform:none;opacity:1}}
+.tabdot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#e5312b;margin-left:6px;vertical-align:2px;box-shadow:0 0 0 2px var(--panel)}
+.badge{position:relative}
+.badge.isnew{box-shadow:0 0 0 2px #e5312b inset;animation:nbg 1.6s ease-in-out 3}
+.badge .nbd{position:absolute;top:6px;right:6px;background:#e5312b;color:#fff;font:700 10px Barlow,sans-serif;font-style:normal;text-transform:uppercase;letter-spacing:.06em;padding:2px 6px;border-radius:8px}
+@keyframes nbg{50%{background:rgba(229,49,43,.16)}}
+.bstrip{position:relative;width:100%;display:flex;align-items:center;gap:12px;margin:0 0 14px;padding:10px 12px;border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--ink);text-align:left}
+.bstrip .bsm{display:flex;flex:none}
+.bstrip .bsm svg{margin-right:-8px}
+.bstrip .bst{flex:1;display:flex;flex-direction:column;gap:2px;margin-left:8px}
+.bstrip .bst b{font:700 18px "Barlow Semi Condensed",Barlow,sans-serif}
+.bstrip .bst small{color:var(--muted);font-size:13px}
+.bstrip .mbd{left:8px;top:8px}
 .bgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .badge{display:flex;flex-direction:column;align-items:center;text-align:center;gap:3px;padding:10px 6px;border-radius:12px;background:rgba(255,255,255,.04)}
 .badge b{font:700 14px/1.1 "Barlow Semi Condensed",Barlow,sans-serif}
@@ -316,5 +328,5 @@ button,label.btn{cursor:pointer}
 </style></head><body><div id="root"></div>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="namegen.js"></script><script id="app-js" src="app.js?v=157"></script>
+<script src="namegen.js"></script><script id="app-js" src="app.js?v=159"></script>
 </body></html>

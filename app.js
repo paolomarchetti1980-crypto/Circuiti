@@ -2525,7 +2525,7 @@ function homeScreen(){
   if(acctOn() && !EDIT){ const T = ACC() && ui.ticks ? [...ui.ticks.values()] : [], nd = T.filter(t => t.status === 'fatto').length, np = T.filter(t => t.status === 'progetto').length;
     const nb = ACC() ? earnedBadges().size : 0;
     const sub = !ACC() ? 'segna i percorsi fatti e i progetti, guadagna i badge' : nd || np ? [nd ? nd + (nd === 1 ? ' fatto' : ' fatti') : '', np ? np + (np === 1 ? ' progetto' : ' progetti') : '', nb + ' badge di ' + BADGES.length].filter(Boolean).join(' · ') : 'apri un percorso e tocca ✓ Fatto';
-    mine = `<button class="hmine" data-act="mine">${CUP_SVG}<span><b>Le mie salite</b><small>${sub}</small></span>${ui.badgeNew ? '<i class="mbd"></i>' : ''}<svg width="16" height="16" viewBox="0 0 14 14" aria-hidden="true"><path d="M5 3l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`; }
+    mine = `<button class="hmine" data-act="mine">${CUP_SVG}<span><b>Le mie salite</b><small>${sub}</small></span>${hasNewB() ? '<i class="mbd"></i>' : ''}<svg width="16" height="16" viewBox="0 0 14 14" aria-hidden="true"><path d="M5 3l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`; }
   return `<div class="home">${tile('boulder')}${tile('circ')}${mine}</div>`;
 }
 function sectorGrid(){
@@ -2659,7 +2659,7 @@ function renderTop(){
   /* Le mie salite sempre a un tocco, da ogni schermata */
   const mb = $('#mineBtn'), mOn = acctOn() && !EDIT; mb.hidden = !mOn;
   if(mOn){ const nd = ACC() && ui.ticks ? [...ui.ticks.values()].filter(t => t.status === 'fatto').length : 0;
-    mb.innerHTML = CUP_SVG + (ui.badgeNew ? '<i class="mbd"></i>' : ''); }
+    mb.innerHTML = CUP_SVG + (hasNewB() ? '<i class="mbd"></i>' : ''); }
 }
 const CUP_SVG = '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 20L9 8.5l3.5 6 2.5-3.5L21.5 20z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 8.5V3.5l4 1.6-4 1.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';   /* montagna con bandierina in vetta */
 /* le salite del cliente sui percorsi in parete adesso: per tenerle sempre sotto gli occhi mentre si naviga */
@@ -3105,7 +3105,7 @@ async function saveTick(w, c, next, restore){
   const r = next ? await SB.from('ticks').upsert({ item_id: c.id, wall_id: w.id, status: next.status, vote: next.vote || null, rating: next.rating || null, grade: next.grade, done_at: next.done_at, moves: next.moves, from_project: next.from_project, high: next.high || null, high_ups: next.high_ups || 0, high_at: next.high_at || null, updated_at: new Date().toISOString() })
                  : await SB.from('ticks').delete().eq('item_id', c.id);
   if(r && r.error){ if(prev) ui.ticks.set(c.id, prev); else ui.ticks.delete(c.id); render(); toast('Non riesco a salvare: ' + (r.error.message || 'riprova tra poco.')); return; }
-  if(before && !restore){ const now = earnedBadges(), got = [...now].filter(id => !before.has(id)); if(got.length){ const b = BADGES.find(x => x.id === got[got.length - 1]); badgeCelebrate(b); ui.badgeNew = true; } }
+  if(before && !restore){ const now = earnedBadges(), got = [...now].filter(id => !before.has(id)); if(got.length){ const b = BADGES.find(x => x.id === got[got.length - 1]); badgeCelebrate(b); setNewB(newB().concat(got)); } }
 }
 function tick(status){
   const w = curWall(), c = curCircuit(); if(!w || !c) return;
@@ -3272,6 +3272,10 @@ function medalSVG(b, ok, st, size){
     `</svg>`;
 }
 /* sblocco: la medaglia compare grande al centro, poi si chiude da sola (o con un tocco) */
+/* badge nuovi non ancora visti: pallino rosso sulla montagna, sulla scheda Badge e sul badge stesso. Restano anche riaprendo l'app */
+const newB = () => { try{ return JSON.parse(localStorage.getItem('mr-badge-new') || '[]'); }catch(e){ return []; } };
+const setNewB = l => { try{ localStorage.setItem('mr-badge-new', JSON.stringify([...new Set(l)])); }catch(e){} };
+const hasNewB = () => acctOn() && newB().length > 0;
 function badgeCelebrate(b){
   let el = document.getElementById('bcele'); if(el) el.remove();
   el = document.createElement('div'); el.id = 'bcele'; el.className = 'bcele';
@@ -3279,11 +3283,18 @@ function badgeCelebrate(b){
   el.addEventListener('click', () => el.remove());
   document.body.appendChild(el); setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 450); }, 3200);
 }
+/* in cima a Le mie salite: i badge in breve, si tocca per vederli tutti */
+function badgeStrip(){
+  const st = badgeStats(), got = BADGES.filter(b => b.ok(st)), rank = { g: 3, s: 2, b: 1 };
+  const show = got.slice().sort((a, b) => (rank[(B_LOOK[b.id] || {}).t] || 0) - (rank[(B_LOOK[a.id] || {}).t] || 0)).slice(0, 4);
+  return `<button class="bstrip" data-act="badges">${hasNewB() ? '<i class="mbd"></i>' : ''}<span class="bsm">${show.length ? show.map(b => medalSVG(b, true, st, 40)).join('') : medalSVG(BADGES[0], false, st, 40)}</span>`+
+    `<span class="bst"><b>Badge · ${got.length} di ${BADGES.length}</b><small>${hasNewB() ? 'ne hai uno nuovo!' : got.length ? 'tocca per vederli tutti' : 'il primo arriva con la prima salita'}</small></span><svg width="16" height="16" viewBox="0 0 14 14" aria-hidden="true"><path d="M5 3l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
+}
 function badgesHtml(){
   const st = badgeStats(), got = BADGES.filter(b => b.ok(st)).length;
   return `<p class="dlab" style="margin-top:4px">Badge ottenuti: ${got} di ${BADGES.length} · ${st.moves.toLocaleString('it-IT')} movimenti sui circuiti</p>`+
     Object.keys(B_FAM).map(f => `<p class="dlab">${B_FAM[f][0]}</p><div class="bgrid">${BADGES.filter(b => b.f === f).map(b => { const ok = b.ok(st);
-      return `<div class="badge ${ok ? 'ok' : ''}" title="${esc(b.desc)}">${medalSVG(b, ok, st)}<b>${esc(b.name)}</b><small>${esc(ok ? b.desc : b.left(st))}</small></div>`; }).join('')}</div>`).join('');
+      return `<div class="badge ${ok ? 'ok' : ''} ${ok && (ui.nbShown || []).includes(b.id) ? 'isnew' : ''}" title="${esc(b.desc)}">${ok && (ui.nbShown || []).includes(b.id) ? '<i class="nbd">nuovo</i>' : ''}${medalSVG(b, ok, st)}<b>${esc(b.name)}</b><small>${esc(ok ? b.desc : b.left(st))}</small></div>`; }).join('')}</div>`).join('');
 }
 function mineHtml(){
   const a = ACC();
@@ -3293,9 +3304,8 @@ function mineHtml(){
   if(!ui.ticks) return `<h2>Le mie salite</h2><p>Carico…</p>`;
   if(ui.ticksErr) return `<h2>Le mie salite</h2><p>Le salite non sono ancora disponibili. Riprova più tardi.</p><div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
   /* due sezioni, come nell'app: Boulder e Circuiti */
-  const tab = ui.mineTab || (ui.section === 'boulder' ? 'boulder' : 'circ'), bo = tab === 'boulder';
-  const tabs = (nB0, nC0) => `<div class="seg" role="group" aria-label="Sezione" style="margin:0 0 12px"><button data-act="minetab" data-v="boulder" aria-pressed="${tab === 'boulder'}">Boulder${nB0 ? ' · ' + nB0 : ''}</button><button data-act="minetab" data-v="circ" aria-pressed="${tab === 'circ'}">Circuiti${nC0 ? ' · ' + nC0 : ''}</button><button data-act="minetab" data-v="badge" aria-pressed="${tab === 'badge'}">Badge${ui.badgeNew ? ' •' : ''}</button></div>`;
-  if(tab === 'badge'){ ui.badgeNew = false; const al = mineItems(); return `<h2>Le mie salite</h2>` + tabs(al.filter(x => isSec(x.w) && x.t.status === 'fatto').length, al.filter(x => !isSec(x.w) && x.t.status === 'fatto').length) + badgesHtml() + `<div class="row"><button class="btn" data-act="close">Chiudi</button></div>`; }
+  const tab = ui.mineTab === 'boulder' || ui.mineTab === 'circ' ? ui.mineTab : (ui.section === 'boulder' ? 'boulder' : 'circ'), bo = tab === 'boulder';
+  const tabs = (nB0, nC0) => `<div class="seg" role="group" aria-label="Sezione" style="margin:0 0 12px"><button data-act="minetab" data-v="boulder" aria-pressed="${tab === 'boulder'}">Boulder${nB0 ? ' · ' + nB0 : ''}</button><button data-act="minetab" data-v="circ" aria-pressed="${tab === 'circ'}">Circuiti${nC0 ? ' · ' + nC0 : ''}</button></div>`;
   const all = mineItems(), items = all.filter(x => isSec(x.w) === bo);
   const done = items.filter(x => x.t.status === 'fatto'), proj = items.filter(x => x.t.status === 'progetto' && !x.gone);
   const nB = all.filter(x => isSec(x.w) && x.t.status === 'fatto').length, nC = all.filter(x => !isSec(x.w) && x.t.status === 'fatto').length;
@@ -3337,7 +3347,7 @@ function mineHtml(){
       `<p class="dlab" style="margin-top:14px">Mese per mese</p><div class="mchart">${bars}</div>`;
   }
   return `<h2>Le mie salite</h2>`+
-    tabs(nB, nC)+
+    badgeStrip() + tabs(nB, nC)+
     `<div class="dsum" style="grid-template-columns:repeat(2,1fr)"><div><b>${done.filter(x => !x.gone).length}</b><small>${bo ? 'fatti tra quelli in parete' : 'fatti tra quelli sui muri'}</small></div><div><b>${proj.length}</b><small>progetti</small></div></div>`+
     prog + ever+
     `<p class="dlab">Progetti</p>` + (proj.length ? `<div class="list" style="gap:0">${proj.map(x => { const M = !isSec(x.w) ? movesOf(x.c) : 0, h = x.t.high || 0;
@@ -3675,6 +3685,9 @@ function renderSheet(){
       `<div class="row"><button class="btn primary" data-act="fbsend">Invia</button><button class="btn" data-act="close">Annulla</button></div>`;
   } else if(ui.sheet === 'mine'){
     h = mineHtml();
+  } else if(ui.sheet === 'badges'){
+    const nb = newB(); if(nb.length){ ui.nbShown = nb; setNewB([]); setTimeout(() => { render(); const e = document.querySelector('#card .badge.isnew'); if(e) e.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 350); }
+    h = `<div class="row" style="margin:0 0 6px"><button class="linklike" data-act="mine">‹ Le mie salite</button></div><h2>I miei badge</h2>` + badgesHtml() + `<div class="row"><button class="btn" data-act="mine">Le mie salite</button><button class="btn primary" data-act="close">Chiudi</button></div>`;
   } else if(ui.sheet === 'acct'){
     h = acctHtml();
   } else if(ui.sheet === 'welcome'){
@@ -4158,7 +4171,7 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['hi','prevtoday','fgo','bcolorall','rate','minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
+const PUBLIC_ACTS = ['badges','hi','prevtoday','fgo','bcolorall','rate','minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
 const MGR_ACTS = ['qr','qrprint','qrcopy','dash','dashsec','fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
@@ -4255,8 +4268,9 @@ document.addEventListener('click', e => {
     case 'vote': vote(b.dataset.v); break;
     case 'hi': setHigh(+b.dataset.v || 0); break;
     case 'rate': rate(b.dataset.v); break;
-    case 'mine': ui.confirm = null; ui.mineTab = null; openSheet('mine'); break;
-    case 'minetab': ui.mineTab = ['boulder', 'circ', 'badge'].includes(b.dataset.v) ? b.dataset.v : 'circ'; renderSheet(); break;
+    case 'mine': ui.confirm = null; ui.nbShown = null; ui.mineTab = null; openSheet(hasNewB() ? 'badges' : 'mine'); break;   /* con un badge nuovo si va dritti ai badge */
+    case 'minetab': ui.mineTab = b.dataset.v === 'boulder' ? 'boulder' : 'circ'; renderSheet(); break;
+    case 'badges': ui.nbShown = null; openSheet('badges'); break;
     case 'acct': ui.acctMode = 'in'; ui.acctWhy = false; openSheet('acct'); break;
     case 'acctmode': ui.acctMode = b.dataset.v; if(ui.sheet !== 'acct') openSheet('acct'); else renderSheet(); break;
     case 'acctgo': acctGo(); break;
