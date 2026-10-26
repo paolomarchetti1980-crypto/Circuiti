@@ -1425,6 +1425,17 @@ function colorRegion(im, w, x, y, half){
   const pts = rdpPts(smoothClosed(tr.pts.map(p => [X0 + (p[0] + 0.5)/f, Y0 + (p[1] + 0.5)/f]), 2), 0.8/f);
   return { pts, n: tr.n / (f*f), touch: touch > (W + H)*0.04 };
 }
+async function colorAuto(w, x, y, cap){
+  const im = await loadImg(w.img), half = Math.max(24, Math.sqrt(cap)*0.6);
+  const res = colorRegion(im, w, x, y, half);
+  if(!res || res.weak || res.touch || !res.pts || res.pts.length < 3) return null;
+  const flat = []; res.pts.forEach(p => flat.push(Math.round(p[0]), Math.round(p[1])));
+  const area = polyArea(flat); if(area < 90 || area > cap) return null;
+  const solid = area / (hullAreaFlat(flat) || 1); if(solid < 0.55) return null;
+  let A = 0, cx = 0, cy = 0; const op = res.pts;
+  for(let i = 0; i < op.length; i++){ const a = op[i], b = op[(i+1) % op.length], c = a[0]*b[1] - b[0]*a[1]; A += c; cx += (a[0]+b[0])*c; cy += (a[1]+b[1])*c; }
+  A /= 2; return { poly: flat, cx: cx/(6*A), cy: cy/(6*A), area, solid, score: 0.9, sam: true, color: true };
+}
 function chooseColor(w, x, y, r, res){
   if(res.weak || !res.pts || res.pts.length < 3) return null;
   const cp = res.pts, cArea = Math.abs(polyArea(cp.flat()));
@@ -1552,7 +1563,7 @@ function panelLike(P, r, g, b, tol){
     return k > 0.5 && k < 1.3 && Math.abs(r/sm - c[0]/cs) + Math.abs(g/sm - c[1]/cs) + Math.abs(b/sm - c[2]/cs) < tol; });
 }
 /* il volume più piccolo (già trovato) che contiene il punto: le prese sopra devono essere molto più piccole */
-function volCap(holds, x, y, volArea){ let best = 0; for(const h of holds){ if(!h.poly) continue; const a = polyArea(h.poly); if(a >= volArea && inPoly(h.poly, x, y) && (!best || a < best)) best = a; } return best ? best*0.35 : 0; }
+function volCap(holds, x, y, volArea){ let best = 0; for(const h of holds){ if(!h.poly) continue; const a = polyArea(h.poly); if(a >= volArea && inPoly(h.poly, x, y) && (!best || a < best)) best = a; } return best ? best*0.6 : 0; }
 /* colore medio (Lab) dei punti dentro un contorno, dalla foto ridotta del pannello; si possono escludere zone */
 function polyLab(P, poly, skip){
   let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for(let i = 0; i < poly.length; i += 2){ x0 = Math.min(x0, poly[i]); x1 = Math.max(x1, poly[i]); y0 = Math.min(y0, poly[i+1]); y1 = Math.max(y1, poly[i+1]); }
@@ -1586,19 +1597,24 @@ function autoAccept(w, holds, res, volArea){
     if(near / pts.length > (big ? 0.55 : 0.75)) return false;
   }
   /* sopra un volume: dev'essere di un altro colore (se no è un pezzo del volume: una faccia, un riflesso, un buco) */
-  if(P){ const conts = holds.filter(h => h.poly && polyArea(h.poly) >= volArea && res.area < polyArea(h.poly)*0.35 && inPoly(h.poly, res.cx, res.cy));
-    for(const h of conts){ const a = polyLab(P, poly), b = polyLab(P, h.poly, (x, y) => inPoly(poly, x, y) || holds.some(o => o !== h && o.poly && polyArea(o.poly) < volArea && inPoly(o.poly, x, y)));
+  if(P){ const conts = holds.filter(h => h.poly && polyArea(h.poly) >= volArea && res.area < polyArea(h.poly)*0.6 && inPoly(h.poly, res.cx, res.cy));
+    for(const h of conts){
+      /* una fascia attaccata al bordo del volume è una sua faccia o la vernice, non una presa */
+      { const hp = []; for(let i = 0; i < h.poly.length; i += 2) hp.push([h.poly[i], h.poly[i+1]]);
+        const D = Math.sqrt(polyArea(h.poly))*0.03, vs = []; for(let i = 0; i < poly.length; i += Math.max(2, 2*Math.floor(poly.length/40))) vs.push([poly[i], poly[i+1]]);
+        const near = vs.filter(([x, y]) => hp.some((a, i) => { const b = hp[(i+1) % hp.length], dx = b[0]-a[0], dy = b[1]-a[1], L2 = dx*dx + dy*dy || 1, t = Math.max(0, Math.min(1, ((x-a[0])*dx + (y-a[1])*dy)/L2)); return Math.hypot(x - a[0] - t*dx, y - a[1] - t*dy) < D; })).length;
+        if(near > vs.length*0.3) return false; } const a = polyLab(P, poly), b = polyLab(P, h.poly, (x, y) => inPoly(poly, x, y) || holds.some(o => o !== h && o.poly && polyArea(o.poly) < volArea && inPoly(o.poly, x, y)));
       if(a && b){ const dl = (a[0] - b[0])*0.5, d = Math.hypot(dl, a[1] - b[1], a[2] - b[2]); if(d < 14) return false; } } }
   let over = 0, inside = 0;
   for(const h of holds){
     if(!h.poly) continue;
     const big = polyArea(h.poly) >= volArea;
-    if(big){ if(res.area < polyArea(h.poly)*0.35) continue; }
+    if(big){ if(res.area < polyArea(h.poly)*0.6) continue; }
     if(inPoly(poly, h.x, h.y)) inside++;
   }
   if(inside >= 2) return false;
   /* sovrapposizione: con le prese normali sempre; con quelle grandi solo se la nuova è di misura simile (doppione) */
-  const blocking = holds.filter(h => h.poly && (polyArea(h.poly) < volArea || res.area >= polyArea(h.poly)*0.35));
+  const blocking = holds.filter(h => h.poly && (polyArea(h.poly) < volArea || res.area >= polyArea(h.poly)*0.6));
   pts.forEach(([x, y]) => { for(const h of blocking){ if(inPoly(h.poly, x, y)){ over++; break; } } });
   return over / pts.length <= 0.25;
 }
@@ -1657,7 +1673,10 @@ async function samAutoScan(w){
       if(inAny(X, Y)) ok = true;
       else{
         let res = null;
-        try{ res = await samSegment(w, X, Y, 1, true, false, true, volCap(holds, X, Y, volArea)); }catch(e){ res = null; }
+        const cap = volCap(holds, X, Y, volArea);
+        try{ res = await samSegment(w, X, Y, 1, true, false, true, cap); }catch(e){ res = null; }
+        /* sopra un volume SAM spesso non stacca la presa: si prova col colore (lì il contrasto c'è per forza) */
+        if(cap && !(res && res.area > 90 && res.area < maxArea && autoAccept(w, holds, res, volArea))){ try{ const c = await colorAuto(w, X, Y, cap); if(c) res = c; }catch(e){} }
         if(res && res.area > 90 && res.area < maxArea && autoAccept(w, holds, res, volArea)){
           const poly = res.poly;
           holds.push({ id: uid(), poly, x: res.cx, y: res.cy, sx: X, sy: Y, det: 1, _so: res.so, _new: 1 }); ui.scan.found++; ok = true;
