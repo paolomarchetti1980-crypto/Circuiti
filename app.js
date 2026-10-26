@@ -3221,6 +3221,12 @@ function earnedBadges(){ const st = badgeStats(); return new Set(BADGES.filter(b
 /* aspetto dei badge: toppa esagonale "ricamata" nel colore del gruppo, dentro il metallo (bronzo, argento, oro) secondo la difficoltà.
    Quelli da prendere sono grigi, con il bordo che si riempie man mano che ci si avvicina */
 const B_ICO = {
+  post6: '<path d="M-1.1-12.5h2.2v20.5h-2.2z"/><path d="M1.1 -11.5h7.0l2 1.6-2 1.6h-7.0z"/><path d="M-1.1 -7.2h-6.0l-2 1.6 2 1.6h6.0z"/><path d="M1.1 -2.9h8.0l2 1.6-2 1.6h-8.0z"/><path d="M-1.1 1.4h-5.5l-2 1.6 2 1.6h5.5z"/><path d="M1.1 5.7h7.0l2 1.6-2 1.6h-7.0z"/><circle cy="-13" r="1.8"/><path d="M-6 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+  post5: '<path d="M-1.1-12.5h2.2v20.5h-2.2z"/><path d="M1.1 -11.5h7.0l2 1.6-2 1.6h-7.0z"/><path d="M-1.1 -7.2h-6.0l-2 1.6 2 1.6h6.0z"/><path d="M1.1 -2.9h8.0l2 1.6-2 1.6h-8.0z"/><path d="M-1.1 1.4h-5.5l-2 1.6 2 1.6h5.5z"/><path d="M1.1 5.7h7.0l2 1.6-2 1.6h-7.0z"/><path d="M-6 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+  post4: '<path d="M-1.1-12.5h2.2v20.5h-2.2z"/><path d="M1.1 -11.5h7.0l2 1.6-2 1.6h-7.0z"/><path d="M-1.1 -7.2h-6.0l-2 1.6 2 1.6h6.0z"/><path d="M1.1 -2.9h8.0l2 1.6-2 1.6h-8.0z"/><path d="M-1.1 1.4h-5.5l-2 1.6 2 1.6h5.5z"/><path d="M-6 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+  post3: '<path d="M-1.1-12.5h2.2v20.5h-2.2z"/><path d="M1.1 -11.5h7.0l2 1.6-2 1.6h-7.0z"/><path d="M-1.1 -7.2h-6.0l-2 1.6 2 1.6h6.0z"/><path d="M1.1 -2.9h8.0l2 1.6-2 1.6h-8.0z"/>',
+  post2: '<path d="M-1.1-12.5h2.2v20.5h-2.2z"/><path d="M1.1 -11.5h7.0l2 1.6-2 1.6h-7.0z"/><path d="M-1.1 -7.2h-6.0l-2 1.6 2 1.6h6.0z"/>',
+  post1: '<path d="M-1.1-12.5h2.2v20.5h-2.2z"/><path d="M1.1 -11.5h7.0l2 1.6-2 1.6h-7.0z"/>',
   monkeyprint: '<path d=\"M-6 0c0-3 2-4.5 6-4.5S6.5-3 6.5 0v5c0 4-3 6.5-6.5 6.5S-6 9-6 5z\"/><g stroke=\"currentColor\" stroke-width=\"3.1\" stroke-linecap=\"round\"><path d=\"M-4.6-4.5l-1.2-6.3M-1.5-5l-.3-7M1.6-5l.6-6.8M4.6-4.2l1.6-5.6M-6 3.5l-5-3.5\"/></g>',
   ibexprint: '<path d=\"M-1.2-10c-4 .6-5.6 6-5 12 .2 2.4 1.6 3.6 3.6 3.6S-1 4-1 2z\"/><path d=\"M1.2-10c4 .6 5.6 6 5 12-.2 2.4-1.6 3.6-3.6 3.6S1 4 1 2z\"/><path d=\"M-6.5 3.5h13\" stroke=\"var(--bg)\" stroke-width=\"1.4\"/>',
   elephant: '<circle cy=\"1.5\" r=\"9.5\"/><g fill=\"var(--bg)\"><ellipse cx=\"-6\" cy=\"-5\" rx=\"1.9\" ry=\"1.5\" transform=\"rotate(-35 -6 -5)\"/><ellipse cx=\"-2.1\" cy=\"-7.2\" rx=\"1.9\" ry=\"1.5\" transform=\"rotate(-12 -2 -7)\"/><ellipse cx=\"2.1\" cy=\"-7.2\" rx=\"1.9\" ry=\"1.5\" transform=\"rotate(12 2 -7)\"/><ellipse cx=\"6\" cy=\"-5\" rx=\"1.9\" ry=\"1.5\" transform=\"rotate(35 6 -5)\"/></g><g fill=\"none\" stroke=\"var(--bg)\" stroke-width=\".9\" opacity=\".7\"><path d=\"M-5 2q2 2 4 0t4 0M-4 6q2 1.6 4 0t4 0\"/></g>',
@@ -3289,7 +3295,8 @@ const B_LOOK = (() => {
   ser(['hi5', 'hi20'], 'up', (st, id) => st.hiUps / num(id)); L.hi5.t = 's';
   ser(['g1', 'g10', 'g50', 'g100'], ['heart', 'heart', 'heart', 'hearts'], (st, id) => st.nRate / num(id), true); L.g100.sc = 1.15;
   ser(['p1', 'p10', 'p50', 'p100'], ['scale', 'scale', 'scale', 'wig'], (st, id) => st.nVote / num(id), true); L.p100.sc = 1.1;
-  ser(['m100', 'm250', 'm500', 'm1000', 'm2500', 'm5000'], 'road', (st, id) => st.moves / num(id), true);
+  ser(['m100', 'm250', 'm500', 'm1000', 'm2500', 'm5000'], ['post1', 'post2', 'post3', 'post4', 'post5', 'post6'], (st, id) => st.moves / num(id));
+  ['m100', 'm250', 'm500', 'm1000', 'm2500', 'm5000'].forEach(id => { L[id].sc = 1.08; });
   ser(['early', 'early10', 'early30'], ['sun1', 'sun2', 'sun3'], (st, id) => st.early / num(id));
   ser(['late', 'late10', 'late30'], ['moon1', 'moon2', 'moon3'], (st, id) => st.late / num(id));
   ser(['d5', 'd10', 'd20'], ['bolt', 'bolt2', 'bolt3'], (st, id) => st.bestDay / num(id));
