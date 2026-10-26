@@ -2,13 +2,13 @@
    - pagina, codice e dati pubblicati: prima la rete (così gli aggiornamenti arrivano subito), se manca la rete l'ultima copia salvata
    - foto dei muri: subito dalla copia salvata, aggiornata in sottofondo
    - modello di riconoscimento e librerie: scaricati una volta sola */
-const CACHE = 'circuiti-v161';
+const CACHE = 'circuiti-v162';
 /* modello di riconoscimento e librerie (decine di MB): in una cache a parte che NON si svuota a ogni aggiornamento dell'app */
 const MODELS = 'circuiti-modelli';
 /* foto dei muri, ultimi dati pubblicati e caratteri: anche questi restano tra un aggiornamento e l'altro
    (le foto hanno un nome nuovo ogni volta che cambiano, quindi una copia salvata è sempre giusta) */
 const DATA = 'circuiti-dati';
-const CORE = ['./', './index.html', './app.js?v=161', './namegen.js', './config.js', './manifest.webmanifest', './icon-192-g3.png', './icon-512-g3.png', './icon-maskable-512-g3.png', './apple-touch-icon-g3.png'];
+const CORE = ['./', './index.html', './app.js?v=162', './namegen.js', './config.js', './manifest.webmanifest', './icon-192-g3.png', './icon-512-g3.png', './icon-maskable-512-g3.png', './apple-touch-icon-g3.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).catch(() => {}));
