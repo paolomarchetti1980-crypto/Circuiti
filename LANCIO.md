@@ -25,3 +25,7 @@ oppure chi apre il link segreto di prova. Prima di accenderli per tutti:
   - nuovi circuiti
   - il cliente sceglie quali ricevere; al massimo una al giorno (riepilogo), niente di notte
   - su iPhone solo con l'app sulla schermata Home; aggiungere l'iscrizione alle notifiche nell'informativa privacy
+
+## Da rivedere (Paolo)
+
+- [ ] **Scheda del boulder → Caratteristiche** (26/10): ci devo rimettere mano. Schermata: `note/2026-10-26-caratteristiche-boulder.png`
