@@ -891,6 +891,12 @@ function samWarm(w){
    copre una decina di pixel veri. Qui la foto si divide in riquadri (lato = 1/3 della foto, sovrapposti a metà),
    ognuno studiato a 1024 px quando serve, e la presa si ricalcola nel riquadro che la contiene meglio. */
 sam.tiles = new Map();
+/* seconda passata per le prese piccole: riquadri del 18% della foto, così una presa piccola si vede 2-3 volte più grande */
+function fineGrid(w){
+  const L = Math.max(w.w, w.h), T = Math.max(256, Math.round(L*0.18));
+  const axis = D => { if(D <= T) return [0]; const n = Math.ceil((D - T)/(T*0.75)) + 1; return Array.from({ length: n }, (_, i) => Math.round((D - T)*i/(n - 1))); };
+  return { T, xs: axis(w.w), ys: axis(w.h) };
+}
 /* griglia fissa di riquadri (lato 40% della foto, sovrapposti un po'): pochi, così si possono studiare in anticipo */
 function tileGrid(w){
   const L = Math.max(w.w, w.h), T = Math.max(384, Math.round(L*0.4));
@@ -912,7 +918,7 @@ async function tileEmbed(w, tx, ty, T){
     return { e: true, ed: new Float32Array(out.embeddings.data), edims: out.embeddings.dims.slice(), s, tx, ty };
   })();
   sam.tiles.set(key, { pending });
-  try{ const r = await pending; sam.tiles.set(key, r); while(sam.tiles.size > 12) sam.tiles.delete(sam.tiles.keys().next().value); return r; }
+  try{ const r = await pending; sam.tiles.set(key, r); while(sam.tiles.size > 24) sam.tiles.delete(sam.tiles.keys().next().value); return r; }
   catch(e){ sam.tiles.delete(key); throw e; }
 }
 /* quanto due contorni coincidono (area comune / area totale), disegnandoli su una piccola tela */
@@ -960,6 +966,26 @@ async function refineAuto(w, list){
     if(ui.scan.i % 40 === 0){ touch(); render(); }
   }
   list.forEach(h => { delete h._so; });
+  /* seconda passata: le prese piccole, riguardate più da vicino (metodo scelto con SMALL_MODE: 'A' ingrandimento, 'B' colore) */
+  const mode = window.SMALL_MODE || '';
+  if(!mode || ui.scan.stop) return;
+  const L = Math.max(w.w, w.h), small = list.filter(h => h.poly && polyArea(h.poly) < (L*0.045)*(L*0.045));
+  const F = fineGrid(w);
+  small.sort((a, b) => (Math.floor(a.y/(F.T*0.75)) - Math.floor(b.y/(F.T*0.75))) || (Math.floor(a.x/(F.T*0.75)) - Math.floor(b.x/(F.T*0.75))));
+  ui.scan.i = 0; ui.scan.total = small.length; renderTools();
+  const im = mode.includes('B') ? await loadImg(w.img) : null;
+  for(const h of small){
+    if(ui.scan.stop) break;
+    const op0 = []; for(let i = 0; i < h.poly.length; i += 2) op0.push([h.poly[i], h.poly[i+1]]);
+    let op = null;
+    if(mode.includes('A')){ try{ const rf = await samRefine(w, op0, h.x, h.y, true); if(rf && rf.length >= 3 && polyIoU(rf, op0) >= 0.6) op = rf; }catch(e){} }
+    if(mode.includes('B')){ try{ const A0 = polyArea(h.poly), res = colorRegion(im, w, h.x, h.y, Math.max(20, Math.sqrt(A0)*1.6));
+      if(res && !res.weak && !res.touch && res.pts && res.pts.length >= 3){ const base = op || op0, ca = polyArea(res.pts.flat());
+        if(polyIoU(res.pts, base) >= 0.6 && ca >= polyArea(base.flat())*0.95 && ca <= polyArea(base.flat())*1.6) op = res.pts; } }catch(e){} }
+    if(op){ h.poly = []; op.forEach(p => h.poly.push(Math.round(p[0]), Math.round(p[1]))); }
+    ui.scan.i++;
+    if(ui.scan.i % 3 === 0){ renderTools(); await new Promise(r => setTimeout(r, 0)); }
+  }
 }
 /* studio preliminare: appena la foto è pronta, si studiano in sottofondo anche i riquadri della griglia,
    così la seconda passata ad alta risoluzione non fa aspettare al tocco */
@@ -977,11 +1003,11 @@ async function preStudy(w){
     if(sam.pre && sam.pre.key === key){ sam.pre.done++; renderTools(); }
   }
 }
-async function samRefine(w, op, x, y){
+async function samRefine(w, op, x, y, fine){
   let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9, A0 = 0;
   op.forEach((p, i) => { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); const q = op[(i+1) % op.length]; A0 += p[0]*q[1] - q[0]*p[1]; });
   A0 = Math.abs(A0)/2;
-  const { T, xs, ys } = tileGrid(w), bw = x1 - x0, bh = y1 - y0;
+  const { T, xs, ys } = fine ? fineGrid(w) : tileGrid(w), bw = x1 - x0, bh = y1 - y0;
   if(A0 < 4) return null;
   let tx, ty, E;
   /* riquadro della griglia che contiene la presa con più margine (se ci sta tutta) */
