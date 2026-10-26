@@ -1193,7 +1193,7 @@ function rdpIdx(pts, eps){
   }
   return r;
 }
-async function samSegment(w, x, y, ts, strict, auto, defer){
+async function samSegment(w, x, y, ts, strict, auto, defer, cap){
   if(!(await samInit())) return undefined;
   const E = await samEmbed(w);
   const N = E.rw*E.rh;
@@ -1211,7 +1211,9 @@ async function samSegment(w, x, y, ts, strict, auto, defer){
     let a = 0; const off = k*N; for(let i=0; i<N; i++) if(md[off+i] > 0) a++;
     cands.push({ k, a, q: iou[k] });
   }
-  const ok = cands.filter(c => c.a > 6 && c.q > (auto ? 0.86 : strict ? 0.8 : 0.5));
+  let ok = cands.filter(c => c.a > 6 && c.q > (auto ? 0.86 : strict ? 0.8 : 0.5));
+  /* punto sopra un volume già trovato: si cercano solo maschere più piccole del volume (la presa montata sopra, non di nuovo il volume) */
+  if(cap){ const sm = ok.filter(c => c.a/(E.s*E.s) < cap); if(!sm.length) return null; ok = sm; }
   if(!ok.length) return null;
   ok.sort((a, b) => a.a - b.a);
   let base = ok.findIndex(c => c.k === 1); if(base < 0) base = 0;
@@ -1549,6 +1551,19 @@ function panelLike(P, r, g, b, tol){
   return P.refs.some(c => { const cs = c[0] + c[1] + c[2] + 1, k = sm / cs;
     return k > 0.5 && k < 1.3 && Math.abs(r/sm - c[0]/cs) + Math.abs(g/sm - c[1]/cs) + Math.abs(b/sm - c[2]/cs) < tol; });
 }
+/* il volume più piccolo (già trovato) che contiene il punto: le prese sopra devono essere molto più piccole */
+function volCap(holds, x, y, volArea){ let best = 0; for(const h of holds){ if(!h.poly) continue; const a = polyArea(h.poly); if(a >= volArea && inPoly(h.poly, x, y) && (!best || a < best)) best = a; } return best ? best*0.35 : 0; }
+/* colore medio (Lab) dei punti dentro un contorno, dalla foto ridotta del pannello; si possono escludere zone */
+function polyLab(P, poly, skip){
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for(let i = 0; i < poly.length; i += 2){ x0 = Math.min(x0, poly[i]); x1 = Math.max(x1, poly[i]); y0 = Math.min(y0, poly[i+1]); y1 = Math.max(y1, poly[i+1]); }
+  const L = [], A = [], B = [];
+  for(let gy = 0; gy < 12; gy++) for(let gx = 0; gx < 12; gx++){ const x = x0 + (gx + 0.5)*(x1 - x0)/12, y = y0 + (gy + 0.5)*(y1 - y0)/12;
+    if(!inPoly(poly, x, y) || (skip && skip(x, y))) continue;
+    const i = (Math.min(P.ch-1, Math.round(y*P.S))*P.cw + Math.min(P.cw-1, Math.round(x*P.S)))*4, c = rgb2lab(P.d[i], P.d[i+1], P.d[i+2]); L.push(c[0]); A.push(c[1]); B.push(c[2]); }
+  if(L.length < 3) return null;
+  const md = v => v.sort((a, b) => a - b)[v.length >> 1];
+  return [md(L), md(A), md(B)];
+}
 /* una presa trovata è buona se: non è un pezzo di pannello vuoto, non si sovrappone a prese già trovate, non ne unisce più di una */
 function autoAccept(w, holds, res, volArea){
   const P = autoPanel, poly = res.poly;
@@ -1570,6 +1585,10 @@ function autoAccept(w, holds, res, volArea){
       if(panelLike(P, P.d[i], P.d[i+1], P.d[i+2], big ? 0.04 : 0.022)) near++; });
     if(near / pts.length > (big ? 0.55 : 0.75)) return false;
   }
+  /* sopra un volume: dev'essere di un altro colore (se no è un pezzo del volume: una faccia, un riflesso, un buco) */
+  if(P){ const conts = holds.filter(h => h.poly && polyArea(h.poly) >= volArea && res.area < polyArea(h.poly)*0.35 && inPoly(h.poly, res.cx, res.cy));
+    for(const h of conts){ const a = polyLab(P, poly), b = polyLab(P, h.poly, (x, y) => inPoly(poly, x, y) || holds.some(o => o !== h && o.poly && polyArea(o.poly) < volArea && inPoly(o.poly, x, y)));
+      if(a && b){ const dl = (a[0] - b[0])*0.5, d = Math.hypot(dl, a[1] - b[1], a[2] - b[2]); if(d < 14) return false; } } }
   let over = 0, inside = 0;
   for(const h of holds){
     if(!h.poly) continue;
@@ -1604,7 +1623,7 @@ async function samGridPass(w, holds, maxArea, volArea){
     i++; ui.scan.i = i;
     if(!covered(x, y) && !plainPanel(x, y, L/60)){
       let res = null;
-      try{ res = await samSegment(w, x, y, 1, false, true, true); }catch(e){ res = null; }
+      try{ res = await samSegment(w, x, y, 1, false, true, true, volCap(holds, x, y, volArea)); }catch(e){ res = null; }
       if(res && res.area > 60 && res.area < maxArea && res.solid >= 0.45 && inPoly(res.poly, x, y) && autoAccept(w, holds, res, volArea)){
         holds.push({ id: uid(), poly: res.poly, x: res.cx, y: res.cy, sx: x, sy: y, det: 1, _so: res.so, _new: 1 }); ui.scan.found++;
       }
@@ -1616,7 +1635,8 @@ async function samGridPass(w, holds, maxArea, volArea){
 async function samAutoScan(w){
   const holds = (w.holds = w.holds || []);
   /* prese e volumi grandi fino all'8% della foto: sui muri con macro e volumi le prese grandi sono tante */
-  const maxArea = w.w * w.h * 0.08, volArea = w.w * w.h * 0.012;
+  /* "volume" = forma grande su cui possono stare altre prese: dallo 0,3% della foto in su (prima 1,2%: molti volumi medi coprivano le loro prese) */
+  const maxArea = w.w * w.h * 0.08, volArea = w.w * w.h * 0.003;
   ui.scan = { i: 0, total: 1, found: 0, stop: false, prep: true, wid: w.id }; scanWake(true); renderTools();
   try{ await samEmbed(w); }catch(e){ scanEnd(); toast('Non riesco a preparare il riconoscimento su questa foto.'); render(); return; }
   const C = await samCandidates(w);
@@ -1637,7 +1657,7 @@ async function samAutoScan(w){
       if(inAny(X, Y)) ok = true;
       else{
         let res = null;
-        try{ res = await samSegment(w, X, Y, 1, true, false, true); }catch(e){ res = null; }
+        try{ res = await samSegment(w, X, Y, 1, true, false, true, volCap(holds, X, Y, volArea)); }catch(e){ res = null; }
         if(res && res.area > 90 && res.area < maxArea && autoAccept(w, holds, res, volArea)){
           const poly = res.poly;
           holds.push({ id: uid(), poly, x: res.cx, y: res.cy, sx: X, sy: Y, det: 1, _so: res.so, _new: 1 }); ui.scan.found++; ok = true;
