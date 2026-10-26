@@ -29,3 +29,5 @@ oppure chi apre il link segreto di prova. Prima di accenderli per tutti:
 ## Da rivedere (Paolo)
 
 - [ ] **Scheda del boulder → Caratteristiche** (26/10): ci devo rimettere mano. Schermata: `note/2026-10-26-caratteristiche-boulder.png`
+
+- Messaggio e link per i tester: `note/messaggio-tester.md`
