@@ -1344,6 +1344,106 @@ async function getSeg(w){
   }catch(e){ segCache[w.id] = null; }
   return segCache[w.id];
 }
+/* ---------- correzione col colore ----------
+   Una presa ha un colore uniforme, diverso dal muro e dal volume su cui sta. Partendo dal tocco si raccolgono i pixel
+   dello stesso colore (la luce conta poco, così le due facce di un volume restano insieme) e si confronta con SAM:
+   - SAM non trova niente o solo un pezzetto (es. il buco del bullone) → si usa il colore
+   - SAM prende la presa sopra invece del volume toccato (o viceversa) → si usa il colore
+   Se il colore non è affidabile (presa bianca su muro bianco, colore che dilaga) si tiene SAM. */
+function rgb2lab(r, g, b){
+  const f = v => { v /= 255; return v > 0.04045 ? Math.pow((v + 0.055)/1.055, 2.4) : v/12.92; };
+  const R = f(r), G = f(g), B = f(b);
+  let X = (R*0.4124 + G*0.3576 + B*0.1805)/0.95047, Y = R*0.2126 + G*0.7152 + B*0.0722, Z = (R*0.0193 + G*0.1192 + B*0.9505)/1.08883;
+  const h = t => t > 0.008856 ? Math.cbrt(t) : 7.787*t + 16/116;
+  X = h(X); Y = h(Y); Z = h(Z);
+  return [116*Y - 16, 500*(X - Y), 200*(Y - Z)];
+}
+async function colorFix(w, x, y, r){
+  const im = await loadImg(w.img);
+  let ex = null;   /* riquadro di partenza: attorno al contorno di SAM, o fisso se SAM non ha trovato niente */
+  if(r && r.poly && r.poly.length >= 6){ let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for(let i = 0; i < r.poly.length; i += 2){ x0 = Math.min(x0, r.poly[i]); x1 = Math.max(x1, r.poly[i]); y0 = Math.min(y0, r.poly[i+1]); y1 = Math.max(y1, r.poly[i+1]); } ex = Math.max(x1 - x0, y1 - y0); }
+  const L0 = Math.max(w.w, w.h);
+  let half = Math.max(L0*0.04, Math.min(L0*0.25, (ex || L0*0.08)*1.1));
+  for(let pass = 0; pass < 3; pass++){
+    const res = colorRegion(im, w, x, y, half);
+    if(!res) return null;
+    if(res.touch && pass < 2 && half < L0*0.3){ half *= 1.8; continue; }   /* la presa è più grande del riquadro: si allarga */
+    if(res.touch) return null;   /* dilaga (colore uguale al muro o a prese attaccate): non affidabile */
+    return chooseColor(w, x, y, r, res);
+  }
+  return null;
+}
+function colorRegion(im, w, x, y, half){
+  const X0 = Math.max(0, Math.floor(x - half)), Y0 = Math.max(0, Math.floor(y - half)), X1 = Math.min(w.w, Math.ceil(x + half)), Y1 = Math.min(w.h, Math.ceil(y + half));
+  const f = Math.min(1, 420 / Math.max(X1 - X0, Y1 - Y0)), W = Math.max(8, Math.round((X1 - X0)*f)), H = Math.max(8, Math.round((Y1 - Y0)*f));
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(im, X0, Y0, X1 - X0, Y1 - Y0, 0, 0, W, H);
+  const d = g.getImageData(0, 0, W, H).data, N = W*H, lab = new Float32Array(N*3);
+  for(let i = 0; i < N; i++){ const c = rgb2lab(d[i*4], d[i*4+1], d[i*4+2]); lab[i*3] = c[0]; lab[i*3+1] = c[1]; lab[i*3+2] = c[2]; }
+  const tx = Math.round((x - X0)*f), ty = Math.round((y - Y0)*f);
+  /* colore della presa: i pixel attorno al tocco, scartando i più diversi (bullone, buco, ombra) */
+  const rs = Math.max(3, Math.round(Math.min(W, H)*0.025)), smp = [];
+  for(let yy = ty - rs; yy <= ty + rs; yy++) for(let xx = tx - rs; xx <= tx + rs; xx++){ if(xx < 0 || yy < 0 || xx >= W || yy >= H || (xx-tx)*(xx-tx) + (yy-ty)*(yy-ty) > rs*rs) continue; const i = yy*W + xx; smp.push([lab[i*3], lab[i*3+1], lab[i*3+2]]); }
+  if(smp.length < 5) return null;
+  const med = k => smp.map(v => v[k]).sort((a, b) => a - b)[smp.length >> 1];
+  let seed = [med(0), med(1), med(2)];
+  const dist = (a, b0, b1, b2) => { const dl = (a[0] - b0)*0.35, da = a[1] - b1, db = a[2] - b2; return Math.sqrt(dl*dl + da*da + db*db); };
+  const keep = smp.filter(v => dist(seed, v[0], v[1], v[2]) < 18); if(keep.length >= 5) seed = [0, 1, 2].map(k => keep.map(v => v[k]).sort((a, b) => a - b)[keep.length >> 1]);
+  /* colore del muro: bordo del riquadro */
+  const ring = []; for(let xx = 0; xx < W; xx++){ ring.push(xx, (H-1)*W + xx); } for(let yy = 0; yy < H; yy++){ ring.push(yy*W, yy*W + W - 1); }
+  const dr = ring.map(i => dist(seed, lab[i*3], lab[i*3+1], lab[i*3+2])).sort((a, b) => a - b);
+  const bgD = dr[Math.floor(dr.length*0.5)];   /* distanza tipica tra presa e dintorni */
+  const chroma = Math.hypot(seed[1], seed[2]);
+  if(bgD < 14 || chroma < 9) return { weak: true };   /* presa troppo simile al muro (bianca, grigia): niente colore */
+  const T = Math.max(9, Math.min(24, bgD*0.42));
+  /* crescita dal tocco */
+  const m = new Uint8Array(N), st = [ty*W + tx]; let n = 0, touch = 0;
+  if(dist(seed, lab[st[0]*3], lab[st[0]*3+1], lab[st[0]*3+2]) > T*1.6){ /* il tocco è sul bullone: si parte dal pixel vicino più simile */
+    let best = -1, bd = 1e9; for(let yy = ty - rs; yy <= ty + rs; yy++) for(let xx = tx - rs; xx <= tx + rs; xx++){ if(xx < 0 || yy < 0 || xx >= W || yy >= H) continue; const i = yy*W + xx, dd = dist(seed, lab[i*3], lab[i*3+1], lab[i*3+2]); if(dd < bd){ bd = dd; best = i; } }
+    if(best < 0) return null; st[0] = best; }
+  m[st[0]] = 1;
+  while(st.length){ const p = st.pop(); n++; const px = p % W, py = (p - px)/W;
+    if(px === 0 || py === 0 || px === W-1 || py === H-1) touch++;
+    const nb = [px > 0 ? p-1 : -1, px < W-1 ? p+1 : -1, py > 0 ? p-W : -1, py < H-1 ? p+W : -1];
+    for(const q of nb){ if(q < 0 || m[q]) continue; if(dist(seed, lab[q*3], lab[q*3+1], lab[q*3+2]) <= T){ m[q] = 1; st.push(q); } } }
+  /* buchi (bulloni, riflessi) chiusi e bordo ripulito: chiusura e apertura */
+  const morph = (src, dil) => { const o = new Uint8Array(N); for(let yy = 0; yy < H; yy++) for(let xx = 0; xx < W; xx++){ const i = yy*W + xx; let v = dil ? 0 : 1;
+    for(let k = -1; k <= 1; k++) for(let l = -1; l <= 1; l++){ const X = xx + l, Y = yy + k; const s2 = X >= 0 && Y >= 0 && X < W && Y < H ? src[Y*W + X] : 0; if(dil){ if(s2){ v = 1; } } else if(!s2) v = 0; } o[i] = v; } return o; };
+  let mm = m; for(let k = 0; k < 2; k++) mm = morph(mm, true); for(let k = 0; k < 2; k++) mm = morph(mm, false);
+  /* ponti sottili verso prese vicine dello stesso colore: un'apertura più forte li taglia, poi si riallarga */
+  { const ro = Math.max(2, Math.round(Math.min(W, H)*0.008)); let o = mm; for(let k = 0; k < ro; k++) o = morph(o, false); for(let k = 0; k < ro; k++) o = morph(o, true);
+    for(let i = 0; i < N; i++) o[i] = o[i] && mm[i] ? 1 : 0; if(o[ty*W + tx] || o.some(v => v)) mm = o; }
+  /* buchi piccoli (bullone, riflesso) riempiti; quelli grandi restano (il foro di una presa ad anello) */
+  { const lab2 = new Int32Array(N), area = mm.reduce((t, v) => t + v, 0); let id = 0;
+    for(let i = 0; i < N; i++){ if(mm[i] || lab2[i]) continue; id++; const q2 = [i], comp = [i]; lab2[i] = id; let edge = false;
+      while(q2.length){ const p = q2.pop(), px = p % W, py = (p - px)/W; if(px === 0 || py === 0 || px === W-1 || py === H-1) edge = true;
+        for(const q of [px > 0 ? p-1 : -1, px < W-1 ? p+1 : -1, py > 0 ? p-W : -1, py < H-1 ? p+W : -1]){ if(q < 0 || lab2[q] || mm[q]) continue; lab2[q] = id; q2.push(q); comp.push(q); } }
+      if(!edge && comp.length < area*0.04) comp.forEach(p => { mm[p] = 1; }); } }
+  const tr = maskToPoly(mm, W, H, tx, ty); if(!tr || tr.pts.length < 3) return null;
+  const pts = rdpPts(smoothClosed(tr.pts.map(p => [X0 + (p[0] + 0.5)/f, Y0 + (p[1] + 0.5)/f]), 2), 0.8/f);
+  return { pts, n: tr.n / (f*f), touch: touch > (W + H)*0.04 };
+}
+function chooseColor(w, x, y, r, res){
+  if(res.weak || !res.pts || res.pts.length < 3) return null;
+  const cp = res.pts, cArea = Math.abs(polyArea(cp.flat()));
+  if(cArea < 30) return null;
+  const mk = pts => { const flat = []; pts.forEach(p => flat.push(Math.round(p[0]), Math.round(p[1]))); let A = 0, cx = 0, cy = 0;
+    for(let i = 0; i < pts.length; i++){ const a = pts[i], b = pts[(i+1) % pts.length], c = a[0]*b[1] - b[0]*a[1]; A += c; cx += (a[0]+b[0])*c; cy += (a[1]+b[1])*c; }
+    A /= 2; return { poly: flat, cx: cx/(6*A), cy: cy/(6*A), area: Math.abs(A), solid: Math.abs(A)/(hullAreaFlat(flat) || 1), score: r ? r.score : 0.9, sam: true, color: true }; };
+  if(!r || !r.poly) return mk(cp);
+  const sp = []; for(let i = 0; i < r.poly.length; i += 2) sp.push([r.poly[i], r.poly[i+1]]);
+  /* "contiene il tocco" con un po' di tolleranza: un tocco sul bordo della presa vale */
+  const dEdge = sp.reduce((m, a, i) => { const b = sp[(i+1) % sp.length], dx = b[0]-a[0], dy = b[1]-a[1], L2 = dx*dx + dy*dy || 1, t = Math.max(0, Math.min(1, ((x-a[0])*dx + (y-a[1])*dy)/L2)); return Math.min(m, Math.hypot(x - a[0] - t*dx, y - a[1] - t*dy)); }, 1e9);
+  const sArea = Math.abs(polyArea(sp.flat())), inS = inPoly(r.poly, x, y) || dEdge < Math.max(w.w, w.h)*0.012;
+  const iou = polyIoU(cp, sp), inter = iou*(cArea + sArea)/(1 + iou);
+  /* SAM ha preso un'altra cosa (non contiene il tocco) o un pezzetto (bullone): vince il colore */
+  /* (un pezzetto = area minuscola, tipo il buco del bullone: una presa piccola montata su un volume resta di SAM) */
+  if(!inS || (sArea < cArea*0.35 && sArea < 0.0002*w.w*w.h)) return mk(cp);
+  /* negli altri casi si tiene SAM: provato su due pareti, ritagliare col colore peggiorava le prese piccole
+     (riflessi, magnesite, bulloni) e i volumi con prese montate sopra */
+  /* coincidono: si tiene SAM (bordi già agganciati, lati dritti dei volumi) */
+  return null;
+}
 async function detect(w, x, y, ts, strict){
   if(strict) return detect0(w, x, y, ts, strict);
   const done = busy('Rilevo la presa…');
@@ -1352,7 +1452,9 @@ async function detect(w, x, y, ts, strict){
 async function detect0(w, x, y, ts, strict){
   if(samMaybe()){
     try{
-      const r = await samSegment(w, x, y, ts || 1, strict);
+      let r = await samSegment(w, x, y, ts || 1, strict);
+      /* al tocco normale (non nel rilevamento automatico, non con Contorno +/-) il colore corregge SAM */
+      if(!strict && (!ts || ts === 1)){ try{ const c = await colorFix(w, x, y, r); if(c) r = c; }catch(e){ console.warn('colore', e); } }
       if(r) return r;
       if(r === null && strict) return null;
     }catch(e){ console.warn('SAM errore', e); }
