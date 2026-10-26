@@ -3221,6 +3221,9 @@ function earnedBadges(){ const st = badgeStats(); return new Set(BADGES.filter(b
 /* aspetto dei badge: toppa esagonale "ricamata" nel colore del gruppo, dentro il metallo (bronzo, argento, oro) secondo la difficoltà.
    Quelli da prendere sono grigi, con il bordo che si riempie man mano che ci si avvicina */
 const B_ICO = {
+  monkeyprint: '<path d=\"M-6 0c0-3 2-4.5 6-4.5S6.5-3 6.5 0v5c0 4-3 6.5-6.5 6.5S-6 9-6 5z\"/><g stroke=\"currentColor\" stroke-width=\"3.1\" stroke-linecap=\"round\"><path d=\"M-4.6-4.5l-1.2-6.3M-1.5-5l-.3-7M1.6-5l.6-6.8M4.6-4.2l1.6-5.6M-6 3.5l-5-3.5\"/></g>',
+  ibexprint: '<path d=\"M-1.2-10c-4 .6-5.6 6-5 12 .2 2.4 1.6 3.6 3.6 3.6S-1 4-1 2z\"/><path d=\"M1.2-10c4 .6 5.6 6 5 12-.2 2.4-1.6 3.6-3.6 3.6S1 4 1 2z\"/><path d=\"M-6.5 3.5h13\" stroke=\"var(--bg)\" stroke-width=\"1.4\"/>',
+  elephant: '<circle cy=\"1.5\" r=\"9.5\"/><g fill=\"var(--bg)\"><ellipse cx=\"-6\" cy=\"-5\" rx=\"1.9\" ry=\"1.5\" transform=\"rotate(-35 -6 -5)\"/><ellipse cx=\"-2.1\" cy=\"-7.2\" rx=\"1.9\" ry=\"1.5\" transform=\"rotate(-12 -2 -7)\"/><ellipse cx=\"2.1\" cy=\"-7.2\" rx=\"1.9\" ry=\"1.5\" transform=\"rotate(12 2 -7)\"/><ellipse cx=\"6\" cy=\"-5\" rx=\"1.9\" ry=\"1.5\" transform=\"rotate(35 6 -5)\"/></g><g fill=\"none\" stroke=\"var(--bg)\" stroke-width=\".9\" opacity=\".7\"><path d=\"M-5 2q2 2 4 0t4 0M-4 6q2 1.6 4 0t4 0\"/></g>',
   peak: '<path d="M-11 9L-3-5l4 6 3-4 7 12z"/><path d="M-3-5v-6l5 2-5 2"/>',
   fire: '<path d="M0-11c3 5 8 7 8 13a8 8 0 0 1-16 0c0-4 2-6 4-8 0 3 1 5 3 5-1-4 0-7 1-10z"/>',
   rainbow: '<g fill="none" stroke-width="3"><path d="M-11 6a11 11 0 0 1 22 0" stroke="#e5312b"/><path d="M-7.5 6a7.5 7.5 0 0 1 15 0" stroke="#f2c200"/><path d="M-4 6a4 4 0 0 1 8 0" stroke="#1e6bff"/></g>',
@@ -3290,7 +3293,7 @@ const B_LOOK = (() => {
   ser(['early', 'early10', 'early30'], ['sun1', 'sun2', 'sun3'], (st, id) => st.early / num(id));
   ser(['late', 'late10', 'late30'], ['moon1', 'moon2', 'moon3'], (st, id) => st.late / num(id));
   ser(['d5', 'd10', 'd20'], ['bolt', 'bolt2', 'bolt3'], (st, id) => st.bestDay / num(id));
-  ser(['ft1', 'ft10', 'ft25', 'ft50'], ['boar', 'bear', 'goat', 'monkey'], (st, id) => st.nFeet / num(id));
+  ser(['ft1', 'ft10', 'ft25', 'ft50'], ['elephant', 'bear', 'ibexprint', 'monkeyprint'], (st, id) => st.nFeet / num(id));
   ['ft1', 'ft10', 'ft25', 'ft50'].forEach(id => { L[id].sc = 1.2; });   /* le impronte un po' più grandi, si leggono meglio */
   return L;
 })();
