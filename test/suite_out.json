@@ -1,0 +1,337 @@
+[
+ [
+  "A.title",
+  "Monkey Roads"
+ ],
+ [
+  "A.wall",
+  "Muri"
+ ],
+ [
+  "A.sec",
+  [
+   "Circuiti"
+  ]
+ ],
+ [
+  "A.modesHidden",
+  true
+ ],
+ [
+  "A.rows",
+  [
+   "Giallo4 movimenti–"
+  ]
+ ],
+ [
+  "A.walls",
+  [
+   "Muro 1",
+   "Muro 3 (Spray 2)"
+  ]
+ ],
+ [
+  "A.wall2",
+  "Muro 3 (Spray 2)"
+ ],
+ [
+  "A.rows2",
+  [
+   "Arancio0 movimenti–",
+   "Giallo4 movimenti–"
+  ]
+ ],
+ [
+  "A.dots2",
+  [
+   "rgb(255, 122, 26)",
+   "rgb(30, 107, 255)"
+  ]
+ ],
+ [
+  "A.full",
+  true
+ ],
+ [
+  "A.fcard",
+  "Giallo4 movimenti–‹Giallo · 2 di 2›"
+ ],
+ [
+  "A.fcardPrev",
+  "Arancio0 movimenti–‹Arancio · 1 di 2›"
+ ],
+ [
+  "A.prefs",
+  [
+   "Numeri",
+   "Linee",
+   "Altri circuiti"
+  ]
+ ],
+ [
+  "A.ovLabels",
+  [
+   "S"
+  ]
+ ],
+ [
+  "A.boulderEmpty",
+  "Nessun settore pubblicatoI boulder compariranno qui quando il gestore carica i settori."
+ ],
+ [
+  "A.boulderSheet",
+  [
+   "Segnala un problemao un suggerimento: arriva alla palestra",
+   "Come funzionarivedi la presentazione",
+   "Chiudi",
+   "Accesso staff"
+  ]
+ ],
+ [
+  "B.modes",
+  [
+   ""
+  ]
+ ],
+ [
+  "B.mode",
+  []
+ ],
+ [
+  "B.wall",
+  "Muri"
+ ],
+ [
+  "B.wall3",
+  "Muro 3 (Spray 2)"
+ ],
+ [
+  "B.mode3",
+  []
+ ],
+ [
+  "B.newName",
+  true
+ ],
+ [
+  "B.genOk",
+  true
+ ],
+ [
+  "B.curbar",
+  "Test Circuito25° · Tacche · piedi obbligati · 0 movimenti6bModificaCircuiti (3)"
+ ],
+ [
+  "B.hands",
+  [
+   "Sinistra",
+   "Destra"
+  ]
+ ],
+ [
+  "B.holds",
+  [
+   "start:L:p",
+   "hold:R:p",
+   "hold:L:p",
+   "hold:R:p",
+   "hold:L:p"
+  ]
+ ],
+ [
+  "B.fields",
+  [
+   "6b",
+   "Tacche",
+   "obbligati",
+   25
+  ]
+ ],
+ [
+  "B.afterDup",
+  [
+   "start:L",
+   "hold:R",
+   "hold:L",
+   "hold:R",
+   "top:L",
+   "hold:R"
+  ]
+ ],
+ [
+  "B.pub",
+  true
+ ],
+ [
+  "B.wallTools",
+  [
+   "Sblocca muro",
+   "Torna ai circuiti"
+  ]
+ ],
+ [
+  "B.editDimBtn",
+  1
+ ],
+ [
+  "B.sector",
+  "Settore 1"
+ ],
+ [
+  "B.secModes",
+  []
+ ],
+ [
+  "B.bTitle",
+  "Verde 1"
+ ],
+ [
+  "B.boulder",
+  [
+   {
+    "diff": "verde",
+    "num": 1,
+    "color": "#23b45a",
+    "hc": "#8a4dff",
+    "tags": [
+     "Tallone"
+    ],
+    "setter": "Marco",
+    "n": 3,
+    "drawn": 1
+   }
+  ]
+ ],
+ [
+  "B.published",
+  {
+   "walls": 4,
+   "sectors": 1,
+   "testCirc": true,
+   "sectorImg": "img/muro1.jpg?u=gdgu7uu-1793044423140.jpg"
+  }
+ ],
+ [
+  "B.afterReloadSec",
+  [
+   "Boulder"
+  ]
+ ],
+ [
+  "B.wallSheetBtns",
+  [
+   "Rinomina",
+   "Archivia settore"
+  ]
+ ],
+ [
+  "C.modes",
+  []
+ ],
+ [
+  "C.pickBtns",
+  0
+ ],
+ [
+  "C.boulderWall",
+  "Settori"
+ ],
+ [
+  "C.boulderModes",
+  []
+ ],
+ [
+  "C.overNew",
+  1
+ ],
+ [
+  "C.bTitle",
+  "Giallo 1"
+ ],
+ [
+  "C.published",
+  {
+   "walls": 4,
+   "boulders": [
+    "verde1",
+    "giallo1"
+   ]
+  }
+ ],
+ [
+  "D.clistRows",
+  [
+   "Test Circuito25° · Tacche · piedi obbligati · 4 movimenti6b",
+   "Arancio0 movimenti–",
+   "Giallo4 movimenti–"
+  ]
+ ],
+ [
+  "D.clistFilters",
+  [
+   "Filtri"
+  ]
+ ],
+ [
+  "D.active",
+  "Test Circuito25° · Tacche · piedi obbligati · 4 movimenti6b"
+ ],
+ [
+  "D.dimOn",
+  1
+ ],
+ [
+  "D.genChanged",
+  true
+ ],
+ [
+  "D.viewFilters",
+  [
+   "Novità · 1",
+   "Filtri"
+  ]
+ ],
+ [
+  "D.afterGrade",
+  [
+   "Il Rasoio di Socrate Nuovo",
+   "Arancio",
+   "Giallo"
+  ]
+ ],
+ [
+  "D.img",
+  1
+ ],
+ [
+  "D.bRows",
+  [
+   "Verde 1"
+  ]
+ ],
+ [
+  "D.bOn",
+  []
+ ],
+ [
+  "D.clientShowChips",
+  0
+ ],
+ [
+  "D.bDots",
+  0
+ ],
+ [
+  "D.staff",
+  [
+   "p@x.it · gestoretu"
+  ]
+ ],
+ [
+  "D.staff2",
+  [
+   "p@x.it · gestoretu",
+   "nuovo@x.it · tracciatoreTogli"
+  ]
+ ]
+]

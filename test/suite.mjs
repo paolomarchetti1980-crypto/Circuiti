@@ -1,4 +1,6 @@
-import { chromium, devices } from 'playwright';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const { chromium, devices } = require('playwright');   /* playwright installato a livello di sistema */
 import fs from 'fs';
 const FIX = JSON.parse(fs.readFileSync('fixture.json','utf8'));
 const OUT = []; const log = (k, v) => { OUT.push([k, v]); };
