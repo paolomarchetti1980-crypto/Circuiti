@@ -16,3 +16,12 @@ oppure chi apre il link segreto di prova. Prima di accenderli per tutti:
 - [ ] App: `ACCT_LIVE = true` in app.js, pubblicare, provare da un telefono non dello staff
 
 - [ ] Badge: rivedere soglie e nomi dopo le prime settimane di uso (oggi nomi descrittivi, soglie provvisorie).
+
+## Dopo il lancio
+
+- [ ] **Notifiche** (prima novità dopo il lancio, da annunciare ai clienti):
+  - progetto che sta per essere smontato (qualche giorno prima, solo a chi l'ha come progetto)
+  - settore rinnovato
+  - nuovi circuiti
+  - il cliente sceglie quali ricevere; al massimo una al giorno (riepilogo), niente di notte
+  - su iPhone solo con l'app sulla schermata Home; aggiungere l'iscrizione alle notifiche nell'informativa privacy
