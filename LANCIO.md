@@ -10,7 +10,7 @@ oppure chi apre il link segreto di prova. Prima di accenderli per tutti:
 - [x] Supabase → Authentication → Emails: testi in **italiano** per "Confirm signup", "Magic Link" e "Reset password"
 - [ ] Supabase → Authentication → Rate limits: alzare il limite delle email all'ora se serve
 - [ ] **Informativa privacy** (bozza fatta: da completare e far verificare) per gli account clienti (email + salite; pareri anonimi per lo staff)
-- [ ] Prova completa da cliente: registrazione, conferma, entra, Fatto/Progetto/voto, esci, cancella account
+- [x] Prova completa da cliente (26/10, dal telefono): registrazione, conferma, entra, Fatto/Progetto/voto, Annulla, esci, rientra, cancella account — tutto salvato e cancellato correttamente
 - [ ] Pulizia: cancellare gli **account e le salite di prova** (compresi quelli fatti in anteprima con gli account dello staff)
 - [ ] App: `ACCT_LIVE = true` in app.js, pubblicare, provare da un telefono non dello staff
 
