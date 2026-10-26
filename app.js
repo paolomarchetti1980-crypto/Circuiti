@@ -252,7 +252,7 @@ async function savePub(data, rev){
 async function prunePhotos(walls){
   try{
     if(!window.caches) return;
-    const used = new Set(walls.map(w => w.img).filter(Boolean).map(u => { try{ return new URL(u, location.href).href; }catch(e){ return u; } }));
+    const used = new Set(walls.flatMap(w => [w.img, w.imgV]).filter(Boolean).map(u => { try{ return new URL(u, location.href).href; }catch(e){ return u; } }));
     const c = await caches.open('circuiti-dati');
     for(const req of await c.keys()) if(req.url.includes('/storage/v1/object/public/') && !used.has(req.url)) await c.delete(req);
   }catch(e){}
@@ -360,6 +360,11 @@ function toast(msg, ms, undo){
 /* foto dei muri: tutto quello che il browser sa aprire (JPG, PNG, WebP, HEIC su iPhone...).
    I RAW delle fotocamere (NEF Nikon, CR2/CR3 Canon, ARW Sony, DNG...) il browser non li apre: dentro però c'è
    un'anteprima JPEG a piena risoluzione, che basta e avanza (la foto si riduce comunque a 2000 pixel) */
+/* misure delle foto dei muri: si legge grande (il ritaglio si fa sull'originale), si salva a 3000 px per lo staff
+   (la rilevazione delle prese vede ogni presa a piena definizione) e a 1600 px per i clienti (pesa poco) */
+const PHOTO_READ = 4096, PHOTO_HI = 3000, PHOTO_VIEW = 1600;
+const viewSrc = w => (!EDIT && w.imgV) || w.img;   /* sullo schermo dei clienti la versione leggera */
+const thumbSrc = w => w.imgV || w.img;             /* miniature: sempre la leggera */
 const RAW_EXT = /\.(nef|nrw|cr2|cr3|arw|srf|sr2|dng|orf|rw2|pef|raf|srw|raw)$/i;
 async function rawPreview(file){
   const buf = new Uint8Array(await file.arrayBuffer()), dv = new DataView(buf.buffer);
@@ -403,7 +408,7 @@ async function readPhoto(file){
   try{ if(RAW_EXT.test(file.name || '')) throw 0; im = await loadBlobImg(file); }
   catch(e){ const r = await rawPreview(file); orient = r.orient; im = await loadBlobImg(r.blob); }
   const rot = orient === 6 || orient === 8, W0 = rot ? im.height : im.width, H0 = rot ? im.width : im.height;
-  const k = Math.min(1, 2000 / Math.max(W0, H0)), w = Math.round(W0*k), h = Math.round(H0*k);
+  const k = Math.min(1, PHOTO_READ / Math.max(W0, H0)), w = Math.round(W0*k), h = Math.round(H0*k);
   const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
   /* orientamento dello scatto (solo per i RAW: per le foto normali lo applica già il browser) */
   if(orient === 3){ g.translate(w, h); g.rotate(Math.PI); } else if(orient === 6){ g.translate(w, 0); g.rotate(Math.PI/2); } else if(orient === 8){ g.translate(0, h); g.rotate(-Math.PI/2); }
@@ -2555,7 +2560,7 @@ function homeScreen(){
   const tile = sec => {
     const ws = S.walls.filter(w => secOf(w) === sec && wallShown(w)), bo = sec === 'boulder';
     const n = ws.reduce((t, w) => t + (bo ? w.circuits.filter(c => !isOff(c)).length : w.circuits.length), 0);
-    const img = ws[0] ? `<img src="${esc(ws[0].img)}" alt="">` : '';
+    const img = ws[0] ? `<img src="${esc(thumbSrc(ws[0]))}" alt="">` : '';
     const nc = !bo ? ws.reduce((t, w) => t + w.circuits.filter(c => cLabel(c) === 'Nuovo').length, 0) : 0;
     const nn = bo && !EDIT ? ws.filter(w => secLabel(w) === 'Nuovo').length : 0, ns = bo && EDIT ? ws.filter(w => secLabel(w) === 'Scaduto').length : 0;
     const sub = ws.length ? `${ws.length} ${bo ? (ws.length === 1 ? 'settore' : 'settori') : (ws.length === 1 ? 'muro' : 'muri')} · ${n} ${bo ? 'boulder' : (n === 1 ? 'circuito' : 'circuiti')}${nn ? ` · <span class="hnew">${nn === 1 ? '1 settore nuovo' : nn + ' settori nuovi'}</span>` : ''}${ns ? ` · <span class="hnew">${ns === 1 ? '1 scaduto' : ns + ' scaduti'}</span>` : ''}${nc ? ` · <span class="hnew">${nc} ${nc === 1 ? 'nuovo' : 'nuovi'}</span>` : ''}` : (bo ? 'nessun settore ancora' : 'nessun muro ancora');
@@ -2594,7 +2599,7 @@ function sectorGrid(){
       info = `<small>${n ? n + (n === 1 ? ' circuito' : ' circuiti') : 'nessun circuito'}${gs.length ? ' · ' + esc(gs[0]) + (gs.length > 1 && gs[gs.length-1] !== gs[0] ? '–' + esc(gs[gs.length-1]) : '') : ''}</small>${cn ? `<span class="snew">${cn} ${cn === 1 ? 'nuovo' : 'nuovi'}</span>` : ''}`;
       if(EDIT && !w.locked) staff = `<span class="sinfo"><b>prese da preparare</b> · lo vedi solo tu</span>`;
     }
-    return `<button class="scard" data-act="opensec" data-id="${w.id}"><span class="sph"><img src="${esc(w.img)}" alt="" loading="lazy">${mgr ? `<span class="sedit" role="button" data-act="wman" data-id="${w.id}" aria-label="Gestisci ${bo ? 'il settore' : 'il muro'}">Modifica</span>` : ''}</span>`+
+    return `<button class="scard" data-act="opensec" data-id="${w.id}"><span class="sph"><img src="${esc(thumbSrc(w))}" alt="" loading="lazy">${mgr ? `<span class="sedit" role="button" data-act="wman" data-id="${w.id}" aria-label="Gestisci ${bo ? 'il settore' : 'il muro'}">Modifica</span>` : ''}</span>`+
       `<span class="sname">${esc(w.name)}</span><span class="sdots">${info}</span>${myOn() ? (() => { const p = myProg([w]); return progLine(p) + progBar(p); })() : ''}${staff}</button>`;
   }).join('') + (mgr ? `<div class="scard sadd"><span class="sname">+ ${bo ? 'Nuovo settore' : 'Nuovo muro'}</span><span class="sinfo">Carica la foto ${bo ? 'del settore' : 'del muro'}</span><div class="sbtns">${PICK_BTNS}</div></div>` : '') + `</div>`+
     (mgr && arch.length ? `<button class="archrow" data-act="archlist">Archiviati (${arch.length})</button>` : '');
@@ -2747,7 +2752,7 @@ function renderStage(){
   st.classList.toggle('edit', EDIT && S.mode !== 'view');
   st.classList.toggle('linedraw', !!ui.bline || drawMode());
   const im = $('#photo');
-  if(im.dataset.id !== w.id){ im.src = w.img; im.dataset.id = w.id; }
+  if(im.dataset.id !== w.id + viewSrc(w).length){ im.src = viewSrc(w); im.dataset.id = w.id + viewSrc(w).length; }
   const sv = $('#ov');
   sv.setAttribute('viewBox', `0 0 ${w.w} ${w.h}`);
   const editing = EDIT && S.mode === 'edit';
@@ -4140,12 +4145,12 @@ async function publishRemote(){
   }
   snap.rev = Math.max(Date.now(), ((row && row.rev) || 0) + 1);
   for(const w of snap.walls){
-    if(typeof w.img === 'string' && w.img.startsWith('data:')){
-      const blob = await (await fetch(w.img)).blob();
-      const path = w.id + '-' + Date.now() + '.jpg';
+    for(const k of ['img', 'imgV']) if(typeof w[k] === 'string' && w[k].startsWith('data:')){
+      const blob = await (await fetch(w[k])).blob();
+      const path = w.id + '-' + Date.now() + (k === 'imgV' ? '-v' : '') + '.jpg';
       const up = await SB.storage.from('walls').upload(path, blob, { contentType: 'image/jpeg', upsert: true });
       if(up.error) throw up.error;
-      w.img = SB.storage.from('walls').getPublicUrl(path).data.publicUrl;
+      w[k] = SB.storage.from('walls').getPublicUrl(path).data.publicUrl;
     }
   }
   const { error } = await SB.from('app_state').upsert({ id: 1, data: snap, rev: snap.rev, updated_at: new Date().toISOString() });
@@ -4703,14 +4708,16 @@ async function finishCrop0(cr){
   tg.beginPath();
   cr.pts.forEach((p,i) => { const px = p.x*cr.w - x0, py = p.y*cr.h - y0; if(i === 0) tg.moveTo(px,py); else tg.lineTo(px,py); });
   tg.closePath(); tg.fill();
-  const c = document.createElement('canvas'); c.width = cw; c.height = ch;
-  const g = c.getContext('2d');
-  g.fillStyle = '#c9c9c2'; g.fillRect(0, 0, cw, ch);
-  g.drawImage(tmp, 0, 0);
-  const img = c.toDataURL('image/jpeg', 0.86);
+  const out = (L, q) => { const k = Math.min(1, L / Math.max(cw, ch)), ow = Math.round(cw*k), oh = Math.round(ch*k);
+    const c = document.createElement('canvas'); c.width = ow; c.height = oh; const g = c.getContext('2d');
+    g.fillStyle = '#c9c9c2'; g.fillRect(0, 0, ow, oh); g.imageSmoothingQuality = 'high'; g.drawImage(tmp, 0, 0, ow, oh);
+    return { url: c.toDataURL('image/jpeg', q), w: ow, h: oh }; };
+  const hi = out(PHOTO_HI, 0.9), vw = Math.max(cw, ch) > PHOTO_VIEW * 1.15 ? out(PHOTO_VIEW, 0.84) : null;
+  const img = hi.url;
   const bo = BO(), pre = bo ? 'Settore ' : 'Muro ';
   let wn = secWalls().length + 1; while(S.walls.some(x => x.name === pre + wn)) wn++;
-  const w = { id: uid(), name: pre + wn, w: cw, h: ch, img, circuits: [], activeCircuit: null };
+  const w = { id: uid(), name: pre + wn, w: hi.w, h: hi.h, img, circuits: [], activeCircuit: null };
+  if(vw) w.imgV = vw.url;
   if(bo){ w.kind = 'sector'; w.locked = true; w.holds = []; }
   const circ = newCircuit(w); w.circuits.push(circ); w.activeCircuit = circ.id;
   S.walls.push(w); S.active = w.id; S.mode = 'edit'; ui.bLevel = 'sector'; ui.secOver = false;
