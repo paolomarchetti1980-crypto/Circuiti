@@ -8,7 +8,7 @@ oppure chi apre il link segreto di prova. Prima di accenderli per tutti:
 - [ ] Brevo: **indirizzo dell'organizzazione** della palestra (per le prove c'è quello di casa)
 - [ ] Brevo: collegare il **dominio della palestra** quando ci sarà un sito con email propria
 - [x] Supabase → Authentication → Emails: testi in **italiano** per "Confirm signup", "Magic Link" e "Reset password"
-- [ ] Supabase → Authentication → Rate limits: alzare il limite delle email all'ora se serve
+- [x] Supabase → Authentication → Rate limits: email portate a 100 all'ora (26/10)
 - [ ] **Informativa privacy**: decisioni prese (account inattivi cancellati dopo 24 mesi; sotto i 14 anni l'account lo crea un genitore). Mancano i dati della palestra tra [ ] e la verifica del consulente
 - [x] Supabase: pulizia automatica degli account inattivi da 24 mesi attiva (ogni domenica alle 3)
 - [x] Prova completa da cliente (26/10, dal telefono): registrazione, conferma, entra, Fatto/Progetto/voto, Annulla, esci, rientra, cancella account — tutto salvato e cancellato correttamente
