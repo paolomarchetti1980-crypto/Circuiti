@@ -3687,7 +3687,7 @@ function renderSheet(){
     h = mineHtml();
   } else if(ui.sheet === 'badges'){
     const nb = newB(); if(nb.length){ ui.nbShown = nb; setNewB([]); setTimeout(() => { render(); const e = document.querySelector('#card .badge.isnew'); if(e) e.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 350); }
-    h = `<div class="row" style="margin:0 0 6px"><button class="linklike" data-act="mine">‹ Le mie salite</button></div><h2>I miei badge</h2>` + badgesHtml() + `<div class="row"><button class="btn" data-act="mine">Le mie salite</button><button class="btn primary" data-act="close">Chiudi</button></div>`;
+    h = `<div class="shead"><button class="backbtn" data-act="mine" aria-label="Torna a Le mie salite"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M11 3L5 9l6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button><span><small>Le mie salite</small><h2>I miei badge</h2></span></div>` + badgesHtml() + `<div class="row"><button class="btn" data-act="mine">Le mie salite</button><button class="btn primary" data-act="close">Chiudi</button></div>`;
   } else if(ui.sheet === 'acct'){
     h = acctHtml();
   } else if(ui.sheet === 'welcome'){
