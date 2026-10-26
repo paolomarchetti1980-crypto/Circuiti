@@ -100,7 +100,14 @@ function assignNum(w, c){
   c.num = n;
 }
 /* boulder: move, stile e particolarità (si possono scegliere più voci) */
-const BTAGS = ['Placca','Verticale','Strapiombo','Tetto','Spigolo','Diedro','Partenza seduta','Traverso','Dinamico','Lancio','Equilibrio','Compressione','Opposizione','Tallone','Punta','Incastro','Ribaltamento','Tacche','Svasi','Pinze','Buchi','Volumi','Uscita alta','Morfologico'];
+/* boulder: un solo elenco di caratteristiche, a gruppi (prima c'era anche un menu "Stile" che ripeteva le stesse voci) */
+const BTAG_GROUPS = [['Parete', ['Placca','Verticale','Strapiombo','Tetto','Spigolo','Diedro']],
+  ['Movimento', ['Partenza seduta','Traverso','Dinamico','Lancio','Equilibrio','Compressione','Opposizione','Coordinazione','Tallone','Punta','Incastro','Ribaltamento','Uscita alta','Morfologico']],
+  ['Prese', ['Tacche','Svasi','Pinze','Buchi','Volumi']],
+  ['Richiede', ['Forza','Tecnica','Resistenza']]];
+const BTAGS = BTAG_GROUPS.flatMap(g => g[1]);
+/* il vecchio "stile" di un boulder vale come caratteristica (Tecnico → Tecnica) */
+const bTags = c => { const t = (c && c.tags || []).slice(); const st = c && c.style === 'Tecnico' ? 'Tecnica' : c && c.style; if(st && !t.includes(st)) t.unshift(st); return t; };
 
 /* lo stato arriva dal database (vedi avvio in fondo); qui si parte vuoti */
 const S = {
@@ -2788,7 +2795,7 @@ function bFilters(w){
 function bRows(w, cls){
   const act = bOver() ? null : curCircuit(), vis = sortedVisible(w);
   if(!vis.length) return `<p class="hint" style="padding:6px 2px">${w.circuits.length ? 'Nessun boulder con questi filtri.' : 'Ancora nessun boulder su questo settore.'}</p>`;
-  return `<div class="list" style="gap:${cls === 'crow' ? 6 : 0}px;margin:0">` + vis.map(x => `<button class="${cls} ${act && x.id === act.id ? 'active' : ''} ${isOff(x) ? 'off' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext" style="flex:1"><b>${tickMark(x)}${bTitleHtml(x)}</b><small>${[x.style ? esc(x.style) : '', bMeta(x)].filter(Boolean).join(' · ')}</small></span></button>`).join('') + `</div>`;
+  return `<div class="list" style="gap:${cls === 'crow' ? 6 : 0}px;margin:0">` + vis.map(x => `<button class="${cls} ${act && x.id === act.id ? 'active' : ''} ${isOff(x) ? 'off' : ''}" data-act="pickc" data-id="${x.id}"><i class="dot" style="background:${x.color}"></i><span class="ctext" style="flex:1"><b>${tickMark(x)}${bTitleHtml(x)}</b><small>${[bTags(x).slice(0, 2).map(esc).join(', '), bMeta(x)].filter(Boolean).join(' · ')}</small></span></button>`).join('') + `</div>`;
 }
 /* riga rapida sopra l'elenco: inclinazioni a portata di dito, tutto il resto in "Filtri" */
 function circFilters(w){
@@ -3014,8 +3021,8 @@ function renderFull(){
   el.hidden = false;
   el.innerHTML = `<div class="row" style="flex-wrap:nowrap;align-items:center;gap:12px">`+
     `<i class="dot" style="background:${colOf(c)};width:16px;height:16px"></i>`+
-    `<span class="ctext" style="flex:1"><b>${tickMark(c)}${isSec(w) ? bTitleHtml(c) : cTitleHtml(c)}${isSec(w) && c.style ? ` · ${esc(c.style)}` : ''}</b><small>${isSec(w) ? esc([c.setter ? 'di ' + c.setter : '', c.dateSet ? 'montato ' + fmtDate(c.dateSet) : '', c.dateRemoved ? (isOff(c) ? 'smontato ' : 'smonta ') + fmtDate(c.dateRemoved) : ''].filter(Boolean).join(' · ')) : circMeta(c)}</small></span>${isSec(w) ? '' : gradeBadge(c.grade)}</div>`+
-    (isSec(w) && (c.tags || []).length ? `<div class="tags" style="margin:10px 0 0">${c.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : '')+
+    `<span class="ctext" style="flex:1"><b>${tickMark(c)}${isSec(w) ? bTitleHtml(c) : cTitleHtml(c)}</b><small>${isSec(w) ? esc([c.setter ? 'di ' + c.setter : '', c.dateSet ? 'montato ' + fmtDate(c.dateSet) : '', c.dateRemoved ? (isOff(c) ? 'smontato ' : 'smonta ') + fmtDate(c.dateRemoved) : ''].filter(Boolean).join(' · ')) : circMeta(c)}</small></span>${isSec(w) ? '' : gradeBadge(c.grade)}</div>`+
+    (isSec(w) && bTags(c).length ? `<div class="tags" style="margin:10px 0 0">${bTags(c).map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : '')+
     (isSec(w) && c.notes ? `<p class="bnotes">${esc(c.notes)}</p>` : '')+
     tickPanel(w, c)+
     (newC() ? `<div class="row fnavrow" style="margin-top:10px;flex-wrap:nowrap">`+
@@ -3636,7 +3643,7 @@ function renderSheet(){
   else if(ui.sheet === 'circ' && c && EDIT && isSec(w)){
     const gradeOpt = v => `<option value="${v}" ${(c.grade || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
     const styleOpt = v => `<option value="${v}" ${(c.style || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
-    const tags = c.tags || [];
+    const tags = bTags(c);
     h = `<h2>${esc(bTitle(c))}</h2>`+
       `<p class="field" style="margin-bottom:4px">Difficoltà</p>`+
       `<div class="sw" role="group" aria-label="Difficoltà">` +
@@ -3648,13 +3655,13 @@ function renderSheet(){
       PALETTE.map(p => `<button data-act="hcolor" data-c="${p[1]}" aria-label="${p[0]}" class="${p[1] === c.holdColor ? 'sel' : ''}" style="background:${p[1]}"></button>`).join('') +
       `</div>`+
       `<div class="f2"><label class="field">Soprannome (facoltativo)<span style="display:flex;gap:6px;margin-top:4px"><input id="cname" value="${esc(c.name || '')}" maxlength="40" style="margin-top:0;flex:1;min-width:0"><button type="button" class="btn" data-act="cgen" aria-label="Proponi un soprannome" title="Proponi un soprannome" style="flex:none;font-size:18px;padding:6px 10px">🎲</button></span></label>`+
-      `<label class="field">Stile<select id="cstyle">${STYLES.map(styleOpt).join('')}</select></label></div>`+
+      `</div>`+
       `<label class="field">Tracciatore<input id="bsetter" value="${esc(c.setter || '')}" maxlength="40" autocomplete="off" list="bsetlist"></label>`+
       `<datalist id="bsetlist">${(ui.staffNames || []).map(n => `<option value="${esc(n)}">`).join('')}</datalist>`+
       `<div class="f2"><label class="field">Montato il<input id="bdset" type="date" value="${esc(c.dateSet || '')}"></label>`+
       `<label class="field">Smontato il<input id="bdrem" type="date" value="${esc(c.dateRemoved || '')}"></label></div>`+
-      `<p class="field" style="margin-bottom:0">Move, stile e particolarità</p>`+
-      `<div class="tags">${BTAGS.map(t => `<button class="tag ${tags.includes(t) ? 'on' : ''}" data-act="btag" data-v="${esc(t)}" aria-pressed="${tags.includes(t)}">${esc(t)}</button>`).join('')}</div>`+
+      `<p class="field" style="margin-bottom:0">Caratteristiche</p>`+
+      BTAG_GROUPS.map(([g, l]) => `<p class="tgroup">${g}</p><div class="tags">${l.map(t => `<button class="tag ${tags.includes(t) ? 'on' : ''}" data-act="btag" data-v="${esc(t)}" aria-pressed="${tags.includes(t)}">${esc(t)}</button>`).join('')}</div>`).join('')+
       `<label class="field">Note<textarea id="bnotes" maxlength="600" placeholder="Es. partenza con mani sulla tacca bassa, spigolo escluso…">${esc(c.notes || '')}</textarea></label>`+
       `<div class="row"><button class="btn danger" data-act="delc">${ui.confirm === 'delc' ? 'Tocca ancora per eliminare' : 'Elimina boulder'}</button>`+
       `<button class="btn primary" data-act="close">Fatto</button></div>`+
@@ -3917,7 +3924,7 @@ async function printBlocks(all){
     for(const b of list){
       const pic = await composeBlock(w, b, { numbers: !isSec(w), others: false, dim: true });
       const meta = isSec(w)
-        ? [b.style, b.setter ? 'tracciato da ' + b.setter : '', b.dateSet ? 'montato il ' + fmtDate(b.dateSet) : '', holdColText(b)].filter(Boolean)
+        ? [bTags(b).join(', '), b.setter ? 'tracciato da ' + b.setter : '', b.dateSet ? 'montato il ' + fmtDate(b.dateSet) : '', holdColText(b)].filter(Boolean)
         : [b.grade ? 'grado ' + b.grade : '', b.style, b.feet ? 'piedi ' + b.feet : '', b.angle != null ? b.angle + '°' : '', movesText(b)].filter(Boolean);
       html += `<section class="ppage"><header><span>Monkey Island Roma</span><span>${esc(w.name)}</span></header>`+
         `<h1><i style="background:${colOf(b)}"></i>${esc(blockTitle(w, b))}${!isSec(w) && b.grade ? `<b>${esc(b.grade)}</b>` : ''}</h1>`+
@@ -4437,7 +4444,8 @@ document.addEventListener('click', e => {
       saveBUI(); afterFilter(); break;
     case 'cgen': {
       if(!c || !w || !window.genCircuitName) break;
-      c.name = window.genCircuitName(c.style || '', w.circuits.filter(x => x !== c).map(x => x.name));
+      { const st = isSec(w) ? (bTags(c).map(t => t === 'Tecnica' ? 'Tecnico' : t).find(t => STYLES.includes(t)) || '') : (c.style || '');   /* il soprannome si ispira alle caratteristiche */
+      c.name = window.genCircuitName(st, w.circuits.filter(x => x !== c).map(x => x.name)); }
       const inp = document.getElementById('cname'); if(inp) inp.value = c.name;
       touch(); renderChips(); break;
     }
@@ -4467,7 +4475,7 @@ document.addEventListener('click', e => {
     }
     case 'btag': {
       if(!c) break;
-      const t = b.dataset.v, l = c.tags || [];
+      const t = b.dataset.v, l = bTags(c); delete c.style;
       c.tags = l.includes(t) ? l.filter(x => x !== t) : l.concat(t);
       if(!c.tags.length) delete c.tags;
       touch(); renderSheet(); renderChips(); break;
