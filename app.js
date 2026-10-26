@@ -3168,7 +3168,7 @@ function mineItems(){
   return out;
 }
 /* ---------- badge: calcolati dalle salite del cliente, nessun dato in più ---------- */
-const B_FAM = { cost: ['Costanza', '#ff7a1a'], var: ['Varietà', '#22c3e6'], prog: ['Progressi', '#e5312b'], gym: ['Per la palestra', '#23b45a'], km: ['Chilometraggio', '#8a4dff'], tec: ['Tecnica', '#ffd400'], ora: ['Orari', '#5b8cff'], sed: ['Sedute', '#ff5fa2'] };
+const B_FAM = { cost: ['Costanza', '#ff7a1a'], var: ['Varietà', '#22c3e6'], col: ['Colori', '#e5312b'], prog: ['Progressi', '#4dd4ac'], gym: ['Per la palestra', '#23b45a'], km: ['Chilometraggio', '#8a4dff'], tec: ['Tecnica', '#ffd400'], ora: ['Orari', '#5b8cff'], sed: ['Sedute', '#ff5fa2'] };
 function badgeStats(){
   const T = ui.ticks ? [...ui.ticks.values()] : [], done = T.filter(t => t.status === 'fatto');
   const find = t => { const w = S.walls.find(x => x.id === t.wall_id), c = w && w.circuits.find(x => x.id === t.item_id); return { w, c }; };
@@ -3188,7 +3188,8 @@ function badgeStats(){
   return { n: D.length, nB: D.filter(x => x.isB).length, nC: D.filter(x => !x.isB).length, moves: D.filter(x => !x.isB).reduce((t, x) => t + (x.mv || 0), 0),
     colors: new Set(D.filter(x => x.isB).map(x => x.g)), secDone: secDone.size, secTot: secs.length, cleanSec, missToClean: bestSec === -999 ? null : -bestSec,
     weeks: best, proj: D.some(x => x.t.from_project), hiUps: T.reduce((n, t) => n + (t.high_ups || 0), 0), nFeet: D.filter(x => !x.isB && x.c && x.c.holds.some(isFoot)).length, rated: T.filter(t => t.status === 'fatto' && t.rating && t.vote).length,
-    early: D.some(x => x.at && x.at.getHours() < 9), late: D.some(x => x.at && x.at.getHours() >= 22), bestDay: Math.max(0, ...Object.values(days)) };
+    early: D.filter(x => x.at && x.at.getHours() < 9).length, late: D.filter(x => x.at && x.at.getHours() >= 22).length,
+    nRate: T.filter(t => t.status === 'fatto' && t.rating).length, nVote: T.filter(t => t.status === 'fatto' && t.vote).length, bestDay: Math.max(0, ...Object.values(days)) };
 }
 const BADGES = [
   { id: 'primo', f: 'cost', name: 'Primo passo', desc: 'Il primo percorso fatto', ok: s => s.n >= 1, left: s => 'segna il tuo primo percorso' },
@@ -3199,15 +3200,17 @@ const BADGES = [
   { id: 'giro', f: 'var', name: 'Giramondo', desc: 'Almeno un boulder in ogni settore', ok: s => s.secTot > 0 && s.secDone >= s.secTot, left: s => s.secDone + ' di ' + s.secTot + ' settori' },
   { id: 'pulito', f: 'var', name: 'Settore pulito', desc: 'Tutti i boulder in parete di un settore', ok: s => s.cleanSec >= 1, left: s => s.missToClean != null ? 'te ne mancano ' + s.missToClean + ' nel settore più vicino' : 'chiudi tutti i boulder di un settore' },
   { id: 'doppia', f: 'var', name: 'Doppia anima', desc: 'Almeno 10 boulder e 10 circuiti', ok: s => s.nB >= 10 && s.nC >= 10, left: s => Math.min(s.nB, 10) + '/10 boulder · ' + Math.min(s.nC, 10) + '/10 circuiti' },
-  ...[['verde','Primo verde'],['giallo','Primo giallo'],['rosso','Primo rosso'],['nero','Primo nero']].map(([c, n]) => ({ id: 'c_' + c, f: 'prog', name: n, desc: 'Il primo boulder ' + c + ' chiuso', ok: s => s.colors.has(c), left: s => 'chiudi un boulder ' + c, dot: (DIFFS.find(d => d[0] === c) || [])[2] })),
+  ...[['verde','Primo verde'],['giallo','Primo giallo'],['rosso','Primo rosso'],['nero','Primo nero']].map(([c, n]) => ({ id: 'c_' + c, f: 'col', name: n, desc: 'Il primo boulder ' + c + ' chiuso', ok: s => s.colors.has(c), left: s => 'chiudi un boulder ' + c, dot: (DIFFS.find(d => d[0] === c) || [])[2] })),
   ...[5, 20].map(k => ({ id: 'hi' + k, f: 'prog', name: k === 5 ? 'Un passo più in là' : 'Testardo', desc: k + ' volte hai migliorato il tuo punto più alto su un circuito in progetto', ok: s => s.hiUps >= k, left: s => s.hiUps + ' di ' + k, big: String(k) })),
   { id: 'proj', f: 'prog', name: 'Progetto chiuso', desc: 'Un percorso passato da Progetto a Fatto', ok: s => s.proj, left: s => 'segna un progetto, poi chiudilo' },
-  ...[10, 50].map(k => ({ id: 'r' + k, f: 'gym', name: k === 10 ? 'Occhio critico' : 'Giudice di parete', desc: k + ' percorsi votati, con voto e parere sul grado', ok: s => s.rated >= k, left: s => s.rated + ' di ' + k, big: String(k) })),
+  /* per la palestra: più riscontri sui percorsi. Gradimento (1-10) e parere sul grado contano a parte */
+  ...[[1, 'Mi piace!'], [10, 'Occhio critico'], [50, 'Critico di fiducia'], [100, 'Voce della palestra']].map(([k, n]) => ({ id: 'g' + k, f: 'gym', name: n, desc: k === 1 ? 'Il primo voto di gradimento a un percorso' : k + ' percorsi votati da 1 a 10', ok: s => s.nRate >= k, left: s => k === 1 ? 'dai un voto da 1 a 10 a un percorso fatto' : s.nRate + ' di ' + k, big: k > 1 ? String(k) : null })),
+  ...[[1, 'Primo parere'], [10, 'Metro alla mano'], [50, 'Giudice di parete'], [100, 'Bilancia d\'oro']].map(([k, n]) => ({ id: 'p' + k, f: 'gym', name: n, desc: k === 1 ? 'Il primo parere sul grado (facile, giusto, duro)' : k + ' pareri sul grado dei percorsi', ok: s => s.nVote >= k, left: s => k === 1 ? 'di\' se il grado ti è sembrato facile, giusto o duro' : s.nVote + ' di ' + k, big: k > 1 ? String(k) : null })),
   ...[100, 250, 500, 1000, 2500, 5000].map(k => ({ id: 'm' + k, f: 'km', name: k.toLocaleString('it-IT') + ' movimenti', desc: k.toLocaleString('it-IT') + ' movimenti sui circuiti fatti', ok: s => s.moves >= k, left: s => s.moves.toLocaleString('it-IT') + ' di ' + k.toLocaleString('it-IT'), big: k >= 1000 ? String(k / 1000).replace('.', ',') + 'k' : String(k) })),
   /* circuiti con piedi obbligati chiusi */
-  ...[[1, 'Piede fino'], [10, 'Piedi di velluto'], [25, 'Ballerino']].map(([k, n]) => ({ id: 'ft' + k, f: 'tec', name: n, desc: k === 1 ? 'Il primo circuito con piedi obbligati' : k + ' circuiti con piedi obbligati', ok: s => s.nFeet >= k, left: s => k === 1 ? 'chiudi un circuito con piedi obbligati' : s.nFeet + ' di ' + k, big: k > 1 ? String(k) : null, foot: true })),
-  { id: 'early', f: 'ora', name: 'Mattiniero', desc: 'Un percorso fatto prima delle 9', ok: s => s.early, left: s => 'prima delle 9 del mattino' },
-  { id: 'late', f: 'ora', name: 'Nottambulo', desc: 'Un percorso fatto dopo le 22', ok: s => s.late, left: s => 'dopo le 22' },
+  ...[[1, 'Piede fino'], [10, 'Piedi di velluto'], [25, 'Ballerino'], [50, 'Piede di scimmia']].map(([k, n]) => ({ id: 'ft' + k, f: 'tec', name: n, desc: k === 1 ? 'Il primo circuito con piedi obbligati' : k + ' circuiti con piedi obbligati', ok: s => s.nFeet >= k, left: s => k === 1 ? 'chiudi un circuito con piedi obbligati' : s.nFeet + ' di ' + k, big: k > 1 ? String(k) : null })),
+  ...[[1, 'Mattiniero'], [10, 'Allodola'], [30, 'Primo raggio']].map(([k, n]) => ({ id: k === 1 ? 'early' : 'early' + k, f: 'ora', name: n, desc: (k === 1 ? 'Un percorso fatto' : k + ' percorsi fatti') + ' prima delle 9', ok: s => s.early >= k, left: s => k === 1 ? 'prima delle 9 del mattino' : s.early + ' di ' + k, big: k > 1 ? String(k) : null })),
+  ...[[1, 'Nottambulo'], [10, 'Gufo'], [30, 'Luna piena']].map(([k, n]) => ({ id: k === 1 ? 'late' : 'late' + k, f: 'ora', name: n, desc: (k === 1 ? 'Un percorso fatto' : k + ' percorsi fatti') + ' dopo le 22', ok: s => s.late >= k, left: s => k === 1 ? 'dopo le 22' : s.late + ' di ' + k, big: k > 1 ? String(k) : null })),
   ...[5, 10, 20].map(k => ({ id: 'd' + k, f: 'sed', name: k === 5 ? 'Bella sessione' : k === 10 ? 'Seduta piena' : 'Maratona', desc: k + ' percorsi fatti nello stesso giorno', ok: s => s.bestDay >= k, left: s => 'record: ' + s.bestDay + ' in un giorno', big: String(k) }))
 ];
 function earnedBadges(){ const st = badgeStats(); return new Set(BADGES.filter(b => b.ok(st)).map(b => b.id)); }
@@ -3227,29 +3230,44 @@ const B_ICO = {
   foot: '<path d="M-2 10c-4 0-5-3.4-4.5-7.3.6-3.7 1.7-7.5 5-7.5s4.8 3 4.6 6.5C2.8 5.9 1.4 10-2 10z"/><circle cx="-3.6" cy="-8.6" r="1.8"/><circle cx="-.3" cy="-9.6" r="1.6"/><circle cx="2.6" cy="-8.5" r="1.4"/><circle cx="4.8" cy="-6.1" r="1.3"/>',
   sun: '<circle r="5"/><g stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M0-11v3M0 8v3M-11 0h3M8 0h3M-7.8-7.8l2 2M5.8 5.8l2 2M-7.8 7.8l2-2M5.8-5.8l2-2"/></g>',
   moon: '<path d="M3-10a10 10 0 1 0 7 15A8 8 0 0 1 3-10z"/>',
-  bolt: '<path d="M2-12L-8 2h7l-3 10L8-3H1z"/>'
+  bolt: '<path d="M2-12L-8 2h7l-3 10L8-3H1z"/>',
+  bolt2: '<g transform="translate(-4.5 0) scale(.78)"><path d="M2-12L-8 2h7l-3 10L8-3H1z"/></g><g transform="translate(4.5 0) scale(.78)"><path d="M2-12L-8 2h7l-3 10L8-3H1z"/></g>',
+  bolt3: '<g transform="translate(-8 2) scale(.55)"><path d="M2-12L-8 2h7l-3 10L8-3H1z"/></g><g transform="translate(8 2) scale(.55)"><path d="M2-12L-8 2h7l-3 10L8-3H1z"/></g><path d="M2-12L-8 2h7l-3 10L8-3H1z"/>',
+  globe: '<g fill="none" stroke="currentColor" stroke-width="2"><circle r="10"/><ellipse rx="4.2" ry="10"/><path d="M-10 0h20M-8.6-5h17.2M-8.6 5h17.2"/></g>',
+  broom: '<path d="M7-11L-1 2" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M-4 0l6 4-3 8c-3 0-8-2-10-5z"/><path d="M-6.5 6l-2 3M-3.5 7.5l-1.6 3.4M-.6 8.6l-1 3" stroke="var(--bg)" stroke-width="1.2"/><path d="M8 4l1.2 2.4L12 7l-2.8.6L8 10l-1.2-2.4L4 7l2.8-.6z"/>',
+  tao: '<circle r="10.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M0-10a10 10 0 0 1 0 20a5 5 0 0 1 0-10a5 5 0 0 0 0-10z"/><circle cy="-5" r="1.7"/><circle cy="5" r="1.7" fill="var(--bg)"/>',
+  heart: '<path d="M0 10S-10 3-10-3.5A5.2 5.2 0 0 1 0-6.4 5.2 5.2 0 0 1 10-3.5C10 3 0 10 0 10z"/>',
+  scale: '<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M0-10v19M-6 9h12M-9-6h18M-9-6l-3 7M-9-6l3 7M9-6l-3 7M9-6l3 7"/></g><circle cy="-10" r="1.8"/><path d="M-12.5 1a3.5 2.5 0 0 0 7 0zM5.5 1a3.5 2.5 0 0 0 7 0z"/>',
+  road: '<path d="M-8 11V-3a8 8 0 0 1 16 0v14z"/><path d="M-8-3a8 8 0 0 1 16 0z" fill="#e5312b"/><text y="7" text-anchor="middle" font-family="Barlow Semi Condensed, Arial" font-weight="700" font-size="7.5" fill="var(--bg)">km</text>',
+  boar: '<path d="M-1.2-9.5c-3.4 1-5.6 6.5-5 11.4.3 2.2 2.8 2.8 4.1.9 1.1-1.7 1.4-6.6.9-12.3z"/><path d="M1.2-9.5c3.4 1 5.6 6.5 5 11.4-.3 2.2-2.8 2.8-4.1.9-1.1-1.7-1.4-6.6-.9-12.3z"/><ellipse cx="-6.8" cy="8.6" rx="1.6" ry="2.3"/><ellipse cx="6.8" cy="8.6" rx="1.6" ry="2.3"/>',
+  bear: '<path d="M-8.5 7.5c-1-5.4 3.2-8.5 8.5-8.5s9.5 3.1 8.5 8.5c-.5 3.2-4.3 3.5-8.5 3s-8 0-8.5-3z"/><circle cx="-9.4" cy="-3.6" r="2.1"/><circle cx="-5" cy="-7.6" r="2.2"/><circle cx="0" cy="-9" r="2.3"/><circle cx="5" cy="-7.6" r="2.2"/><circle cx="9.4" cy="-3.6" r="2.1"/>',
+  goat: '<path d="M-1.6-11c-2.6 2.2-4.4 9-3.2 15 .4 1.8 2.6 1.8 3.2.2.8-2.4.8-9 0-15.2z" transform="rotate(-12)"/><path d="M1.6-11c2.6 2.2 4.4 9 3.2 15-.4 1.8-2.6 1.8-3.2.2-.8-2.4-.8-9 0-15.2z" transform="rotate(12)"/>',
+  monkey: '<path d="M1 11c-3.4 0-4.6-3.4-4.6-7.4S-2.5-4.6 1.2-5.6 7.4-4.4 7.2.4 6 11 1 11z"/><circle cx="0" cy="-8.6" r="1.5"/><circle cx="2.9" cy="-9.4" r="1.45"/><circle cx="5.5" cy="-8.2" r="1.35"/><circle cx="7.4" cy="-5.8" r="1.25"/><path d="M-3.2 0c-3.2-.6-6-2.6-7.6-5.6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>'
 };
 const B_METAL = { b: ['#e0a466', '#8a5524'], s: ['#eef1f4', '#8c949e'], g: ['#ffe27a', '#c08a00'] };
 /* per ogni badge: metallo, disegno e quanto manca (da 0 a 1) */
 const B_LOOK = (() => {
-  const L = {}, ser = (ids, ico, pr) => { const n = ids.length, T = n === 1 ? ['s'] : n === 2 ? ['b', 'g'] : n === 3 ? ['b', 's', 'g'] : n === 4 ? ['b', 's', 'g', 'g'] : ['b', 'b', 's', 's', 'g', 'g'];
-    ids.forEach((id, k) => { L[id] = { t: T[k], i: ico, pr: pr ? (st => pr(st, id)) : null }; }); };
-  const num = id => +id.replace(/\D/g, '');
-  ser(['primo'], 'peak', st => Math.min(1, st.n)); L.primo.t = 'b';
-  ser(['s10', 's50', 's100', 's250'], 'peak', (st, id) => st.n / num(id));
+  /* ser: una serie di badge; ico può essere un elenco (un disegno per gradino); grow = il disegno cresce a ogni gradino */
+  const L = {}, ser = (ids, ico, pr, grow) => { const n = ids.length, T = n === 1 ? ['s'] : n === 2 ? ['b', 'g'] : n === 3 ? ['b', 's', 'g'] : n === 4 ? ['b', 's', 'g', 'g'] : n === 5 ? ['b', 'b', 's', 'g', 'g'] : ['b', 'b', 's', 's', 'g', 'g'];
+    ids.forEach((id, k) => { L[id] = { t: T[k], i: Array.isArray(ico) ? ico[k] : ico, pr: pr ? (st => pr(st, id)) : null, sc: grow ? 0.78 + 0.5 * k / Math.max(1, n - 1) : 1 }; }); };
+  const num = id => +id.replace(/\D/g, '') || 1;
+  ser(['primo', 's10', 's50', 's100', 's250'], 'peak', (st, id) => st.n / num(id), true);
   ser(['w4', 'w12'], 'fire', (st, id) => st.weeks / num(id)); L.w4.t = 's';
   L.arco = { t: 's', i: 'rainbow', pr: st => ['bianco','blu','verde','giallo','rosso'].filter(c => st.colors.has(c)).length / 5 };
-  L.giro = { t: 's', i: 'pin', pr: st => st.secTot ? st.secDone / st.secTot : 0 };
-  L.pulito = { t: 'g', i: 'check', pr: null };
-  L.doppia = { t: 's', i: 'two', pr: st => (Math.min(st.nB, 10) + Math.min(st.nC, 10)) / 20 };
+  L.giro = { t: 's', i: 'globe', pr: st => st.secTot ? st.secDone / st.secTot : 0 };
+  L.pulito = { t: 'g', i: 'broom', pr: null };
+  L.doppia = { t: 's', i: 'tao', pr: st => (Math.min(st.nB, 10) + Math.min(st.nC, 10)) / 20 };
   ['verde', 'giallo', 'rosso', 'nero'].forEach((c, k) => { L['c_' + c] = { t: ['b', 's', 'g', 'g'][k], i: null, pr: null }; });
   L.proj = { t: 'b', i: 'star', pr: null };
   ser(['hi5', 'hi20'], 'up', (st, id) => st.hiUps / num(id)); L.hi5.t = 's';
-  ser(['r10', 'r50'], 'eye', (st, id) => st.rated / num(id));
-  ser(['m100', 'm250', 'm500', 'm1000', 'm2500', 'm5000'], 'hold', (st, id) => st.moves / num(id));
-  L.early = { t: 'b', i: 'sun', pr: null }; L.late = { t: 'b', i: 'moon', pr: null };
-  ser(['d5', 'd10', 'd20'], 'bolt', (st, id) => st.bestDay / num(id));
-  ser(['ft1', 'ft10', 'ft25'], 'foot', (st, id) => st.nFeet / num(id));
+  ser(['g1', 'g10', 'g50', 'g100'], 'heart', (st, id) => st.nRate / num(id), true);
+  ser(['p1', 'p10', 'p50', 'p100'], 'scale', (st, id) => st.nVote / num(id), true);
+  ser(['m100', 'm250', 'm500', 'm1000', 'm2500', 'm5000'], 'road', (st, id) => st.moves / num(id), true);
+  ser(['early', 'early10', 'early30'], 'sun', (st, id) => st.early / num(id), true);
+  ser(['late', 'late10', 'late30'], 'moon', (st, id) => st.late / num(id), true);
+  ser(['d5', 'd10', 'd20'], ['bolt', 'bolt2', 'bolt3'], (st, id) => st.bestDay / num(id));
+  ser(['ft1', 'ft10', 'ft25', 'ft50'], ['boar', 'bear', 'goat', 'monkey'], (st, id) => st.nFeet / num(id));
+  ['ft1', 'ft10', 'ft25', 'ft50'].forEach(id => { L[id].sc = 1.2; });   /* le impronte un po' più grandi, si leggono meglio */
   return L;
 })();
 let medalN = 0;
@@ -3259,7 +3277,7 @@ function medalSVG(b, ok, st, size){
   const pr = !ok && lk.pr && st ? Math.max(0, Math.min(1, lk.pr(st) || 0)) : 0;
   const ink = ok ? '#1a1a1a' : '#62676e', bg = ok ? m1 : '#3b3f45';
   const glyph = b.dot ? `<circle r="9" fill="${ok ? b.dot : '#55595f'}" stroke="${ok ? '#000' : '#666'}" stroke-opacity=".5" stroke-width="1.5"/>` :
-    `<g transform="scale(1.45)" fill="${ink}" color="${ink}" style="--bg:${bg}">${ok ? B_ICO[lk.i] || B_ICO.star : (B_ICO[lk.i] || B_ICO.star).replace(/stroke="#[0-9a-f]{6}"/g, 'stroke="#62676e"')}</g>`;
+    `<g transform="scale(${(1.45 * (lk.sc || 1)).toFixed(2)})" fill="${ink}" color="${ink}" style="--bg:${bg}">${ok ? B_ICO[lk.i] || B_ICO.star : (B_ICO[lk.i] || B_ICO.star).replace(/stroke="#[0-9a-f]{6}"/g, 'stroke="#62676e"')}</g>`;
   return `<svg viewBox="-60 -62 120 124" width="${size || 76}" height="${Math.round((size || 76) * 1.03)}" aria-hidden="true">`+
     `<defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${ok ? m1 : '#4a4e55'}"/><stop offset="1" stop-color="${ok ? m2 : '#2e3136'}"/></linearGradient></defs>`+
     `<polygon points="${hex(56)}" fill="#1d1f23" stroke="${ok ? fam : '#34383e'}" stroke-width="7" stroke-linejoin="round"/>`+
