@@ -977,7 +977,8 @@ async function refineAuto(w, list){
     if(ui.scan.stop) break;
     const op0 = []; for(let i = 0; i < h.poly.length; i += 2) op0.push([h.poly[i], h.poly[i+1]]);
     let op = null;
-    try{ const rf = await samRefine(w, op0, h.x, h.y, true); if(rf && rf.length >= 3 && polyIoU(rf, op0) >= 0.6) op = rf; }catch(e){}
+    /* serve ad allargare i contorni stretti: un contorno più piccolo del primo non si accetta */
+    try{ const rf = await samRefine(w, op0, h.x, h.y, true); if(rf && rf.length >= 3 && polyIoU(rf, op0) >= 0.6 && polyArea(rf.flat()) >= polyArea(h.poly)*0.95) op = rf; }catch(e){}
     if(op){ h.poly = []; op.forEach(p => h.poly.push(Math.round(p[0]), Math.round(p[1]))); }
     ui.scan.i++;
     if(ui.scan.i % 3 === 0){ renderTools(); await new Promise(r => setTimeout(r, 0)); }
@@ -1832,10 +1833,12 @@ function catSuspects(w){
   const manual = h => h.det !== 1;
   /* le prese confermate a mano ("Va bene") non si segnalano più */
   const okd = h => manual(h) || !!h.ok;
+  /* "troppo piccola" rispetto alle prese di questo muro (non in assoluto): sui muri larghi le prese piccole sono tante e vere */
+  const med = ar.length ? ar.slice().sort((a, b) => a - b)[ar.length >> 1] : 0;
   cat.forEach((h,i) => {
     if(okd(h)) return;
     const f = ar[i]/W2, bw = bb[i][2]-bb[i][0], bh = bb[i][3]-bb[i][1];
-    if(f < 1.2e-4 || f > 0.06) out.add(i);
+    if((f < 1.2e-4 && ar[i] < med*0.12) || f > 0.06) out.add(i);
     else if(Math.max(bw,bh)/Math.max(1,Math.min(bw,bh)) > 3.6) out.add(i);
     else if(ar[i]/(hullAreaFlat(h.poly) || 1) < 0.62) out.add(i);
   });
