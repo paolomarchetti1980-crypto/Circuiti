@@ -983,6 +983,66 @@ async function refineAuto(w, list){
     ui.scan.i++;
     if(ui.scan.i % 3 === 0){ renderTools(); await new Promise(r => setTimeout(r, 0)); }
   }
+  /* terza passata, solo sulle prese minuscole: SAM tende a prendere il centro attorno al bullone e lascia fuori il bordo.
+     Il contorno si allarga finché il colore resta diverso dal muro lì attorno (misurato su Guybrush: contorni sbagliati da 76 a 18) */
+  if(ui.scan.stop) return;
+  try{
+    const im = await loadImg(w.img), k = L/3000, tiny = list.filter(h => h.poly && polyArea(h.poly) < 1500*k*k);
+    for(const h of tiny){ const p = colorGrow(im, w, h.poly, k); if(p) h.poly = p; }
+  }catch(e){ console.warn('allargamento col colore', e); }
+}
+function colorGrow(im, w, poly, k){
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for(let i = 0; i < poly.length; i += 2){ x0 = Math.min(x0, poly[i]); x1 = Math.max(x1, poly[i]); y0 = Math.min(y0, poly[i+1]); y1 = Math.max(y1, poly[i+1]); }
+  const pad = Math.round(30*k), X0 = Math.max(0, Math.floor(x0) - pad), Y0 = Math.max(0, Math.floor(y0) - pad), X1 = Math.min(w.w, Math.ceil(x1) + pad), Y1 = Math.min(w.h, Math.ceil(y1) + pad);
+  const W = X1 - X0, H = Y1 - Y0, N = W*H; if(W < 8 || H < 8) return null;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d', { willReadFrequently: true });
+  g.drawImage(im, X0, Y0, W, H, 0, 0, W, H);
+  const d = g.getImageData(0, 0, W, H).data;
+  g.clearRect(0, 0, W, H); g.beginPath();
+  for(let i = 0; i < poly.length; i += 2){ const X = poly[i] - X0, Y = poly[i+1] - Y0; if(i) g.lineTo(X, Y); else g.moveTo(X, Y); }
+  g.closePath(); g.fillStyle = '#fff'; g.fill();
+  const md = g.getImageData(0, 0, W, H).data, m = new Uint8Array(N); let a0 = 0;
+  for(let i = 0; i < N; i++) if(md[i*4+3] > 127){ m[i] = 1; a0++; }
+  if(a0 < 4) return null;
+  /* distanza dal contorno (approssimata, a passi 3-4) per prendere il colore del muro in un anello attorno alla presa */
+  const D = new Float32Array(N); for(let i = 0; i < N; i++) D[i] = m[i] ? 0 : 1e9;
+  for(let y = 0; y < H; y++) for(let x = 0; x < W; x++){ const i = y*W + x; let v = D[i];
+    if(x > 0) v = Math.min(v, D[i-1] + 3); if(y > 0){ v = Math.min(v, D[i-W] + 3); if(x > 0) v = Math.min(v, D[i-W-1] + 4); if(x < W-1) v = Math.min(v, D[i-W+1] + 4); } D[i] = v; }
+  for(let y = H-1; y >= 0; y--) for(let x = W-1; x >= 0; x--){ const i = y*W + x; let v = D[i];
+    if(x < W-1) v = Math.min(v, D[i+1] + 3); if(y < H-1){ v = Math.min(v, D[i+W] + 3); if(x < W-1) v = Math.min(v, D[i+W+1] + 4); if(x > 0) v = Math.min(v, D[i+W-1] + 4); } D[i] = v; }
+  const lab = new Float32Array(N*3);
+  for(let i = 0; i < N; i++){ const c = rgb2lab(d[i*4], d[i*4+1], d[i*4+2]); lab[i*3] = c[0]; lab[i*3+1] = c[1]; lab[i*3+2] = c[2]; }
+  const r0 = 8*k*3, r1 = 14*k*3, ring = [[], [], []];
+  for(let i = 0; i < N; i++) if(D[i] >= r0 && D[i] <= r1){ ring[0].push(lab[i*3]); ring[1].push(lab[i*3+1]); ring[2].push(lab[i*3+2]); }
+  if(ring[0].length < 20) return null;
+  const wall = ring.map(v => v.sort((a, b) => a - b)[v.length >> 1]);
+  const cand = new Uint8Array(N);
+  for(let i = 0; i < N; i++){ const dl = lab[i*3] - wall[0], da = lab[i*3+1] - wall[1], db = lab[i*3+2] - wall[2]; cand[i] = dl*dl + da*da + db*db > 22*22 ? 1 : 0; }
+  /* crescita a passi di un pixel, solo sui pixel diversi dal muro */
+  let cur = m;
+  for(let it = 0, n = Math.max(4, Math.round(8*k)); it < n; it++){
+    const nx = cur.slice(); let add = 0;
+    for(let y = 0; y < H; y++) for(let x = 0; x < W; x++){ const i = y*W + x; if(cur[i] || !cand[i]) continue;
+      if((x > 0 && cur[i-1]) || (x < W-1 && cur[i+1]) || (y > 0 && cur[i-W]) || (y < H-1 && cur[i+W])){ nx[i] = 1; add++; } }
+    cur = nx; if(!add) break;
+  }
+  /* buchi chiusi (bullone, riflessi): tutto ciò che non tocca il bordo del riquadro */
+  const out = new Uint8Array(N), st = [];
+  for(let x = 0; x < W; x++){ st.push(x, (H-1)*W + x); } for(let y = 0; y < H; y++){ st.push(y*W, y*W + W - 1); }
+  while(st.length){ const p = st.pop(); if(out[p] || cur[p]) continue; out[p] = 1; const x = p % W, y = (p - x)/W;
+    if(x > 0) st.push(p-1); if(x < W-1) st.push(p+1); if(y > 0) st.push(p-W); if(y < H-1) st.push(p+W); }
+  let a1 = 0; for(let i = 0; i < N; i++){ cur[i] = out[i] ? 0 : 1; a1 += cur[i]; }
+  /* si cambia solo un contorno davvero stretto: se cresce poco era già giusto (il bordo sfumato della foto lo allargherebbe e basta) */
+  if(a1 <= a0*1.3 || a1 > a0*3) return null;
+  let sx = 0, sy = 0, c = 0; for(let i = 0; i < N; i++) if(m[i]){ sx += i % W; sy += (i/W) | 0; c++; }
+  /* il contorno passa per il centro dei pixel di bordo: un pixel in più attorno per non perdere mezzo pixel per lato */
+  const dd = cur.slice();
+  for(let y = 0; y < H; y++) for(let x = 0; x < W; x++){ const i = y*W + x; if(cur[i]) continue; if((x > 0 && cur[i-1]) || (x < W-1 && cur[i+1]) || (y > 0 && cur[i-W]) || (y < H-1 && cur[i+W])) dd[i] = 1; }
+  const tr = maskToPoly(dd, W, H, sx/c, sy/c); if(!tr || tr.pts.length < 6) return null;
+  const pts = rdpPts(smoothClosed(tr.pts.map(p => [X0 + p[0] + 0.5, Y0 + p[1] + 0.5]), 1), 0.6);
+  const o = []; pts.forEach(p => o.push(Math.round(p[0]), Math.round(p[1]))); return o.length >= 6 ? o : null;
 }
 /* studio preliminare: appena la foto è pronta, si studiano in sottofondo anche i riquadri della griglia,
    così la seconda passata ad alta risoluzione non fa aspettare al tocco */
