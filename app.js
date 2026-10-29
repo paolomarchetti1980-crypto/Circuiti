@@ -1595,6 +1595,35 @@ async function samCandidates(w){
   m = morph(morph(m, true), false);
   return { m, cw, ch, S };
 }
+/* mappa di ciò che resta: pixel che non sono pannello (né per tinta né per luminosità) e non stanno dentro una presa già trovata */
+async function residualMap(w, holds, volArea){
+  const P = autoPanel; if(!P || !P.refs.length) return null;
+  const im = await loadImg(w.img);
+  const CL = Math.min(960, Math.max(480, Math.round(Math.max(w.w, w.h)/3)));
+  const S = CL / Math.max(w.w, w.h), cw = Math.max(1, Math.round(w.w*S)), ch = Math.max(1, Math.round(w.h*S)), N = cw*ch;
+  const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+  const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0, cw, ch);
+  const d = g.getImageData(0, 0, cw, ch).data;
+  g.clearRect(0, 0, cw, ch); g.fillStyle = '#fff';
+  for(const h of holds){ if(!h.poly || polyArea(h.poly) >= volArea) continue; g.beginPath(); for(let i = 0; i < h.poly.length; i += 2){ const X = h.poly[i]*S, Y = h.poly[i+1]*S; if(i) g.lineTo(X, Y); else g.moveTo(X, Y); } g.closePath(); g.fill(); }
+  /* un pixel di margine attorno alle prese trovate: i bordi sfumati non sono prese nuove */
+  g.lineWidth = 2; g.strokeStyle = '#fff';
+  for(const h of holds){ if(!h.poly || polyArea(h.poly) >= volArea) continue; g.beginPath(); for(let i = 0; i < h.poly.length; i += 2){ const X = h.poly[i]*S, Y = h.poly[i+1]*S; if(i) g.lineTo(X, Y); else g.moveTo(X, Y); } g.closePath(); g.stroke(); }
+  const md = g.getImageData(0, 0, cw, ch).data;
+  const pb = P.refs.map(c => c[0] + c[1] + c[2] + 1);
+  let m = new Uint8Array(N);
+  for(let i = 0; i < N; i++){
+    if(md[i*4+3] > 0) continue;
+    const r = d[i*4], gg = d[i*4+1], b = d[i*4+2], sm = r + gg + b + 1;
+    const panel = P.refs.some((c, k) => { const q = sm / pb[k]; return q > 0.72 && q < 1.3 && Math.abs(r/sm - c[0]/pb[k]) + Math.abs(gg/sm - c[1]/pb[k]) + Math.abs(b/sm - c[2]/pb[k]) < 0.035; });
+    m[i] = panel ? 0 : 1;
+  }
+  const morph = (src, er) => { const o = new Uint8Array(N); for(let y = 0; y < ch; y++) for(let x = 0; x < cw; x++){ const i = y*cw+x;
+    const n = [src[i], x>0?src[i-1]:0, x<cw-1?src[i+1]:0, y>0?src[i-cw]:0, y<ch-1?src[i+cw]:0];
+    o[i] = er ? (n[0]&&n[1]&&n[2]&&n[3]&&n[4] ? 1 : 0) : (n[0]||n[1]||n[2]||n[3]||n[4] ? 1 : 0); } return o; };
+  m = morph(morph(m, true), false);
+  return { m, cw, ch, S };
+}
 function candSeeds(C){
   const { m, cw, ch } = C, N = cw*ch, dt = new Float32Array(N);
   for(let i = 0; i < N; i++) dt[i] = m[i] ? 1e9 : 0;
@@ -1751,10 +1780,11 @@ async function samAutoScan(w){
   await samGridPass(w, holds, maxArea, volArea);
   if(ui.scan.stop){ const found = ui.scan.found; holds.forEach(h => { delete h._so; delete h._new; }); scanEnd(); touch(); render(); toast(`Fermato: ${found} nuove prese aggiunte.`); return; }
   done = ui.scan.i;
-  for(let round = 0; round < 4 && !ui.scan.stop; round++){
+  const seedRounds = async (C, rounds, r0) => {
+  for(let round = 0; round < rounds && !ui.scan.stop; round++){
     const seeds = candSeeds(C);
     if(!seeds.length) break;
-    ui.scan.prep = false; ui.scan.total = done + seeds.length; ui.scan.round = round + 1; renderTools();
+    ui.scan.prep = false; ui.scan.total = done + seeds.length; ui.scan.round = r0 + round + 1; renderTools();
     for(const [sx, sy] of seeds){
       if(ui.scan.stop) break;
       const X = (sx + 0.5)/C.S, Y = (sy + 0.5)/C.S;
@@ -1782,6 +1812,11 @@ async function samAutoScan(w){
       if(done % 60 === 0){ touch(); render(); }
     }
   }
+  };
+  await seedRounds(C, 4, 0);
+  /* ultimo giro: ciò che resta scoperto e non sembra pannello (prese piccole in mezzo a prese grandi, dove la mappa
+     "diverso dai dintorni" non le vede perché i dintorni sono altre prese; prese grigie o scure sul pannello chiaro) */
+  if(!ui.scan.stop){ try{ const C2 = await residualMap(w, holds, volArea); if(C2) await seedRounds(C2, 2, 4); }catch(e){ console.warn('giro finale', e); } }
   if(!ui.scan.stop){ touch(); render(); await refineAuto(w, holds.filter(h => h._new)); }
   holds.forEach(h => { delete h._so; delete h._new; });
   const stopped = ui.scan.stop, found = ui.scan.found;
