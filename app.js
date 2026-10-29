@@ -4983,8 +4983,9 @@ function applyZoom(nz, fx, fy){
     ui.pinchAt = Date.now();   /* niente punto in più dal click che segue */
     const w = curWall(); if(!w) return;
     const r = st.getBoundingClientRect(), px = w.w / r.width;
-    /* il tratto si semplifica (scarto di circa un pixel e mezzo di schermo): niente seghettature del dito */
-    const stroke = rdpPts(ui.draft.slice(f.base), px*1.5);
+    /* il tratto si semplifica appena (scarto di due terzi di pixel di schermo): via le seghettature del dito,
+       ma il contorno disegnato a mano resta fedele (prima, con 1,5 pixel, a muro rimpicciolito si perdevano le punte) */
+    const stroke = rdpPts(ui.draft.slice(f.base), px*0.65);
     ui.draft = ui.draft.slice(0, f.base).concat(stroke.map(q => [Math.round(q[0]), Math.round(q[1])]));
     const a = ui.draft[0], z = ui.draft[ui.draft.length-1];
     if(ui.draft.length >= 4 && Math.hypot(a[0]-z[0], a[1]-z[1]) <= px*22){
