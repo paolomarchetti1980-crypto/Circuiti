@@ -1671,10 +1671,10 @@ async function panelInfo(w){
   }
   return { d, cw, ch, S, refs };
 }
-function panelLike(P, r, g, b, tol){
+function panelLike(P, r, g, b, tol, kmin){
   const sm = r + g + b + 1;
   return P.refs.some(c => { const cs = c[0] + c[1] + c[2] + 1, k = sm / cs;
-    return k > 0.5 && k < 1.3 && Math.abs(r/sm - c[0]/cs) + Math.abs(g/sm - c[1]/cs) + Math.abs(b/sm - c[2]/cs) < tol; });
+    return k > (kmin || 0.5) && k < 1.3 && Math.abs(r/sm - c[0]/cs) + Math.abs(g/sm - c[1]/cs) + Math.abs(b/sm - c[2]/cs) < tol; });
 }
 /* il volume più piccolo (già trovato) che contiene il punto: le prese sopra devono essere molto più piccole */
 function volCap(holds, x, y, volArea){ let best = 0; for(const h of holds){ if(!h.poly) continue; const a = polyArea(h.poly); if(a >= volArea && inPoly(h.poly, x, y) && (!best || a < best)) best = a; } return best ? best*0.6 : 0; }
@@ -1707,7 +1707,7 @@ function autoAccept(w, holds, res, volArea){
     const big = res.area > W*H*0.004;
     let near = 0;
     pts.forEach(([x, y]) => { const i = (Math.min(P.ch-1, Math.round(y*P.S))*P.cw + Math.min(P.cw-1, Math.round(x*P.S)))*4;
-      if(panelLike(P, P.d[i], P.d[i+1], P.d[i+2], big ? 0.04 : 0.022)) near++; });
+      if(panelLike(P, P.d[i], P.d[i+1], P.d[i+2], big ? 0.04 : 0.022, big ? 0.5 : 0.75)) near++; });   /* piccole: anche la luminosità dev'essere quella del pannello (le prese grigie sono più scure) */
     if(near / pts.length > (big ? 0.55 : 0.75)) return false;
   }
   /* sopra un volume: dev'essere di un altro colore (se no è un pezzo del volume: una faccia, un riflesso, un buco) */
@@ -1717,7 +1717,7 @@ function autoAccept(w, holds, res, volArea){
       { const hp = []; for(let i = 0; i < h.poly.length; i += 2) hp.push([h.poly[i], h.poly[i+1]]);
         const D = Math.sqrt(polyArea(h.poly))*0.03, vs = []; for(let i = 0; i < poly.length; i += Math.max(2, 2*Math.floor(poly.length/40))) vs.push([poly[i], poly[i+1]]);
         const near = vs.filter(([x, y]) => hp.some((a, i) => { const b = hp[(i+1) % hp.length], dx = b[0]-a[0], dy = b[1]-a[1], L2 = dx*dx + dy*dy || 1, t = Math.max(0, Math.min(1, ((x-a[0])*dx + (y-a[1])*dy)/L2)); return Math.hypot(x - a[0] - t*dx, y - a[1] - t*dy) < D; })).length;
-        if(near > vs.length*0.3) return false; } const a = polyLab(P, poly), b = polyLab(P, h.poly, (x, y) => inPoly(poly, x, y) || holds.some(o => o !== h && o.poly && polyArea(o.poly) < volArea && inPoly(o.poly, x, y)));
+        if(near > vs.length*0.5) return false; } const a = polyLab(P, poly), b = polyLab(P, h.poly, (x, y) => inPoly(poly, x, y) || holds.some(o => o !== h && o.poly && polyArea(o.poly) < volArea && inPoly(o.poly, x, y)));
       if(a && b){ const dl = (a[0] - b[0])*0.5, d = Math.hypot(dl, a[1] - b[1], a[2] - b[2]); if(d < 14) return false;
         /* versione prudente: sopra un volume si tengono solo prese di colore deciso e di forma compatta
            (le chiazze di vernice grigia o bianca e le macchie sfrangiate si scartano: quelle prese si aggiungono col tocco) */
@@ -1770,7 +1770,7 @@ async function samAutoScan(w){
   const holds = (w.holds = w.holds || []);
   /* prese e volumi grandi fino all'8% della foto: sui muri con macro e volumi le prese grandi sono tante */
   /* "volume" = forma grande su cui possono stare altre prese: dallo 0,3% della foto in su (prima 1,2%: molti volumi medi coprivano le loro prese) */
-  const maxArea = w.w * w.h * 0.08, volArea = w.w * w.h * 0.003;
+  const maxArea = w.w * w.h * 0.08, volArea = w.w * w.h * 0.0012;
   ui.scan = { i: 0, total: 1, found: 0, stop: false, prep: true, wid: w.id }; scanWake(true); renderTools();
   try{ await samEmbed(w); }catch(e){ scanEnd(); toast('Non riesco a preparare il riconoscimento su questa foto.'); render(); return; }
   const C = await samCandidates(w);
