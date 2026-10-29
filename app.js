@@ -1502,10 +1502,12 @@ async function detect0(w, x, y, ts, strict){
 /* mappa dei "candidati": pixel che si staccano dal pannello circostante (mediana locale), a bassa risoluzione */
 async function samCandidates(w){
   const im = await loadImg(w.img);
-  const S = 480 / Math.max(w.w, w.h), cw = Math.max(1, Math.round(w.w*S)), ch = Math.max(1, Math.round(w.h*S));
+  /* mappa più fine sulle foto grandi: a 480 punti una presa piccola di un muro largo diventava 4-5 punti e spariva */
+  const CL = Math.min(960, Math.max(480, Math.round(Math.max(w.w, w.h)/3)));
+  const S = CL / Math.max(w.w, w.h), cw = Math.max(1, Math.round(w.w*S)), ch = Math.max(1, Math.round(w.h*S));
   const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
   const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0, cw, ch);
-  const d = g.getImageData(0, 0, cw, ch).data, N = cw*ch, R = 15;
+  const d = g.getImageData(0, 0, cw, ch).data, N = cw*ch, R = Math.round(15*CL/480);
   const bg = [new Float32Array(N), new Float32Array(N), new Float32Array(N)];
   for(let c = 0; c < 3; c++){
     const out = bg[c], hist = new Int32Array(256), half = ((2*R+1)*(2*R+1)) >> 1;
@@ -1650,7 +1652,7 @@ function autoAccept(w, holds, res, volArea){
 async function samGridPass(w, holds, maxArea, volArea){
   try{ autoPanel = await panelInfo(w); }catch(e){ autoPanel = null; }
   const L = Math.max(w.w, w.h), pts = [];
-  [10, 20, 34].forEach(n => { const st = L / n; for(let y = st/2; y < w.h; y += st) for(let x = st/2; x < w.w; x += st) pts.push([x, y]); });
+  [10, 20, 34, 55].forEach(n => {   /* il passo più fitto (prima 34) prende anche le prese piccole tra due punti della griglia */ const st = L / n; for(let y = st/2; y < w.h; y += st) for(let x = st/2; x < w.w; x += st) pts.push([x, y]); });
   ui.scan.prep = false; ui.scan.total = pts.length; ui.scan.round = 1; renderTools();
   const covered = (x, y) => holds.some(h => h.poly && polyArea(h.poly) < volArea && inPoly(h.poly, x, y));
   /* pannello liscio intorno al punto (tutto chiaro, grigio e uniforme): inutile chiedere a SAM, si risparmia tempo */
