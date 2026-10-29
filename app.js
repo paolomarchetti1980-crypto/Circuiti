@@ -2817,7 +2817,7 @@ function sectorGrid(){
       const dots = DIFFS.map(d => { const n = on.filter(c => c.diff === d[0]).length; return n ? `<span class="sdot"><i style="background:${d[2]}"></i>${n}</span>` : ''; }).join('');
       const nn = on.filter(isNewB).length;
       const sl = secLabel(w);
-      info = (dots || '<small>nessun boulder</small>') + (sl ? `<span class="snew ${sl === 'Recente' ? 'rec' : sl === 'Scaduto' ? 'exp' : ''}">${sl}</span>` : nn ? `<span class="snew">${nn} novità</span>` : '');
+      info = (dots ? `<small class="stot">${on.length} boulder</small>` + dots : '<small>nessun boulder</small>') + (sl ? `<span class="snew ${sl === 'Recente' ? 'rec' : sl === 'Scaduto' ? 'exp' : ''}">${sl}</span>` : nn ? `<span class="snew">${nn} novità</span>` : '');
       if(EDIT){
         const last = on.map(c => c.dateSet || '').sort().pop();
         const t = todayISO(), lim = new Date(Date.now() + 7*864e5).toISOString().slice(0,10);
