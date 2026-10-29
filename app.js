@@ -1702,7 +1702,7 @@ function autoAccept(w, holds, res, volArea){
   if(x1 - x0 > W*0.35 || y1 - y0 > H*0.35) return false;
   if((x0 < e) + (y0 < e) + (x1 > W - e) + (y1 > H - e) >= 2) return false;
   /* striscia lunga, sottile e senza colore: fessura tra due pannelli o bordo della foto, non una presa */
-  if(autoPanel && Math.max(x1 - x0, y1 - y0) > 5*Math.max(1, Math.min(x1 - x0, y1 - y0))){ const c = polyLab(autoPanel, poly); if(c && Math.hypot(c[1], c[2]) < 12) return false; }
+  if(autoPanel && Math.max(x1 - x0, y1 - y0) > 3*Math.max(1, Math.min(x1 - x0, y1 - y0)) && Math.min(x1 - x0, y1 - y0) < Math.max(W, H)*0.009){ const c = polyLab(autoPanel, poly); if(c && Math.hypot(c[1], c[2]) < 12) return false; }
   if(P){
     /* pannello: stessa tinta del pannello (anche in ombra o più illuminato). Le zone grandi così sono pannello vuoto;
        per le piccole (possibili prese bianche) serve una somiglianza più stretta */
