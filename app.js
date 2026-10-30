@@ -2992,7 +2992,8 @@ function overlay(w, o){
   }
   /* gli altri circuiti sopra all'oscuramento, in trasparenza: se no sparirebbero nel buio */
   if(o.others) visibleCircuits(w).forEach(c => { if(c !== act) s += circuitSVG(c, w.w, o.dim ? 0.45 : 0.28, {numbers:false, lines:false, boulder:bo, H: w.h, mk}); });
-  if(act && bo) s += lineSVG(act.line || autoLine(act, w), w.w, colOf(act), act);
+  /* boulder: mentre si segnano le prese la linea non si vede (dava fastidio); si vede guardando il blocco e quando si sistema la linea */
+  if(act && bo && (!o.edit || ui.bline)) s += lineSVG(act.line || autoLine(act, w), w.w, colOf(act), act);
   if(bo && ui.bline && ui.lineDraft.length > 1) s += lineSVG(ui.lineDraft.flat(), w.w, '#ff3b7a');   /* la bozza è fatta di coppie [x, y]: lineSVG vuole i numeri in fila */
   if(act && !bo && !o.edit) s += highSVG(act, w.w);   /* sotto ai numeri, che restano leggibili */
   if(act) s += circuitSVG(act, w.w, 1, Object.assign({}, o, { H: w.h, obst: w.holds || [], busy: busyMap(w), mk }));
@@ -3286,9 +3287,9 @@ function renderTools(){
   const hb = (v,l) => `<button data-act="hand" data-v="${v}" aria-pressed="${hand === v}">${l}</button>`;
   const sec = isSec(w), lbl = h && !h.poly ? 'Anello' : 'Contorno';
   if(sec && ui.bline){
-    el.innerHTML = `<p class="hint">Passa il dito sulla foto dalla partenza all'arrivo, lungo la direzione del blocco. Puoi rifarla quante volte vuoi.</p>`+
+    el.innerHTML = `<p class="hint">${c && c.line ? 'Questa è la linea che hai disegnato.' : 'Questa è la linea automatica.'} Se va bene tocca Fatto; se no passa il dito sulla foto dalla partenza all'arrivo, lungo la direzione del blocco (puoi rifarla quante volte vuoi).</p>`+
       `<div class="trow"><button class="btn primary" data-act="lineok">Fatto</button>`+
-      (c && c.line ? `<button class="btn danger" data-act="linedel">Togli la linea</button>` : '')+
+      (c && c.line ? `<button class="btn" data-act="linedel">Usa quella automatica</button>` : '')+
       `<button class="btn" data-act="lineesc">Annulla</button></div>`;
     return;
   }
@@ -3331,7 +3332,7 @@ function renderTools(){
     (candOn ? `<button class="btn primary" data-act="candall">Aggiungi tutte (${ui.cand.list.length})</button><button class="btn" data-act="candno">Chiudi proposte</button>` :
       sec && c && c.holds.some(h => isStart(h) && h.poly) ? `<button class="btn" data-act="candfind">Trova prese di questo colore</button>` : '')+
     (sec ? `<button class="btn" data-act="bdraw" ${c ? '' : 'disabled'}>Disegna a mano</button>` : '')+
-    (sec ? `<button class="btn" data-act="bline" ${c ? '' : 'disabled'}>${c && c.line ? 'Rifai linea' : 'Linea'}</button>` : '')+
+    (sec ? `<button class="btn ${c && !c.line && c.holds.some(h => h.role === 'top') ? 'primary' : ''}" data-act="bline" ${c ? '' : 'disabled'}>${c && c.line ? 'Linea (tua)' : 'Linea'}</button>` : '')+
     (first ? '' : `<button class="btn" data-act="undo">Annulla ultima</button>`)+
     dimBtn+(sec ? '' : `<button class="btn ${S.prefs.others ? 'on' : ''}" data-act="pref" data-k="others" aria-pressed="${!!S.prefs.others}">Altri circuiti</button>`)+`</div>`;
 }
@@ -4810,7 +4811,7 @@ document.addEventListener('click', e => {
     case 'bline': if(c){ ui.bline = true; ui.lineDraft = []; ui.lineBackup = c.line ? c.line.slice() : null; ui.sel = null; ui.move = false; $('#stage').classList.add('linedraw'); render(); } break;
     case 'lineok': ui.bline = false; ui.lineDraft = []; $('#stage').classList.remove('linedraw'); render(); break;
     case 'lineesc': if(c){ if(ui.lineBackup) c.line = ui.lineBackup; else delete c.line; touch(); } ui.bline = false; ui.lineDraft = []; $('#stage').classList.remove('linedraw'); render(); break;
-    case 'linedel': if(c){ delete c.line; touch(); } ui.bline = false; ui.lineDraft = []; $('#stage').classList.remove('linedraw'); render(); break;
+    case 'linedel': if(c){ delete c.line; touch(); } ui.lineDraft = []; render(); break;   /* resta nella linea: si vede quella automatica, poi Fatto */
     case 'bdraw': if(c){ ui.bdraw = true; ui.draft = []; ui.move = false; render(); } break;
     case 'bclose': if(w && c) finishBDraw(w, c); break;
     case 'bundo': ui.draft.pop(); render(); break;
