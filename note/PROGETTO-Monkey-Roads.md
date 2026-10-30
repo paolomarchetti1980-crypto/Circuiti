@@ -1,6 +1,6 @@
 # Monkey Roads – documento di riferimento
 
-*Aggiornato al 26 ottobre 2026. Da caricare tra i documenti del progetto "Monkey Roads" su Claude.*
+*Aggiornato al 30 ottobre 2026. Da caricare tra i documenti del progetto "Monkey Roads" su Claude.*
 
 Monkey Roads è la web app di **Monkey Island Roma**, la palestra di boulder di Paolo. Mostra i boulder e i circuiti della palestra sulla foto dei muri. Lo staff ci traccia i percorsi; i clienti li consultano e, con un account, segnano le proprie salite.
 
@@ -56,6 +56,7 @@ Monkey Roads è la web app di **Monkey Island Roma**, la palestra di boulder di 
 - **Tracciatura:** partenza (quadrato), prese con mano sinistra o destra, arrivo (rombo), **piedi obbligati** (tratteggio giallo con l'impronta). I numeri hanno tutti la stessa misura; mentre si traccia si possono vedere gli altri circuiti in trasparenza.
 - **Boulder:** colore, soprannome, tracciatore, date di montaggio e smontaggio, caratteristiche a gruppi (Parete, Movimento, Prese, Richiede), note. Il vecchio menu "Stile" è stato tolto per i boulder e resta per i circuiti.
 - **Linea del boulder (dal 30/10, v184):** se il tracciatore non la disegna a mano, l'app la calcola imitando le linee di Paolo: parte in mezzo alle prese di partenza, arriva appena sotto il Top (con più Top, il più lontano dalla partenza), passa nel mezzo delle prese del blocco con una curva morbida e gira attorno solo a quelle (le prese degli altri boulder si possono attraversare). Su 19 boulder con linea a mano lo scarto medio è sceso dal 7,4% al 3,9% della larghezza della foto. Le linee disegnate a mano restano sempre quelle mostrate.
+- **Prese nascoste (boulder):** per una presa che nella foto non si vede, per esempio sulla faccia posteriore di un volume, il tracciatore usa il tasto "Presa nascosta" e tocca il punto in cui la presa sparisce. Su una presa già segnata c'è l'interruttore "Nascosta". Sulla foto compare un cerchio tratteggiato con una freccia curva, che il tracciatore gira con "Freccia ↺ ↻" finché non sta perpendicolare al bordo del volume. Nella scheda il cliente legge "Una presa non si vede nella foto…". Sui circuiti non c'è, perché le pareti dei circuiti non nascondono prese.
 - **Menu Altro → Gestione:** Pannello settori (età, gradi presenti e mancanti, chi traccia), Segnalazioni ricevute, QR code, Staff, Versioni precedenti, Vedi come tracciatore.
 - L'**occhio** in alto apre l'anteprima di come la vede un cliente, account compresi.
 - Statistiche dei clienti per ogni percorso: salite, gradimento medio da 1 a 10, % di facile, giusto e duro. Sono anonime.
@@ -97,6 +98,7 @@ Monkey Roads è la web app di **Monkey Island Roma**, la palestra di boulder di 
 ## Decisioni prese
 - **Privacy:** dati minimi, server in UE, pareri anonimi per lo staff; account inattivi cancellati dopo 24 mesi; sotto i 14 anni l'account lo crea un genitore con la sua email.
 - **Prova completa da cliente:** fatta il 26/10, tutto a posto.
+- **Prese nascoste:** cerchio tratteggiato con freccia curva, dal disegno di Paolo; solo sui boulder (decisione del 29/10, pubblicata con la v185).
 - **Prossimo passo:** prova di 2 settimane con 8–10 clienti fidati e un paio di tracciatori (messaggio pronto in `note/messaggio-tester.md`), poi presentazione alla dirigenza.
 
 ## Cosa manca (vedi `LANCIO.md`)

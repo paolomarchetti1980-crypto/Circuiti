@@ -65,6 +65,24 @@ const NODIFF = '#8d939b';
 /* circuiti: piedi obbligati, contorno tratteggiato giallo e bollino con l'impronta. Non sono movimenti: niente numero, niente linea */
 const FOOT_COL = '#ffd400';
 const isFoot = h => h && h.role === 'foot';
+/* boulder: prese nascoste (per esempio sulla faccia posteriore di un volume). Al posto del contorno: cerchio tratteggiato
+   nel punto dove la presa sparisce, con una freccia curva che ne esce e torna sopra (disegno di Paolo, 29/10/2026) */
+const isHid = h => !!(h && h.hid);
+function hidSVG(h, W, col, ha, sw){
+  const r = h.r*W, f = v => v.toFixed(1), P = (u, v) => f(h.x + u*r) + ',' + f(h.y + v*r), aw = Math.max(sw*1.6, 2.5);
+  /* freccia: esce dal cerchio a destra, gira in alto e torna indietro sopra al cerchio, con la punta verso sinistra.
+     Il tracciatore la gira (hdir, in gradi) finché non sta perpendicolare al bordo del volume */
+  const arc = `M${P(1.05, -0.05)}C${P(2.1, -0.1)} ${P(2.6, -1.05)} ${P(2.15, -1.7)}S${P(1.05, -2.15)} ${P(0.55, -1.8)}`;
+  const ex = h.x + 0.55*r, ey = h.y - 1.8*r, dx = -0.5, dy = 0.35, m = Math.hypot(dx, dy), tx = dx/m, ty = dy/m, L = Math.max(aw*2.6, r*0.55);
+  const head = `M${f(ex + tx*L*0.75)},${f(ey + ty*L*0.75)}L${f(ex - tx*L*0.35 - ty*L*0.6)},${f(ey - ty*L*0.35 + tx*L*0.6)}L${f(ex - tx*L*0.35 + ty*L*0.6)},${f(ey - ty*L*0.35 - tx*L*0.6)}Z`;
+  const dash = `stroke-dasharray="${f(sw*2.2)} ${f(sw*1.6)}"`;
+  return `<circle cx="${f(h.x)}" cy="${f(h.y)}" r="${f(r)}" fill="none" stroke="${ha}" stroke-opacity=".6" stroke-width="${f(sw*2.4)}"/>`+
+    `<circle cx="${f(h.x)}" cy="${f(h.y)}" r="${f(r)}" fill="none" stroke="${col}" stroke-width="${f(sw*1.3)}" ${dash}/>`+
+    `<g${h.hdir ? ` transform="rotate(${h.hdir} ${f(h.x)} ${f(h.y)})"` : ''}>`+
+    `<path d="${arc}" fill="none" stroke="${ha}" stroke-opacity=".6" stroke-width="${f(aw + sw*1.6)}" stroke-linecap="round"/>`+
+    `<path d="${head}" fill="${ha}" fill-opacity=".6" stroke="${ha}" stroke-opacity=".6" stroke-width="${f(sw*1.6)}" stroke-linejoin="round"/>`+
+    `<path d="${arc}" fill="none" stroke="${col}" stroke-width="${f(aw)}" stroke-linecap="round"/><path d="${head}" fill="${col}" stroke="${col}" stroke-width="${f(sw*0.6)}" stroke-linejoin="round"/></g>`;
+}
 const CPAL = ['#ff7a1a','#1e6bff','#23b45a','#ff5fa2','#22c3e6','#8a4dff','#e5312b'];
 function colOf(c){
   const w = curWall();
@@ -155,7 +173,7 @@ const newC = () => !EDIT && (NEWC_LIVE || !!ui.prevNew);
 /* chi salva le salite: il cliente, oppure lo staff mentre prova l'anteprima */
 const ACC = () => CL || (REAL_EDIT && ME && ME.uid ? { id: ME.uid, email: ME.email } : null);
 const isMgr = () => !ME || (ME.role === 'gestore' && ui.viewAs !== 'tracciatore' && ui.viewAs !== 'cliente');
-const ui = { bline:false, lineDraft:[], view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:null, csel:null, busy:false, sel:null, move:false, nextRole:'start', zoom:1, sheet:null, confirm:null, imgUrl:null, ready:false, publishing:false, saveWarned:false, scan:null, nextHand:'L', crop:null };
+const ui = { bline:false, hnext:false, lineDraft:[], view:null, pinchAt:0, trash:[], tool:'detect', draft:[], redraw:null, csel:null, busy:false, sel:null, move:false, nextRole:'start', zoom:1, sheet:null, confirm:null, imgUrl:null, ready:false, publishing:false, saveWarned:false, scan:null, nextHand:'L', crop:null };
 /* filtri dei circuiti: gli stessi per tutti i muri e per la ricerca in palestra */
 ui.sq = { ang: '', min: '', max: '', sty: '', feet: '' };
 try{ const f = JSON.parse(localStorage.getItem('circ-filters2') || '{}'); for(const k in ui.sq) if(typeof f[k] === 'string') ui.sq[k] = f[k]; }catch(e){}
@@ -2332,6 +2350,7 @@ function circuitSVG(c, W, alpha, o){
     const tack = (q, cl, wd, op) => `<path d="M${q[0].toFixed(1)},${q[1].toFixed(1)}L${q[2].toFixed(1)},${q[3].toFixed(1)}" stroke="${cl}" stroke-opacity="${op}" stroke-width="${wd}" stroke-linecap="butt" fill="none"/><circle cx="${q[2].toFixed(1)}" cy="${q[3].toFixed(1)}" r="${wd/2}" fill="${cl}" fill-opacity="${op}"/>`;
     if(marks) marks.forEach(q => { s += tack(q, ha, tw + hw*2, .55); });
     if(lv && !lv.first){ /* già disegnata col primo passaggio di questo livello */ }
+    else if(isHid(h) && !h.poly) s += hidSVG(h, W, split ? base : col, split ? haloOf(base) : ha, sw);
     else if(split){
       const bb = holdBox(h, W), mx = (bb.x0 + bb.x1)/2, id = 'sp' + String(c.id).replace(/[^\w-]/g, '') + '_' + i;
       const shape = (cl) => { const hh = haloOf(cl);
@@ -2534,7 +2553,7 @@ function finishBDraw(w, c){
   if(Math.abs(A) < 1){ cx = pts.reduce((t,q) => t + q[0], 0)/pts.length; cy = pts.reduce((t,q) => t + q[1], 0)/pts.length; }
   else { A /= 2; cx /= 6*A; cy /= 6*A; }
   const old = ui.sel != null ? c.holds[ui.sel] : null;
-  if(old){ old.poly = flat; old.x = cx; old.y = cy; old.sx = cx; old.sy = cy; old.drawn = 1; delete old.ts; }
+  if(old){ old.poly = flat; old.x = cx; old.y = cy; old.sx = cx; old.sy = cy; old.drawn = 1; delete old.ts; delete old.hid; }
   else { c.holds.push({ x: cx, y: cy, sx: cx, sy: cy, r: S.prefs.r, role: ui.nextRole, poly: flat, drawn: 1 }); if(ui.nextRole !== 'start') ui.nextRole = 'hold'; }
   ui.draft = []; ui.bdraw = false; ui.sel = null; ui.markUndo = null; touch(); render();
 }
@@ -2828,7 +2847,7 @@ async function computeForeign(w, c, h){
   return { url: o2.toDataURL('image/png'), x: bb.x0, y: bb.y0, w: bw, h: bh };
 }
 function traceBoulder(w, id){
-  ui.cand = null; w.activeCircuit = id; ui.secOver = false; ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.bline = false; ui.zoom = 1;
+  ui.cand = null; w.activeCircuit = id; ui.secOver = false; ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.bline = false; ui.hnext = false; ui.zoom = 1;
   ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
   try{ history.pushState({ sec: 1, ed: 1 }, ''); }catch(e){}
   save(); render();
@@ -3243,11 +3262,13 @@ function renderTools(){
   const dimBtn = `<button class="btn ${ui.editDim ? 'on' : ''}" data-act="editdim" aria-pressed="${!!ui.editDim}">Oscura</button>`;
   if(h){
     /* presa selezionata: tutto ciò che la riguarda, e "Fatto" per tornare a segnare */
-    el.innerHTML = `<p class="hint">${ui.move ? 'Tocca il punto dove spostarla.' : 'Presa selezionata: cambia tipo' + (sec ? '' : ' o mano') + ', contorno o posizione.'}</p>`+
+    el.innerHTML = `<p class="hint">${ui.move ? 'Tocca il punto dove spostarla.' : isHid(h) ? 'Presa nascosta: sulla foto resta un cerchio tratteggiato con la freccia curva. Gira la freccia finché non sta perpendicolare al bordo del volume; regola misura e posizione se serve.' : 'Presa selezionata: cambia tipo' + (sec ? '' : ' o mano') + ', contorno o posizione.'}</p>`+
       `<div class="trow">${roles}${hands}</div>`+
       `<div class="trow"><div class="seg"><button data-act="size" data-d="-1" aria-label="${lbl} più piccolo">${lbl} &minus;</button><button data-act="size" data-d="1" aria-label="${lbl} più grande">${lbl} +</button></div>`+
       `<button class="btn ${ui.move ? 'on' : ''}" data-act="move">Sposta</button>`+
       (sec ? `<button class="btn" data-act="bdraw">Ridisegna</button>` : `<button class="btn" data-act="dup" title="${dupLabel(c, ui.sel) === 'Accoppia' ? 'Aggiunge un passaggio sulla stessa presa con l\'altra mano' : 'Aggiunge un nuovo passaggio su questa presa, come prossimo movimento'}">${dupLabel(c, ui.sel)}</button>`)+
+      (sec ? `<button class="btn ${isHid(h) ? 'on' : ''}" data-act="hidtog" aria-pressed="${isHid(h)}">Nascosta</button>` : '')+
+      (sec && isHid(h) && !h.poly ? `<div class="seg"><button data-act="hrot" data-d="-1" aria-label="Gira la freccia a sinistra">Freccia ↺</button><button data-act="hrot" data-d="1" aria-label="Gira la freccia a destra">↻</button></div>` : '')+
       (sec && isStart(h) && (h.marks || []).length ? `<button class="btn" data-act="clrmarks">Togli i segni (${h.marks.length})</button>` : '')+
       `<button class="btn danger" data-act="del">Elimina</button>`+
       `<button class="btn primary" data-act="desel">Fatto</button></div>`;
@@ -3261,6 +3282,7 @@ function renderTools(){
   if(!first && !hint.startsWith('<!--s-->')) hint += ' Tocca una presa già segnata per modificarla.';
   const candOn = sec && c && ui.cand && ui.cand.cid === c.id;
   if(!sec && ui.nextRole === 'foot' && !h) hint = 'Piede obbligato: tocca le prese da usare solo con i piedi. Restano tratteggiate in giallo con l\'impronta, senza numero. Poi torna su Presa.';
+  if(sec && ui.hnext) hint = 'Presa nascosta (per esempio dietro un volume): tocca il punto della foto dove sparisce. Ci metto un cerchio tratteggiato con la freccia curva.';
   if(candOn) hint = `${ui.cand.list.length} prese proposte (tratteggiate): tocca quelle del blocco per aggiungerle, oppure aggiungile tutte e togli poi quelle che non c'entrano.`;
   if(sec && !candOn) hint += ` <span style="opacity:.75">${samStatus(w)}</span>`;
   el.innerHTML = `<p class="hint">${hint}</p>`+
@@ -3269,6 +3291,7 @@ function renderTools(){
     (candOn ? `<button class="btn primary" data-act="candall">Aggiungi tutte (${ui.cand.list.length})</button><button class="btn" data-act="candno">Chiudi proposte</button>` :
       sec && c && c.holds.some(h => isStart(h) && h.poly) ? `<button class="btn" data-act="candfind">Trova prese di questo colore</button>` : '')+
     (sec ? `<button class="btn" data-act="bdraw" ${c ? '' : 'disabled'}>Disegna a mano</button>` : '')+
+    (sec ? `<button class="btn ${ui.hnext ? 'on' : ''}" data-act="hnext" aria-pressed="${!!ui.hnext}" ${c ? '' : 'disabled'}>Presa nascosta</button>` : '')+
     (sec ? `<button class="btn ${c && !c.line && c.holds.some(h => h.role === 'top') ? 'primary' : ''}" data-act="bline" ${c ? '' : 'disabled'}>${c && c.line ? 'Linea (tua)' : 'Linea'}</button>` : '')+
     (first ? '' : `<button class="btn" data-act="undo">Annulla ultima</button>`)+
     dimBtn+(sec ? '' : `<button class="btn ${S.prefs.others ? 'on' : ''}" data-act="pref" data-k="others" aria-pressed="${!!S.prefs.others}">Altri circuiti</button>`)+`</div>`;
@@ -3318,6 +3341,7 @@ function renderFull(){
     `<span class="ctext" style="flex:1"><b>${tickMark(c)}${isSec(w) ? bTitleHtml(c) : cTitleHtml(c)}</b><small>${isSec(w) ? esc([c.setter ? 'di ' + c.setter : '', c.dateSet ? 'montato ' + fmtDate(c.dateSet) : '', c.dateRemoved ? (isOff(c) ? 'smontato ' : 'smonta ') + fmtDate(c.dateRemoved) : ''].filter(Boolean).join(' · ')) : circMeta(c) + (c.setter ? ' · di ' + esc(c.setter) : '')}</small></span>${isSec(w) ? '' : gradeBadge(c.grade)}</div>`+
     (isSec(w) && bTags(c).length ? `<div class="tags" style="margin:10px 0 0">${bTags(c).map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : '')+
     (isSec(w) && c.notes ? `<p class="bnotes">${esc(c.notes)}</p>` : '')+
+    hidNote(c)+
     tickPanel(w, c)+
     (newC() ? `<div class="row fnavrow" style="margin-top:10px;flex-wrap:nowrap">`+
       `<button class="btn farrow" data-act="fnav" data-d="-1" ${i > 0 ? '' : 'disabled'} aria-label="Precedente">‹</button>`+
@@ -3329,6 +3353,12 @@ function renderFull(){
     `<button class="btn" data-act="fnav" data-d="-1" ${i > 0 ? '' : 'disabled'} aria-label="Precedente">‹</button>`+
     `<button class="btn primary" data-act="fexit" style="flex:1">${isSec(w) ? 'Elenco boulder' : 'Elenco circuiti'}</button>`+
     `<button class="btn" data-act="fnav" data-d="1" ${i >= 0 && i < list.length - 1 ? '' : 'disabled'} aria-label="Successivo">›</button></div>`);
+}
+/* scheda a schermo intero: spiega il cerchio tratteggiato delle prese nascoste */
+function hidNote(c){
+  const n = c.holds.filter(h => isHid(h) && !h.poly).length; if(!n) return '';
+  return `<p class="hidnote"><svg width="24" height="24" viewBox="-9 -17 27 27" aria-hidden="true">${hidSVG({ x: 0, y: 0, r: 0.0065 }, 1000, '#ffd166', '#000', 1.6)}</svg>`+
+    `<span>${n === 1 ? 'Una presa non si vede nella foto: è nascosta dietro il cerchio tratteggiato.' : n + ' prese non si vedono nella foto: sono nascoste dietro i cerchi tratteggiati.'}</span></p>`;
 }
 function setFull(on){
   if(on && !ui.full){ ui.full = true; try{ history.pushState({ full: 1 }, ''); }catch(e){} }
@@ -3855,7 +3885,7 @@ function openFromLink(){
   ui.sheet = null; renderSheet();
   ui.section = secOf(w); ui.home = false; ui.full = false; S.active = w.id; ui.lastSec[ui.section] = w.id; saveBUI();
   if(EDIT) S.mode = 'edit';
-  ui.bLevel = 'sector'; ui.secOver = true; ui.zoom = 1; ui.sel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false;
+  ui.bLevel = 'sector'; ui.secOver = true; ui.zoom = 1; ui.sel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.hnext = false;
   ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save();
   try{ history.pushState({ grid: 1 }, ''); history.pushState({ sec: 1 }, ''); }catch(e){} render(); $('#box').scrollTop = 0;
   return true;
@@ -4532,6 +4562,10 @@ $('#stage').addEventListener('click', async e => {
     if(ui.draft.length >= 3 && Math.hypot(x - ui.draft[0][0], y - ui.draft[0][1]) <= Math.min(10*k, 28)){ finishBDraw(w, c); return; }
     ui.draft.push([Math.round(x), Math.round(y)]); render(); return;
   }
+  if(ui.move && ui.sel != null && isHid(c.holds[ui.sel]) && !c.holds[ui.sel].poly){
+    const h = c.holds[ui.sel]; h.x = h.sx = x; h.y = h.sy = y;
+    ui.move = false; touch(); render(); return;
+  }
   if(ui.move && ui.sel != null && c.holds[ui.sel]){
     ui.busy = true;
     const h = c.holds[ui.sel];
@@ -4548,16 +4582,18 @@ $('#stage').addEventListener('click', async e => {
   if(isSec(w) && ui.nextRole === 'start' && startMarks(c) >= 4){ toast('Ci sono già 4 punti di partenza. Togline uno (seleziona la presa → Togli i segni) o passa a Presa.'); return; }
   if(isSec(w)){
     ui.busy = true;
-    const res = await detect(w, x, y, 1);
-    const nh = { x, y, sx: x, sy: y, r: S.prefs.r, role: ui.nextRole, ts: 1 };
-    applySeg(nh, res, x, y, w);
-    if(!res) toast('Contorno non riconosciuto: ho messo un cerchio. Regolalo con Contorno +/−.');
+    /* presa nascosta: niente rilevamento, solo il cerchio tratteggiato dove la presa sparisce */
+    const hid = ui.hnext, res = hid ? null : await detect(w, x, y, 1);
+    const nh = { x, y, sx: x, sy: y, r: S.prefs.r, role: ui.nextRole, ts: 1, ...(hid ? { hid: 1 } : {}) };
+    if(hid) ui.hnext = false; else applySeg(nh, res, x, y, w);
+    if(!res && !hid) toast('Contorno non riconosciuto: ho messo un cerchio. Regolalo con Contorno +/−.');
     c.holds.push(nh);
     ui.markUndo = null;
-    if(nh.role === 'start'){ nh.marks = [[Math.round(x), Math.round(y)]]; ui.markUndo = null; ui.busy = false; ui.sel = null; touch(); render(); return; }
+    /* la presa nascosta appena messa resta selezionata: si gira subito la freccia */
+    if(nh.role === 'start'){ nh.marks = [[Math.round(x), Math.round(y)]]; ui.markUndo = null; ui.busy = false; ui.sel = hid ? c.holds.length - 1 : null; touch(); render(); return; }
     ui.nextRole = 'hold';
     if(ui.nextHand === 'L') ui.nextHand = 'R'; else if(ui.nextHand === 'R') ui.nextHand = 'L';
-    ui.sel = null; ui.busy = false; touch(); render(); return;
+    ui.sel = hid ? c.holds.length - 1 : null; ui.busy = false; touch(); render(); return;
   }
   const ci2 = catHit(w, x, y, ctol);
   if(ci2 >= 0){
@@ -4581,7 +4617,7 @@ document.addEventListener('click', e => {
   if(!EDIT && !PUBLIC_ACTS.includes(a)) return;
   if(!isMgr() && MGR_ACTS.includes(a)) return;
   switch(a){
-    case 'mode': if(EDIT && !scanHere() && !(b.dataset.v === 'wall' && !isMgr())){ S.mode = b.dataset.v; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; $('#stage').classList.remove('linedraw'); ui.redraw = null; ui.tool = 'detect'; render(); } break;
+    case 'mode': if(EDIT && !scanHere() && !(b.dataset.v === 'wall' && !isMgr())){ S.mode = b.dataset.v; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.hnext = false; $('#stage').classList.remove('linedraw'); ui.redraw = null; ui.tool = 'detect'; render(); } break;
     case 'tool': ui.tool = b.dataset.v; ui.draft = []; ui.redraw = null; render(); break;
     case 'clrall':
       if(!w || !(w.holds || []).length) break;
@@ -4698,7 +4734,7 @@ document.addEventListener('click', e => {
       ui.sheet = null; renderSheet();
       ui.section = 'boulder'; ui.home = false; ui.full = false;
       if(EDIT) S.mode = 'edit'; S.active = w2.id; ui.lastSec.boulder = w2.id; saveBUI();
-      ui.bLevel = 'sector'; ui.secOver = true; ui.zoom = 1; ui.sel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false;
+      ui.bLevel = 'sector'; ui.secOver = true; ui.zoom = 1; ui.sel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.hnext = false;
       ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save();
       try{ history.pushState({ grid: 1 }, ''); history.pushState({ sec: 1 }, ''); }catch(e){} render(); $('#box').scrollTop = 0; break; }
     case 'fball': ui.fbAll = b.dataset.v === '1'; renderSheet(); break;
@@ -4745,9 +4781,14 @@ document.addEventListener('click', e => {
     case 'editdim': ui.editDim = !ui.editDim; render(); break;
     case 'desel': ui.sel = null; ui.move = false; render(); break;
     case 'cfeet': if(c){ if(b.dataset.v) c.feet = b.dataset.v; else delete c.feet; touch(); renderChips(); renderSheet(); } break;
+    case 'hnext': ui.hnext = !ui.hnext; render(); break;
+    case 'hrot': { const h = c && ui.sel != null ? c.holds[ui.sel] : null;
+      if(h && isHid(h)){ const a = (((h.hdir || 0) + (b.dataset.d === '1' ? 15 : -15)) % 360 + 360) % 360; if(a) h.hdir = a; else delete h.hdir; touch(); render(); } break; }
+    case 'hidtog': { const h = c && ui.sel != null ? c.holds[ui.sel] : null;
+      if(h){ if(isHid(h)) delete h.hid; else { h.hid = 1; delete h.poly; delete h.drawn; if(!h.r) h.r = S.prefs.r; } touch(); render(); } break; }
     case 'bline': if(c){ ui.bline = true; ui.lineDraft = []; ui.lineBackup = c.line ? c.line.slice() : null; ui.sel = null; ui.move = false; $('#stage').classList.add('linedraw'); render(); } break;
-    case 'lineok': ui.bline = false; ui.lineDraft = []; $('#stage').classList.remove('linedraw'); render(); break;
-    case 'lineesc': if(c){ if(ui.lineBackup) c.line = ui.lineBackup; else delete c.line; touch(); } ui.bline = false; ui.lineDraft = []; $('#stage').classList.remove('linedraw'); render(); break;
+    case 'lineok': ui.bline = false; ui.hnext = false; ui.lineDraft = []; $('#stage').classList.remove('linedraw'); render(); break;
+    case 'lineesc': if(c){ if(ui.lineBackup) c.line = ui.lineBackup; else delete c.line; touch(); } ui.bline = false; ui.hnext = false; ui.lineDraft = []; $('#stage').classList.remove('linedraw'); render(); break;
     case 'linedel': if(c){ delete c.line; touch(); } ui.lineDraft = []; render(); break;   /* resta nella linea: si vede quella automatica, poi Fatto */
     case 'bdraw': if(c){ ui.bdraw = true; ui.draft = []; ui.move = false; render(); } break;
     case 'bclose': if(w && c) finishBDraw(w, c); break;
@@ -4793,7 +4834,7 @@ document.addEventListener('click', e => {
       if(ui.confirm !== 'wdel:' + id){ ui.confirm = 'wdel:' + id; renderSheet(); break; }
       S.walls = S.walls.filter(q => q.id !== id); ui.confirm = null; if(!archWalls().length) ui.sheet = null; touch(); renderSheet(); render(); toast('Eliminato. Ricordati di pubblicare.'); break;
     }
-    case 'opensec': if(EDIT) S.mode = 'edit'; S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.bLevel = 'sector'; ui.secOver = true; ui.zoom = 1; ui.sel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save(); try{ history.pushState({ sec: 1 }, ''); }catch(e){} render(); $('#box').scrollTop = 0; break;
+    case 'opensec': if(EDIT) S.mode = 'edit'; S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.bLevel = 'sector'; ui.secOver = true; ui.zoom = 1; ui.sel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.hnext = false; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save(); try{ history.pushState({ sec: 1 }, ''); }catch(e){} render(); $('#box').scrollTop = 0; break;
     case 'bback':
       if(ui.full){ try{ history.back(); }catch(e){} ui.full = false; ui.zoom = 1; render(); break; }
       if(EDIT && BO() && ui.bLevel === 'sector' && !bGrid() && curWall() && !ui.secOver && S.mode !== 'view'){ if(history.state && history.state.ed){ try{ history.back(); }catch(e){} } ui.secOver = true; ui.sel = null; ui.zoom = 1; }
@@ -4825,7 +4866,7 @@ document.addEventListener('click', e => {
       if(!w) break;
       if(bOver() && EDIT && S.mode !== 'view'){ ui.sheet = null; renderSheet(); traceBoulder(w, b.dataset.id); break; }
       const again = w.activeCircuit === b.dataset.id && b.classList.contains('lrow');
-      w.activeCircuit = b.dataset.id; ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.bline = false; $('#stage').classList.remove('linedraw'); ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
+      w.activeCircuit = b.dataset.id; ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.bline = false; ui.hnext = false; $('#stage').classList.remove('linedraw'); ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
       ui.sheet = null; save(); renderSheet();
       if((again || bOver()) && (!EDIT || S.mode === 'view')) setFull(true); else render();
       break;
