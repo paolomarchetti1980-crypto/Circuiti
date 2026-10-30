@@ -3484,8 +3484,8 @@ async function saveTick(w, c, next, restore){
     /* per i badge: movimenti del circuito (Chilometraggio) e se era un progetto */
     next.moves = next.status === 'fatto' ? (isSec(w) ? (c.holds || []).length : movesOf(c)) || null : null;
     next.from_project = next.status === 'fatto' && !!prev && (prev.status === 'progetto' || !!prev.from_project);
-    /* tentativi: un progetto chiuso è per forza "in più sessioni" (si può cambiare) */
-    if(next.status !== 'fatto') next.tries = null; else if(!next.tries && next.from_project && !(prev && prev.status === 'fatto')) next.tries = 'lavorato'; }
+    /* come è stato fatto: lo sceglie il cliente (nessuna scelta automatica: tra i progetti ci sono anche percorsi mai provati) */
+    if(next.status !== 'fatto') next.tries = null; }
   const r = next ? await SB.from('ticks').upsert({ item_id: c.id, wall_id: w.id, status: next.status, vote: next.vote || null, rating: next.rating || null, grade: next.grade, done_at: next.done_at, moves: next.moves, from_project: next.from_project, high: next.high || null, high_ups: next.high_ups || 0, high_at: next.high_at || null, tries: next.tries || null, updated_at: new Date().toISOString() })
                  : await SB.from('ticks').delete().eq('item_id', c.id);
   if(r && r.error){ if(prev) ui.ticks.set(c.id, prev); else ui.ticks.delete(c.id); render(); toast('Non riesco a salvare: ' + (r.error.message || 'riprova tra poco.')); return; }
