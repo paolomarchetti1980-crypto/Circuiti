@@ -418,15 +418,14 @@ async function readPhoto(file){
 const loadImg1 = src => new Promise((res,rej) => { const i = new Image(); if(!/^data:/.test(src)) i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = rej; i.src = src; });
 /* se una copia salvata male blocca la lettura dei pixel, riprova scavalcandola */
 const loadImg = src => loadImg1(src).catch(e => /^data:/.test(src) ? Promise.reject(e) : loadImg1(src + (src.includes('?') ? '&' : '?') + 'px=1'));
-/* tracciatore: menù a tendina con i nomi dello staff; "Altro…" apre la casella per un nome a mano (ospiti, nomi vecchi) */
+/* tracciatore: menù a tendina con i nomi dello staff (chi traccia ha per forza l'accesso staff).
+   Un nome vecchio scritto a mano resta tra le scelte di quel percorso */
 function setterField(c){
   const names = [...new Set([...(ui.staffNames || []), ...(c.setter ? [c.setter] : [])])].sort((a, b) => a.localeCompare(b, 'it'));
-  const other = ui.setterOther || (!names.length);
   return `<label class="field">Tracciatore<select id="bsetsel">`+
     `<option value=""${c.setter ? '' : ' selected'}>— nessuno —</option>`+
-    names.map(n => `<option value="${esc(n)}"${!other && n === c.setter ? ' selected' : ''}>${esc(n)}</option>`).join('')+
-    `<option value="__altro"${other ? ' selected' : ''}>Altro nome…</option></select></label>`+
-    (other ? `<label class="field">Nome del tracciatore<input id="bsetter" value="${esc(c.setter || '')}" maxlength="40" autocomplete="off"></label>` : '');
+    names.map(n => `<option value="${esc(n)}"${n === c.setter ? ' selected' : ''}>${esc(n)}</option>`).join('')+
+    `</select></label>`;
 }
 function newCircuit(w){
   if(isSec(w)){
@@ -3378,7 +3377,7 @@ function renderFull(){
   el.hidden = false;
   el.innerHTML = `<div class="row" style="flex-wrap:nowrap;align-items:center;gap:12px">`+
     `<i class="dot" style="background:${colOf(c)};width:16px;height:16px"></i>`+
-    `<span class="ctext" style="flex:1"><b>${tickMark(c)}${isSec(w) ? bTitleHtml(c) : cTitleHtml(c)}</b><small>${isSec(w) ? esc([c.setter ? 'di ' + c.setter : '', c.dateSet ? 'montato ' + fmtDate(c.dateSet) : '', c.dateRemoved ? (isOff(c) ? 'smontato ' : 'smonta ') + fmtDate(c.dateRemoved) : ''].filter(Boolean).join(' · ')) : circMeta(c)}</small></span>${isSec(w) ? '' : gradeBadge(c.grade)}</div>`+
+    `<span class="ctext" style="flex:1"><b>${tickMark(c)}${isSec(w) ? bTitleHtml(c) : cTitleHtml(c)}</b><small>${isSec(w) ? esc([c.setter ? 'di ' + c.setter : '', c.dateSet ? 'montato ' + fmtDate(c.dateSet) : '', c.dateRemoved ? (isOff(c) ? 'smontato ' : 'smonta ') + fmtDate(c.dateRemoved) : ''].filter(Boolean).join(' · ')) : circMeta(c) + (c.setter ? ' · di ' + esc(c.setter) : '')}</small></span>${isSec(w) ? '' : gradeBadge(c.grade)}</div>`+
     (isSec(w) && bTags(c).length ? `<div class="tags" style="margin:10px 0 0">${bTags(c).map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : '')+
     (isSec(w) && c.notes ? `<p class="bnotes">${esc(c.notes)}</p>` : '')+
     tickPanel(w, c)+
@@ -3960,7 +3959,7 @@ function dashHtml(){
     `<p class="note">Il rinnovo di un settore è la data del suo boulder in parete più vecchio. Nuovo nella 1ª settimana, recente nella 2ª, scaduto dalla 9ª (questa etichetta la vede solo lo staff). Tocca un settore per aprirlo.</p>`+
     `<div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
 }
-function openSheet(name){ ui.sheet = name; ui.confirm = null; ui.setterOther = false; renderSheet(); }
+function openSheet(name){ ui.sheet = name; ui.confirm = null; renderSheet(); }
 /* ricerca su tutti i circuiti della palestra */
 function sqAll(){ return secWalls().filter(w => !isSec(w)).flatMap(w => w.circuits.map(c => ({ w, c }))); }
 function sqSheet(mode){
@@ -4030,7 +4029,7 @@ function renderSheet(){
     const styleOpt = v => `<option value="${v}" ${(c.style || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
     h = `<h2>Circuito</h2>`+
       `<label class="field">Nome<span style="display:flex;gap:8px;margin-top:4px"><input id="cname" value="${esc(c.name)}" maxlength="40" style="margin-top:0;flex:1"><button type="button" class="btn" data-act="cgen" aria-label="Proponi un nome" title="Proponi un nome" style="flex:none;font-size:20px;padding:6px 12px">🎲</button></span></label>`+
-      `<label class="field">Montato il<input id="cdset" type="date" value="${esc(c.dateSet || '')}"></label>`+
+      `<label class="field">Montato il<input id="cdset" type="date" value="${esc(c.dateSet || '')}"></label>`+setterField(c)+
       `<label class="field">Grado<select id="cgrade">${GRADES.map(gradeOpt).join('')}</select></label>`+
       `<label class="field">Stile<select id="cstyle">${STYLES.map(styleOpt).join('')}</select></label>`+
       `<p class="field" style="margin-bottom:4px">Piedi</p><div class="seg" role="group" aria-label="Piedi" style="margin:0 0 12px">`+
@@ -5008,10 +5007,7 @@ document.addEventListener('input', e => {
   if(e.target.id === 'fbtext'){ ui.fbDraft = e.target.value; return; }
   if(e.target.id === 'sqmin' || e.target.id === 'sqmax'){ ui.sq[e.target.id === 'sqmin' ? 'min' : 'max'] = e.target.value; saveCF(); afterFilter(); renderSheet(); return; }
   if(!EDIT) return;
-  if(e.target.id === 'bsetsel' && c){ const v = e.target.value;
-    if(v === '__altro'){ ui.setterOther = true; renderSheet(); setTimeout(() => { const i = document.getElementById('bsetter'); if(i) i.focus(); }, 0); return; }
-    if(v) c.setter = v; else delete c.setter; try{ localStorage.setItem('boulder-setter', v); }catch(err){} renderChips(); touch(); if(ui.setterOther){ ui.setterOther = false; renderSheet(); } return; }
-  if(e.target.id === 'bsetter' && c){ const v = e.target.value.trim(); if(v) c.setter = v; else delete c.setter; try{ localStorage.setItem('boulder-setter', v); }catch(err){} renderChips(); touch(); }
+  if(e.target.id === 'bsetsel' && c){ const v = e.target.value; if(v) c.setter = v; else delete c.setter; try{ localStorage.setItem('boulder-setter', v); }catch(err){} renderChips(); touch(); return; }
   if(e.target.id === 'cdset' && c){ if(e.target.value) c.dateSet = e.target.value; else delete c.dateSet; touch(); }
   if(e.target.id === 'bdset' && c){ if(e.target.value) c.dateSet = e.target.value; else delete c.dateSet; renderChips(); touch(); }
   if(e.target.id === 'bdrem' && c){
