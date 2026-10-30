@@ -2659,7 +2659,13 @@ function overviewSVG(w){
   list.forEach(c => {
     const pts = bPts(c, w), col = colOf(c);
     if(pts && pts.length >= 4) s += lineSVG(pts, W, col, c, 1.1);
-    const at = pts && pts.length >= 4 ? [pts[pts.length-2], pts[pts.length-1]] : c.holds.length ? [c.holds[0].x, c.holds[0].y] : null;
+    /* il numero va all'arrivo: l'estremo della linea più vicino al Top (o il più alto). Una linea disegnata dall'alto verso il basso
+       finiva col numero in fondo */
+    let at = null;
+    if(pts && pts.length >= 4){
+      const A = [pts[0], pts[1]], B = [pts[pts.length-2], pts[pts.length-1]], top = c.holds.find(h => h.role === 'top');
+      at = top ? (Math.hypot(A[0] - top.x, A[1] - top.y) < Math.hypot(B[0] - top.x, B[1] - top.y) ? A : B) : (A[1] < B[1] ? A : B);
+    } else if(c.holds.length) at = [c.holds[0].x, c.holds[0].y];
     if(!at) return;
     const r = W*0.028;
     tags += `<g><circle cx="${at[0]}" cy="${at[1]}" r="${r}" fill="${col}" stroke="${haloOf(col)}" stroke-opacity=".7" stroke-width="${r*0.16}"/>`+
