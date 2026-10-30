@@ -227,3 +227,20 @@ begin
 end $$;
 revoke all on function public.purge_inactive_clients() from public, anon, authenticated;
 select cron.schedule('pulizia-account-inattivi', '17 3 * * 0', $$select public.purge_inactive_clients()$$);
+
+-- salite: come è stato fatto il percorso (a vista, flash, in giornata, lavorato, superlavorato)
+alter table public.ticks add column if not exists tries text;
+alter table public.ticks add constraint ticks_tries_check2 check (tries in ('vista','flash','giornata','lavorato','super'));
+create or replace function public.tick_stats3()
+ returns table(item_id text, fatti bigint, facile bigint, giusto bigint, duro bigint, voti bigint, media numeric, t_vista bigint, t_flash bigint, t_giornata bigint, t_lavorato bigint, t_super bigint)
+ language sql stable security definer set search_path to 'public'
+as $$
+  select t.item_id, count(*) filter (where t.status = 'fatto'), count(*) filter (where t.vote = 'facile'),
+         count(*) filter (where t.vote = 'giusto'), count(*) filter (where t.vote = 'duro'),
+         count(t.rating), round(avg(t.rating)::numeric, 1),
+         count(*) filter (where t.status = 'fatto' and t.tries = 'vista'), count(*) filter (where t.status = 'fatto' and t.tries = 'flash'),
+         count(*) filter (where t.status = 'fatto' and t.tries = 'giornata'), count(*) filter (where t.status = 'fatto' and t.tries = 'lavorato'),
+         count(*) filter (where t.status = 'fatto' and t.tries = 'super')
+  from public.ticks t where public.is_editor() group by t.item_id;
+$$;
+grant execute on function public.tick_stats3() to authenticated;

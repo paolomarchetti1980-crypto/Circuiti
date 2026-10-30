@@ -3467,13 +3467,13 @@ const loginIntent = () => { try{ return localStorage.getItem('login-intent') || 
 const setIntent = v => { try{ localStorage.setItem('login-intent', v); }catch(e){} };
 const welcomeSeen = () => { try{ return localStorage.getItem('mr-welcome') === '1'; }catch(e){ return false; } };
 async function loadTicks(){
-  const { data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,grade,done_at,moves,from_project,high,high_ups,high_at,updated_at');
+  const { data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,grade,done_at,moves,from_project,high,high_ups,high_at,updated_at,tries');
   ui.ticks = new Map(); ui.ticksErr = !!error;
   (data || []).forEach(t => ui.ticks.set(t.item_id, t));
   render(); if(ui.sheet) renderSheet();
 }
 async function loadTickSum(){
-  try{ let { data, error } = await SB.rpc('tick_stats'); if(error) ({ data, error } = await SB.rpc('tick_summary')); if(!error && Array.isArray(data)){ ui.tsum = new Map(data.map(r => [r.item_id, r])); render(); } }catch(e){}
+  try{ let { data, error } = await SB.rpc('tick_stats3'); if(error) ({ data, error } = await SB.rpc('tick_stats')); if(error) ({ data, error } = await SB.rpc('tick_summary')); if(!error && Array.isArray(data)){ ui.tsum = new Map(data.map(r => [r.item_id, r])); render(); } }catch(e){}
 }
 const tickOf = c => (c && ui.ticks && ui.ticks.get(c.id)) || null;
 async function saveTick(w, c, next, restore){
@@ -3483,8 +3483,10 @@ async function saveTick(w, c, next, restore){
   if(next && !restore){ next.grade = isSec(w) ? (c.diff || null) : (c.grade || null); next.done_at = next.status === 'fatto' ? ((prev && prev.status === 'fatto' && prev.done_at) || new Date().toISOString()) : null;
     /* per i badge: movimenti del circuito (Chilometraggio) e se era un progetto */
     next.moves = next.status === 'fatto' ? (isSec(w) ? (c.holds || []).length : movesOf(c)) || null : null;
-    next.from_project = next.status === 'fatto' && !!prev && (prev.status === 'progetto' || !!prev.from_project); }
-  const r = next ? await SB.from('ticks').upsert({ item_id: c.id, wall_id: w.id, status: next.status, vote: next.vote || null, rating: next.rating || null, grade: next.grade, done_at: next.done_at, moves: next.moves, from_project: next.from_project, high: next.high || null, high_ups: next.high_ups || 0, high_at: next.high_at || null, updated_at: new Date().toISOString() })
+    next.from_project = next.status === 'fatto' && !!prev && (prev.status === 'progetto' || !!prev.from_project);
+    /* tentativi: un progetto chiuso è per forza "in più sessioni" (si può cambiare) */
+    if(next.status !== 'fatto') next.tries = null; else if(!next.tries && next.from_project && !(prev && prev.status === 'fatto')) next.tries = 'lavorato'; }
+  const r = next ? await SB.from('ticks').upsert({ item_id: c.id, wall_id: w.id, status: next.status, vote: next.vote || null, rating: next.rating || null, grade: next.grade, done_at: next.done_at, moves: next.moves, from_project: next.from_project, high: next.high || null, high_ups: next.high_ups || 0, high_at: next.high_at || null, tries: next.tries || null, updated_at: new Date().toISOString() })
                  : await SB.from('ticks').delete().eq('item_id', c.id);
   if(r && r.error){ if(prev) ui.ticks.set(c.id, prev); else ui.ticks.delete(c.id); render(); toast('Non riesco a salvare: ' + (r.error.message || 'riprova tra poco.')); return; }
   if(before && !restore){ const now = earnedBadges(), got = [...now].filter(id => !before.has(id)); if(got.length){ const b = BADGES.find(x => x.id === got[got.length - 1]); badgeCelebrate(b); setNewB(newB().concat(got)); } }
@@ -3499,12 +3501,20 @@ function tick(status){
   if(loses){ const old = Object.assign({}, t), nm = blockTitle(w, c);
     setTimeout(() => toast((old.status === 'fatto' ? 'Tolto il Fatto da ' : 'Tolto il Progetto da ') + nm, 6000, () => saveTick(w, c, old, true)), 50); }
   if(t && t.status === status) saveTick(w, c, null);
-  else saveTick(w, c, { item_id: c.id, wall_id: w.id, status, vote: status === 'fatto' && t ? t.vote : null, rating: status === 'fatto' && t ? t.rating || null : null, high: t ? t.high || null : null, high_ups: t ? t.high_ups || 0 : 0, high_at: t ? t.high_at || null : null, updated_at: new Date().toISOString() });
+  else saveTick(w, c, { item_id: c.id, wall_id: w.id, status, vote: status === 'fatto' && t ? t.vote : null, rating: status === 'fatto' && t ? t.rating || null : null, tries: status === 'fatto' && t ? t.tries || null : null, high: t ? t.high || null : null, high_ups: t ? t.high_ups || 0 : 0, high_at: t ? t.high_at || null : null, updated_at: new Date().toISOString() });
 }
 function rate(n){
   const w = curWall(), c = curCircuit(), t = tickOf(c); if(!w || !c || !t || t.status !== 'fatto') return;
   n = Math.max(1, Math.min(10, +n || 0));
   saveTick(w, c, Object.assign({}, t, { rating: t.rating === n ? null : n, updated_at: new Date().toISOString() }));
+}
+/* in quanti tentativi: a fasce, perché il numero esatto non lo ricorda nessuno */
+const TRIES = [['vista', 'A vista', 'al primo tentativo, senza averlo visto fare né sapere niente'], ['flash', 'Flash', 'al primo tentativo, dopo averlo visto fare o con qualche consiglio'], ['giornata', 'In giornata', 'in più tentativi, nella stessa giornata'], ['lavorato', 'Lavorato', 'in più sessioni'], ['super', 'Superlavorato', 'in più settimane']];
+const triesText = v => ({ vista: 'a vista', flash: 'flash', giornata: 'in giornata', lavorato: 'lavorato', super: 'superlavorato' })[v] || '';
+const firstGo = v => v === 'vista' || v === 'flash';
+function setTries(v){
+  const w = curWall(), c = curCircuit(), t = tickOf(c); if(!w || !c || !t || t.status !== 'fatto') return;
+  saveTick(w, c, Object.assign({}, t, { tries: t.tries === v ? null : v, updated_at: new Date().toISOString() }));
 }
 function vote(v){
   const w = curWall(), c = curCircuit(), t = tickOf(c); if(!w || !c || !t || t.status !== 'fatto') return;
@@ -3531,7 +3541,8 @@ function tickPanel(w, c){
     const v = (+sm.facile || 0) + (+sm.giusto || 0) + (+sm.duro || 0);
     const pc = k => Math.round((+sm[k] || 0) / v * 100) + '%';
     const nv = +sm.voti || 0;
-    return `<p class="tsum">Clienti: <b>${sm.fatti}</b> ${+sm.fatti === 1 ? 'salita' : 'salite'}${nv ? ` · piaciuto <b>${String(sm.media).replace('.', ',')}</b>/10 <small>(${nv} ${nv === 1 ? 'voto' : 'voti'})</small>` : ''}${v ? ` · grado: facile ${pc('facile')} · giusto ${pc('giusto')} · duro ${pc('duro')} <small>(${v} ${v === 1 ? 'parere' : 'pareri'})</small>` : ''}</p>`;
+    return `<p class="tsum">Clienti: <b>${sm.fatti}</b> ${+sm.fatti === 1 ? 'salita' : 'salite'}${nv ? ` · piaciuto <b>${String(sm.media).replace('.', ',')}</b>/10 <small>(${nv} ${nv === 1 ? 'voto' : 'voti'})</small>` : ''}${v ? ` · grado: facile ${pc('facile')} · giusto ${pc('giusto')} · duro ${pc('duro')} <small>(${v} ${v === 1 ? 'parere' : 'pareri'})</small>` : ''}${(() => { const tk = TRIES.map(o => 't_' + o[0]), tn = tk.reduce((a, k) => a + (+sm[k] || 0), 0);
+      return tn ? ' · ' + TRIES.map(o => [o[1].toLowerCase(), +sm['t_' + o[0]] || 0]).filter(x => x[1]).map(x => x[0] + ' ' + Math.round(x[1]/tn*100) + '%').join(' · ') + ` <small>(${tn} ${tn === 1 ? 'risposta' : 'risposte'} su come l'hanno fatto)</small>` : ''; })()}</p>`;
   }
   if(!newC() || !acctOn()) return '';
   const t = tickOf(c), st = t ? t.status : '';
@@ -3539,7 +3550,8 @@ function tickPanel(w, c){
     `<button class="tbtn ${st === 'progetto' ? 'on proj' : ''}" data-act="tick" data-v="progetto" aria-pressed="${st === 'progetto'}">☆ Progetto</button></div>`+
     (st === 'progetto' && !isSec(w) && movesOf(c) ? (() => { const M = movesOf(c), h = t.high || 0;
       return `<div class="voterow"><small>Fin dove sei arrivato?${t.high_at ? ` <span class="muted">record del ${fmtDate(t.high_at.slice(0, 10))}</span>` : ''}</small><div class="hirow"><button class="btn" data-act="hi" data-v="-1" aria-label="Un movimento in meno" ${h ? '' : 'disabled'}>‹</button><span class="hival"><b>${h ? 'movimento ' + h : 'non segnato'}</b><small>di ${M}</small></span><button class="btn" data-act="hi" data-v="1" aria-label="Un movimento in più" ${h < M ? '' : 'disabled'}>›</button></div><span class="mybar hib"><i style="width:${Math.round(100 * h / M)}%"></i></span></div>`; })() : '')+
-    (st === 'fatto' ? `<div class="voterow"><small>Il grado ti è sembrato</small><div class="seg">${[['facile','Facile'],['giusto','Giusto'],['duro','Duro']].map(o => `<button data-act="vote" data-v="${o[0]}" aria-pressed="${t.vote === o[0]}">${o[1]}</button>`).join('')}</div></div>`+
+    (st === 'fatto' ? `<div class="voterow"><small>Come l'hai fatto?${t.tries ? (o => o ? ` <span class="muted">${esc(o[1])} = ${esc(o[2])}</span>` : '')(TRIES.find(o => o[0] === t.tries)) : ''}</small><div class="seg" style="flex-wrap:wrap">${TRIES.map(o => `<button data-act="tries" data-v="${o[0]}" aria-pressed="${t.tries === o[0]}" title="${esc(o[2])}">${o[1]}</button>`).join('')}</div></div>`+
+      `<div class="voterow"><small>Il grado ti è sembrato</small><div class="seg">${[['facile','Facile'],['giusto','Giusto'],['duro','Duro']].map(o => `<button data-act="vote" data-v="${o[0]}" aria-pressed="${t.vote === o[0]}">${o[1]}</button>`).join('')}</div></div>`+
       `<div class="voterow"><small>Quanto ti è piaciuto?${t.rating ? ` <b>${t.rating}/10</b>` : ''}</small><div class="rate">${Array.from({ length: 10 }, (_, k) => k + 1).map(n => `<button data-act="rate" data-v="${n}" aria-pressed="${t.rating === n}" class="${t.rating && n <= t.rating ? 'on' : ''}">${n}</button>`).join('')}</div></div>` : '');
 }
 /* elementi di "Le mie salite": blocchi ancora esistenti (anche smontati) con la loro salita */
@@ -3550,7 +3562,7 @@ function mineItems(){
   return out;
 }
 /* ---------- badge: calcolati dalle salite del cliente, nessun dato in più ---------- */
-const B_FAM = { cost: ['Costanza', '#ff7a1a'], var: ['Varietà', '#22c3e6'], col: ['Colori', '#e5312b'], prog: ['Progressi', '#4dd4ac'], gym: ['Per la palestra', '#23b45a'], km: ['Chilometraggio', '#8a4dff'], tec: ['Tecnica', '#ffd400'], ora: ['Orari', '#5b8cff'], sed: ['Sedute', '#ff5fa2'] };
+const B_FAM = { tent: ['Tentativi', '#a3e635'], cost: ['Costanza', '#ff7a1a'], var: ['Varietà', '#22c3e6'], col: ['Colori', '#e5312b'], prog: ['Progressi', '#4dd4ac'], gym: ['Per la palestra', '#23b45a'], km: ['Chilometraggio', '#8a4dff'], tec: ['Tecnica', '#ffd400'], ora: ['Orari', '#5b8cff'], sed: ['Sedute', '#ff5fa2'] };
 function badgeStats(){
   const T = ui.ticks ? [...ui.ticks.values()] : [], done = T.filter(t => t.status === 'fatto');
   const find = t => { const w = S.walls.find(x => x.id === t.wall_id), c = w && w.circuits.find(x => x.id === t.item_id); return { w, c }; };
@@ -3573,6 +3585,8 @@ function badgeStats(){
     early: D.filter(x => x.at && x.at.getHours() < 9).length, late: D.filter(x => x.at && x.at.getHours() >= 22).length,
     dayColors: (() => { const m = {}; D.filter(x => x.isB && x.at && ['bianco','blu','verde','giallo','rosso'].includes(x.g)).forEach(x => { const k = dayKey(x.at); (m[k] = m[k] || new Set()).add(x.g); }); return Math.max(0, ...Object.values(m).map(v => v.size)); })(),
     colorN: D.filter(x => x.isB).reduce((m, x) => { m[x.g] = (m[x.g] || 0) + 1; return m; }, {}),
+    nFlash: D.filter(x => firstGo(x.t.tries)).length, nVista: D.filter(x => x.t.tries === 'vista').length, nGrit: D.filter(x => x.t.tries === 'lavorato' || x.t.tries === 'super').length, nSuper: D.filter(x => x.t.tries === 'super').length, nTries: D.filter(x => x.t.tries).length,
+    flashG: D.some(x => x.isB && firstGo(x.t.tries) && ['giallo','rosso','nero'].includes(x.g)), flashR: D.some(x => x.isB && firstGo(x.t.tries) && ['rosso','nero'].includes(x.g)),
     nRate: T.filter(t => t.status === 'fatto' && t.rating).length, nVote: T.filter(t => t.status === 'fatto' && t.vote).length, bestDay: Math.max(0, ...Object.values(days)) };
 }
 const BADGES = [
@@ -3588,10 +3602,18 @@ const BADGES = [
   { id: 'doppia', f: 'var', name: 'Doppia anima', desc: 'Almeno 10 boulder e 10 circuiti', ok: s => s.nB >= 10 && s.nC >= 10, left: s => Math.min(s.nB, 10) + '/10 boulder · ' + Math.min(s.nC, 10) + '/10 circuiti' },
   ...[['blu','Primo blu'],['verde','Primo verde'],['giallo','Primo giallo'],['rosso','Primo rosso'],['nero','Primo nero']].map(([c, n]) => ({ id: 'c_' + c, f: 'col', name: n, desc: 'Il primo boulder ' + c + ' chiuso', ok: s => s.colors.has(c), left: s => 'chiudi un boulder ' + c, dot: (DIFFS.find(d => d[0] === c) || [])[2] })),
   ...[5, 20].map(k => ({ id: 'hi' + k, f: 'prog', name: k === 5 ? 'Un passo più in là' : 'Testardo', desc: k + ' volte hai migliorato il tuo punto più alto su un circuito in progetto', ok: s => s.hiUps >= k, left: s => s.hiUps + ' di ' + k, big: String(k) })),
+  /* tentativi: al primo (flash) e ostinazione (tanti tentativi o più sessioni) */
+  ...[[1, 'Al primo colpo'], [10, 'Colpo d\'occhio'], [25, 'Infallibile'], [50, 'Implacabile']].map(([k, n]) => ({ id: 'fl' + k, f: 'tent', name: n, desc: (k === 1 ? 'Un percorso fatto' : k + ' percorsi fatti') + ' al primo tentativo (a vista o flash)', ok: s => s.nFlash >= k, left: s => k === 1 ? 'chiudi un percorso al primo tentativo' : s.nFlash + ' di ' + k, big: k > 1 ? String(k) : null })),
+  ...[[1, 'A vista'], [10, 'Lettore di pareti'], [25, 'Veggente']].map(([k, n]) => ({ id: 'vs' + k, f: 'tent', name: n, desc: (k === 1 ? 'Un percorso fatto' : k + ' percorsi fatti') + ' a vista: al primo tentativo, senza averlo visto fare', ok: s => s.nVista >= k, left: s => k === 1 ? 'chiudi un percorso a vista' : s.nVista + ' di ' + k, big: k > 1 ? String(k) : null })),
+  { id: 'flg', f: 'tent', name: 'Flash di peso', desc: 'Un boulder giallo, rosso o nero al primo tentativo', ok: s => s.flashG, left: s => 'un giallo o più duro al primo tentativo' },
+  { id: 'flr', f: 'tent', name: 'Fulmine a ciel sereno', desc: 'Un boulder rosso o nero al primo tentativo', ok: s => s.flashR, left: s => 'un rosso o un nero al primo tentativo' },
+  ...[[1, 'Non mollo'], [10, 'Testa dura'], [25, 'Irriducibile']].map(([k, n]) => ({ id: 'gr' + k, f: 'tent', name: n, desc: (k === 1 ? 'Un percorso chiuso' : k + ' percorsi chiusi') + ' lavorandoci in più sessioni', ok: s => s.nGrit >= k, left: s => k === 1 ? 'chiudi un percorso lavorato' : s.nGrit + ' di ' + k, big: k > 1 ? String(k) : null })),
+  { id: 'sup1', f: 'tent', name: 'Assedio', desc: 'Un percorso superlavorato, chiuso dopo settimane', ok: s => s.nSuper >= 1, left: s => 'chiudi un percorso dopo settimane di prove' },
   { id: 'proj', f: 'prog', name: 'Progetto chiuso', desc: 'Un percorso passato da Progetto a Fatto', ok: s => s.proj, left: s => 'segna un progetto, poi chiudilo' },
   /* per la palestra: più riscontri sui percorsi. Gradimento (1-10) e parere sul grado contano a parte */
   ...[[1, 'Mi piace!'], [10, 'Occhio critico'], [50, 'Critico di fiducia'], [100, 'Voce della palestra']].map(([k, n]) => ({ id: 'g' + k, f: 'gym', name: n, desc: k === 1 ? 'Il primo voto di gradimento a un percorso' : k + ' percorsi votati da 1 a 10', ok: s => s.nRate >= k, left: s => k === 1 ? 'dai un voto da 1 a 10 a un percorso fatto' : s.nRate + ' di ' + k, big: k > 1 ? String(k) : null })),
   ...[[1, 'Primo parere'], [10, 'Metro alla mano'], [50, 'Giudice di parete'], [100, 'Bilancia d\'oro']].map(([k, n]) => ({ id: 'p' + k, f: 'gym', name: n, desc: k === 1 ? 'Il primo parere sul grado (facile, giusto, duro)' : k + ' pareri sul grado dei percorsi', ok: s => s.nVote >= k, left: s => k === 1 ? 'di\' se il grado ti è sembrato facile, giusto o duro' : s.nVote + ' di ' + k, big: k > 1 ? String(k) : null })),
+  ...[[10, 'Diario di bordo'], [50, 'Cronista']].map(([k, n]) => ({ id: 'tr' + k, f: 'gym', name: n, desc: k + ' percorsi fatti con i tentativi segnati', ok: s => s.nTries >= k, left: s => s.nTries + ' di ' + k, big: String(k) })),
   ...[100, 250, 500, 1000, 2500, 5000].map(k => ({ id: 'm' + k, f: 'km', name: k.toLocaleString('it-IT') + ' movimenti', desc: k.toLocaleString('it-IT') + ' movimenti sui circuiti fatti', ok: s => s.moves >= k, left: s => s.moves.toLocaleString('it-IT') + ' di ' + k.toLocaleString('it-IT'), big: k >= 1000 ? String(k / 1000).replace('.', ',') + 'k' : String(k) })),
   /* circuiti con piedi obbligati chiusi */
   ...[[1, 'Piede fino'], [10, 'Piedi di velluto'], [25, 'Ballerino'], [50, 'Piede di scimmia']].map(([k, n]) => ({ id: 'ft' + k, f: 'tec', name: n, desc: k === 1 ? 'Il primo circuito con piedi obbligati' : k + ' circuiti con piedi obbligati', ok: s => s.nFeet >= k, left: s => k === 1 ? 'chiudi un circuito con piedi obbligati' : s.nFeet + ' di ' + k, big: k > 1 ? String(k) : null })),
@@ -3617,6 +3639,11 @@ const B_ICO = {
   rainbow: '<g fill="none" stroke-width="3"><path d="M-11 6a11 11 0 0 1 22 0" stroke="#e5312b"/><path d="M-7.5 6a7.5 7.5 0 0 1 15 0" stroke="#f2c200"/><path d="M-4 6a4 4 0 0 1 8 0" stroke="#1e6bff"/></g>',
   pin: '<path d="M0 11S-8 2-8-3a8 8 0 0 1 16 0c0 5-8 14-8 14z"/><circle cy="-3" r="3" fill="var(--bg)"/>',
   check: '<path d="M-10 0l6 6L10-8" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>',
+  target: '<g fill="none" stroke="currentColor" stroke-width="2.2"><circle r="10"/><circle r="5.6"/></g><circle r="2"/><path d="M12-12L2-2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M12-12l-4.8.6.6 1.6 1.6.6z"/>',
+  target2: '<g fill="none" stroke="currentColor" stroke-width="2.2"><circle r="10"/><circle r="5.6"/></g><circle r="2"/><path d="M5-13L-1 1h4l-2 8 7-11H4z" stroke="var(--bg)" stroke-width="1"/>',
+  castle: '<path d="M-10 11V-4h4v-5h3v5h6v-5h3v5h4v15z"/><path d="M-2 11V4a2 2 0 0 1 4 0v7z" fill="var(--bg)"/><path d="M-10-4h20" stroke="var(--bg)" stroke-width="1"/>',
+  loop: '<path d="M8.5-4A9.5 9.5 0 1 0 9 4" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/><path d="M11.5-10.5l-1.2 8.3-7.4-3.6z"/><circle r="2.6"/>',
+  book: '<path d="M-10-8c4-2 7-2 10 0v17c-3-2-6-2-10 0z"/><path d="M10-8c-4-2-7-2-10 0v17c3-2 6-2 10 0z" fill-opacity=".7"/><path d="M-7-3h4M-7 1h4M3-3h4M3 1h4" stroke="var(--bg)" stroke-width="1"/>',
   two: '<circle cx="-4.5" r="6"/><circle cx="4.5" r="6" fill="none" stroke="currentColor" stroke-width="2.6"/>',
   up: '<path d="M0-11l9 10h-5v10h-8V-1h-5z"/>',
   star: '<path d="M0-11l3.2 6.6 7.2 1-5.2 5 1.3 7.2L0 5.4l-6.5 3.4 1.3-7.2-5.2-5 7.2-1z"/>',
@@ -3674,6 +3701,12 @@ const B_LOOK = (() => {
   L.doppia = { t: 's', i: 'tao', pr: st => (Math.min(st.nB, 10) + Math.min(st.nC, 10)) / 20 };
   ['blu', 'verde', 'giallo', 'rosso', 'nero'].forEach((c, k) => { L['c_' + c] = { t: ['b', 'b', 's', 'g', 'g'][k], i: null, pr: null }; });
   L.proj = { t: 'b', i: 'star', pr: null };
+  ser(['fl1', 'fl10', 'fl25', 'fl50'], 'target', (st, id) => st.nFlash / num(id), true);
+  L.flg = { t: 's', i: 'target2', pr: null }; L.flr = { t: 'g', i: 'target2', pr: null, sc: 1.15 };
+  ser(['gr1', 'gr10', 'gr25'], 'loop', (st, id) => st.nGrit / num(id), true);
+  ser(['vs1', 'vs10', 'vs25'], 'eye', (st, id) => st.nVista / num(id), true);
+  L.sup1 = { t: 'g', i: 'castle', pr: null };
+  ser(['tr10', 'tr50'], 'book', (st, id) => st.nTries / num(id)); L.tr10.t = 's';
   ser(['hi5', 'hi20'], 'up', (st, id) => st.hiUps / num(id)); L.hi5.t = 's';
   ser(['g1', 'g10', 'g50', 'g100'], ['heart', 'heart', 'heart', 'hearts'], (st, id) => st.nRate / num(id), true); L.g100.sc = 1.15;
   ser(['p1', 'p10', 'p50', 'p100'], ['scale', 'scale', 'scale', 'wig'], (st, id) => st.nVote / num(id), true); L.p100.sc = 1.1;
@@ -3748,7 +3781,7 @@ function mineHtml(){
   const all = mineItems(), items = all.filter(x => isSec(x.w) === bo);
   const done = items.filter(x => x.t.status === 'fatto'), proj = items.filter(x => x.t.status === 'progetto' && !x.gone);
   const nB = all.filter(x => isSec(x.w) && x.t.status === 'fatto').length, nC = all.filter(x => !isSec(x.w) && x.t.status === 'fatto').length;
-  const row = x => `<button class="lrow" data-act="minego" data-w="${x.w.id}" data-id="${x.c.id}"><i class="dot" style="background:${colOf(x.c)}"></i><span class="ctext" style="flex:1"><b>${esc(blockTitle(x.w, x.c))}</b><small>${esc([x.w.name, x.gone ? (isSec(x.w) ? 'smontato' : 'muro archiviato') : '', x.t.rating ? 'voto ' + x.t.rating + '/10' : '', x.t.vote ? 'per te ' + x.t.vote : '', fmtDate((x.t.updated_at || '').slice(0, 10))].filter(Boolean).join(' · '))}</small></span>${isSec(x.w) ? '' : gradeBadge(x.c.grade)}</button>`;
+  const row = x => `<button class="lrow" data-act="minego" data-w="${x.w.id}" data-id="${x.c.id}"><i class="dot" style="background:${colOf(x.c)}"></i><span class="ctext" style="flex:1"><b>${esc(blockTitle(x.w, x.c))}</b><small>${esc([x.w.name, x.gone ? (isSec(x.w) ? 'smontato' : 'muro archiviato') : '', x.t.rating ? 'voto ' + x.t.rating + '/10' : '', x.t.vote ? 'per te ' + x.t.vote : '', triesText(x.t.tries), fmtDate((x.t.updated_at || '').slice(0, 10))].filter(Boolean).join(' · '))}</small></span>${isSec(x.w) ? '' : gradeBadge(x.c.grade)}</button>`;
   const recent = done.slice().sort((x, y) => String(y.t.updated_at).localeCompare(String(x.t.updated_at))).slice(0, 15);
   let prog = '';
   if(bo){
@@ -4720,6 +4753,7 @@ document.addEventListener('click', e => {
     case 'dash': openSheet('dash'); break;
     case 'tick': tick(b.dataset.v); break;
     case 'vote': vote(b.dataset.v); break;
+    case 'tries': setTries(b.dataset.v); break;
     case 'hi': setHigh(+b.dataset.v || 0); break;
     case 'rate': rate(b.dataset.v); break;
     case 'mine': ui.confirm = null; ui.nbShown = null; ui.mineTab = null; openSheet(hasNewB() ? 'badges' : 'mine'); break;   /* con un badge nuovo si va dritti ai badge */
