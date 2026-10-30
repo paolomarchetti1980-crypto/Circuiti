@@ -3585,7 +3585,10 @@ function badgeStats(){
     early: D.filter(x => x.at && x.at.getHours() < 9).length, late: D.filter(x => x.at && x.at.getHours() >= 22).length,
     dayColors: (() => { const m = {}; D.filter(x => x.isB && x.at && ['bianco','blu','verde','giallo','rosso'].includes(x.g)).forEach(x => { const k = dayKey(x.at); (m[k] = m[k] || new Set()).add(x.g); }); return Math.max(0, ...Object.values(m).map(v => v.size)); })(),
     colorN: D.filter(x => x.isB).reduce((m, x) => { m[x.g] = (m[x.g] || 0) + 1; return m; }, {}),
-    nFlash: D.filter(x => firstGo(x.t.tries)).length, nVista: D.filter(x => x.t.tries === 'vista').length, nGrit: D.filter(x => x.t.tries === 'lavorato' || x.t.tries === 'super').length, nSuper: D.filter(x => x.t.tries === 'super').length, nTries: D.filter(x => x.t.tries).length,
+    nFlash: D.filter(x => firstGo(x.t.tries)).length, nVista: D.filter(x => x.t.tries === 'vista').length, nGrit: D.filter(x => x.t.tries === 'lavorato').length,
+    /* giornate da ricordare: nello stesso giorno, boulder duri al primo tentativo o percorsi lavorati chiusi */
+    dayHardFlash: (() => { const m = {}; D.filter(x => x.isB && x.at && firstGo(x.t.tries) && ['giallo','rosso','nero'].includes(x.g)).forEach(x => { const k = dayKey(x.at); m[k] = (m[k] || 0) + 1; }); return Math.max(0, ...Object.values(m)); })(),
+    dayWorked: (() => { const m = {}; D.filter(x => x.at && (x.t.tries === 'lavorato' || x.t.tries === 'super')).forEach(x => { const k = dayKey(x.at); m[k] = (m[k] || 0) + 1; }); return Math.max(0, ...Object.values(m)); })(), nSuper: D.filter(x => x.t.tries === 'super').length, nTries: D.filter(x => x.t.tries).length,
     flashG: D.some(x => x.isB && firstGo(x.t.tries) && ['giallo','rosso','nero'].includes(x.g)), flashR: D.some(x => x.isB && firstGo(x.t.tries) && ['rosso','nero'].includes(x.g)),
     nRate: T.filter(t => t.status === 'fatto' && t.rating).length, nVote: T.filter(t => t.status === 'fatto' && t.vote).length, bestDay: Math.max(0, ...Object.values(days)) };
 }
@@ -3607,7 +3610,9 @@ const BADGES = [
   ...[[1, 'A vista'], [10, 'Lettore di pareti'], [25, 'Veggente']].map(([k, n]) => ({ id: 'vs' + k, f: 'tent', name: n, desc: (k === 1 ? 'Un percorso fatto' : k + ' percorsi fatti') + ' a vista: al primo tentativo, senza averlo visto fare', ok: s => s.nVista >= k, left: s => k === 1 ? 'chiudi un percorso a vista' : s.nVista + ' di ' + k, big: k > 1 ? String(k) : null })),
   { id: 'flg', f: 'tent', name: 'Flash di peso', desc: 'Un boulder giallo, rosso o nero al primo tentativo', ok: s => s.flashG, left: s => 'un giallo o più duro al primo tentativo' },
   { id: 'flr', f: 'tent', name: 'Fulmine a ciel sereno', desc: 'Un boulder rosso o nero al primo tentativo', ok: s => s.flashR, left: s => 'un rosso o un nero al primo tentativo' },
-  ...[[1, 'Non mollo'], [10, 'Testa dura'], [25, 'Irriducibile']].map(([k, n]) => ({ id: 'gr' + k, f: 'tent', name: n, desc: (k === 1 ? 'Un percorso chiuso' : k + ' percorsi chiusi') + ' lavorandoci in più sessioni', ok: s => s.nGrit >= k, left: s => k === 1 ? 'chiudi un percorso lavorato' : s.nGrit + ' di ' + k, big: k > 1 ? String(k) : null })),
+  ...[[1, 'Non mollo'], [10, 'Testa dura'], [25, 'Irriducibile']].map(([k, n]) => ({ id: 'gr' + k, f: 'tent', name: n, desc: k === 1 ? 'Un percorso lavorato, chiuso in più sessioni' : k + ' percorsi lavorati, chiusi in più sessioni', ok: s => s.nGrit >= k, left: s => k === 1 ? 'chiudi un percorso lavorato' : s.nGrit + ' di ' + k, big: k > 1 ? String(k) : null })),
+  { id: 'gdf', f: 'tent', name: 'Giornata di grazia', desc: '3 boulder gialli o più duri al primo tentativo nello stesso giorno', ok: s => s.dayHardFlash >= 3, left: s => 'record: ' + s.dayHardFlash + ' in un giorno' },
+  { id: 'gdw', f: 'tent', name: 'Giornata da ricordare', desc: '3 percorsi lavorati (o superlavorati) chiusi nello stesso giorno', ok: s => s.dayWorked >= 3, left: s => 'record: ' + s.dayWorked + ' in un giorno' },
   { id: 'sup1', f: 'tent', name: 'Assedio', desc: 'Un percorso superlavorato, chiuso dopo settimane', ok: s => s.nSuper >= 1, left: s => 'chiudi un percorso dopo settimane di prove' },
   { id: 'proj', f: 'prog', name: 'Progetto chiuso', desc: 'Un percorso passato da Progetto a Fatto', ok: s => s.proj, left: s => 'segna un progetto, poi chiudilo' },
   /* per la palestra: più riscontri sui percorsi. Gradimento (1-10) e parere sul grado contano a parte */
@@ -3641,6 +3646,8 @@ const B_ICO = {
   check: '<path d="M-10 0l6 6L10-8" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>',
   target: '<g fill="none" stroke="currentColor" stroke-width="2.2"><circle r="10"/><circle r="5.6"/></g><circle r="2"/><path d="M12-12L2-2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M12-12l-4.8.6.6 1.6 1.6.6z"/>',
   target2: '<g fill="none" stroke="currentColor" stroke-width="2.2"><circle r="10"/><circle r="5.6"/></g><circle r="2"/><path d="M5-13L-1 1h4l-2 8 7-11H4z" stroke="var(--bg)" stroke-width="1"/>',
+  calbolt: '<rect x="-10" y="-8" width="20" height="18" rx="2.5"/><path d="M-10-3h20" stroke="var(--bg)" stroke-width="1.6"/><path d="M-5-11v5M5-11v5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M1.5-1L-3.5 5h3l-1.2 4.5L4 3H1z" fill="var(--bg)"/>',
+  calstar: '<rect x="-10" y="-8" width="20" height="18" rx="2.5"/><path d="M-10-3h20" stroke="var(--bg)" stroke-width="1.6"/><path d="M-5-11v5M5-11v5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M0-.5l1.6 3.2 3.5.5-2.5 2.4.6 3.5L0 7.4l-3.2 1.7.6-3.5-2.5-2.4 3.5-.5z" fill="var(--bg)"/>',
   castle: '<path d="M-10 11V-4h4v-5h3v5h6v-5h3v5h4v15z"/><path d="M-2 11V4a2 2 0 0 1 4 0v7z" fill="var(--bg)"/><path d="M-10-4h20" stroke="var(--bg)" stroke-width="1"/>',
   loop: '<path d="M8.5-4A9.5 9.5 0 1 0 9 4" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/><path d="M11.5-10.5l-1.2 8.3-7.4-3.6z"/><circle r="2.6"/>',
   book: '<path d="M-10-8c4-2 7-2 10 0v17c-3-2-6-2-10 0z"/><path d="M10-8c-4-2-7-2-10 0v17c3-2 6-2 10 0z" fill-opacity=".7"/><path d="M-7-3h4M-7 1h4M3-3h4M3 1h4" stroke="var(--bg)" stroke-width="1"/>',
@@ -3706,6 +3713,7 @@ const B_LOOK = (() => {
   ser(['gr1', 'gr10', 'gr25'], 'loop', (st, id) => st.nGrit / num(id), true);
   ser(['vs1', 'vs10', 'vs25'], 'eye', (st, id) => st.nVista / num(id), true);
   L.sup1 = { t: 'g', i: 'castle', pr: null };
+  L.gdf = { t: 'g', i: 'calbolt', pr: st => st.dayHardFlash / 3 }; L.gdw = { t: 'g', i: 'calstar', pr: st => st.dayWorked / 3 };
   ser(['tr10', 'tr50'], 'book', (st, id) => st.nTries / num(id)); L.tr10.t = 's';
   ser(['hi5', 'hi20'], 'up', (st, id) => st.hiUps / num(id)); L.hi5.t = 's';
   ser(['g1', 'g10', 'g50', 'g100'], ['heart', 'heart', 'heart', 'hearts'], (st, id) => st.nRate / num(id), true); L.g100.sc = 1.15;
