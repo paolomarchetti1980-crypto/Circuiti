@@ -3257,7 +3257,7 @@ function renderTools(){
            `<button class="btn" data-act="susnext" ${nsus ? '' : 'disabled'}>Sospette (${nsus})</button>`+
            `<button class="btn" data-act="undel" ${ui.trash.length ? '' : 'disabled'}>Ripristina (${ui.trash.length})</button>`;
     }
-    h += `<button class="btn primary" data-act="lock" ${drawing && ui.draft.length ? 'disabled' : ''}>Blocca muro e traccia</button>`;
+    h += `<button class="btn primary" data-act="lock" ${drawing && ui.draft.length ? 'disabled' : ''}>Blocca muro</button>`;
     el.innerHTML = h;
     return;
   }
@@ -4966,7 +4966,6 @@ document.addEventListener('click', e => {
       if(!w || !c) break;
       if(ui.confirm !== 'delc'){ ui.confirm = 'delc'; renderSheet(); break; }
       w.circuits = w.circuits.filter(x => x.id !== c.id);
-      if(!w.circuits.length && !isSec(w)) w.circuits.push(newCircuit(w));
       w.activeCircuit = w.circuits.length ? w.circuits[0].id : null; ui.sel = null; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
       ui.sheet = null; ui.confirm = null; touch(); render(); renderSheet(); break;
     case 'pickw': if(EDIT) S.mode = 'edit'; S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.full = false; ui.sel = null; ui.zoom = 1; ui.move = false; ui.sheet = null; save(); render(); renderSheet(); break;
@@ -5061,7 +5060,8 @@ async function finishCrop0(cr){
   const w = { id: uid(), name: pre + wn, w: hi.w, h: hi.h, img, circuits: [], activeCircuit: null };
   if(vw) w.imgV = vw.url;
   if(bo){ w.kind = 'sector'; w.locked = true; w.holds = []; }
-  const circ = newCircuit(w); w.circuits.push(circ); w.activeCircuit = circ.id;
+  /* i settori partono subito col primo boulder; i muri dei circuiti no: prima si segnano le prese, poi "+ Nuovo circuito" */
+  if(bo){ const circ = newCircuit(w); w.circuits.push(circ); w.activeCircuit = circ.id; }
   S.walls.push(w); S.active = w.id; S.mode = 'edit'; ui.bLevel = 'sector'; ui.secOver = false;
   ui.sel = null; ui.move = false; ui.zoom = 1; ui.nextRole = 'start'; ui.crop = null; ui.sheet = null;
   touch(); render(); renderSheet();
