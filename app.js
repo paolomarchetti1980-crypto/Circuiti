@@ -117,6 +117,17 @@ function assignNum(w, c){
   let n = 1; while(used.has(n)) n++;
   c.num = n;
 }
+/* numero scelto dal tracciatore: ordine di difficoltà tra i boulder dello stesso colore nel settore (1 = il più facile).
+   Scegliendo un numero già usato, i due boulder se lo scambiano */
+function numField(w, c){
+  const same = w.circuits.filter(x => x.diff === c.diff && !isOff(x)), d = DIFFS.find(x => x[0] === c.diff);
+  const N = Math.max(same.length, ...same.map(x => +x.num || 0));
+  if(N < 2) return '';
+  const who = n => { const o = same.find(x => x !== c && x.num === n); return o ? ` title="ora è ${esc(blockTitle(w, o))}"` : ''; };
+  return `<p class="field" style="margin-bottom:4px">Numero nel ${esc((d ? d[1] : '').toLowerCase())} <small style="color:var(--muted)">· 1 = il più facile del settore</small></p>`+
+    `<div class="seg" role="group" aria-label="Numero" style="margin:0 0 12px;flex-wrap:wrap">`+
+    Array.from({ length: N }, (_, i) => i + 1).map(n => `<button data-act="bnum" data-v="${n}" aria-pressed="${c.num === n}"${who(n)}>${n}</button>`).join('')+`</div>`;
+}
 /* boulder: move, stile e particolarità (si possono scegliere più voci) */
 /* boulder: un solo elenco di caratteristiche, a gruppi (prima c'era anche un menu "Stile" che ripeteva le stesse voci) */
 const BTAG_GROUPS = [['Parete', ['Placca','Verticale','Strapiombo','Tetto','Spigolo','Diedro']],
@@ -3979,7 +3990,7 @@ function renderSheet(){
       `<div class="sw" role="group" aria-label="Difficoltà">` +
       DIFFS.map(d => `<button data-act="bdiff" data-v="${d[0]}" aria-label="${d[1]}" aria-pressed="${c.diff === d[0]}" class="${c.diff === d[0] ? 'sel' : ''}" style="background:${d[2]}"></button>`).join('') +
       `</div>`+
-      (diffOf(c) ? '' : `<p class="note" style="margin:-8px 0 12px">Scegli la difficoltà: il nome (es. "Giallo 2") si assegna da solo.</p>`)+
+      (diffOf(c) ? numField(w, c) : `<p class="note" style="margin:-8px 0 12px">Scegli la difficoltà: il nome (es. "Giallo 2") si assegna da solo.</p>`)+
       `<p class="field" style="margin-bottom:4px">Colore delle prese</p>`+
       `<div class="sw" role="group" aria-label="Colore delle prese">` +
       PALETTE.map(p => `<button data-act="hcolor" data-c="${p[1]}" aria-label="${p[0]}" class="${p[1] === c.holdColor ? 'sel' : ''}" style="background:${p[1]}"></button>`).join('') +
@@ -4800,6 +4811,13 @@ document.addEventListener('click', e => {
     case 'bclose': if(w && c) finishBDraw(w, c); break;
     case 'bundo': ui.draft.pop(); render(); break;
     case 'bcancel': ui.bdraw = false; ui.draft = []; render(); break;
+    case 'bnum': {
+      if(!c || !w || !isSec(w) || !diffOf(c)) break;
+      const n = +b.dataset.v; if(!n || n === c.num) break;
+      const o = w.circuits.find(x => x !== c && x.diff === c.diff && !isOff(x) && x.num === n);
+      if(o) o.num = c.num;
+      c.num = n; touch(); render(); renderSheet(); break;
+    }
     case 'bdiff': {
       if(!c || !w || !isSec(w)) break;
       if(/^Boulder \d+$/.test(c.name || '')) c.name = '';
