@@ -244,3 +244,17 @@ as $$
   from public.ticks t where public.is_editor() group by t.item_id;
 $$;
 grant execute on function public.tick_stats3() to authenticated;
+
+-- badge "Prima salita" e "Primo flash": su quali percorsi il cliente è stato il primo (degli altri non si vede niente)
+create or replace function public.my_firsts()
+ returns table(item_id text, primo boolean, primo_flash boolean)
+ language sql stable security definer set search_path to 'public'
+as $$
+  with mine as (select t.item_id, t.done_at, t.tries from public.ticks t where t.user_id = auth.uid() and t.status = 'fatto' and t.done_at is not null)
+  select m.item_id,
+    not exists (select 1 from public.ticks o where o.item_id = m.item_id and o.user_id <> auth.uid() and o.status = 'fatto' and o.done_at < m.done_at),
+    coalesce(m.tries in ('vista','flash'), false) and not exists (select 1 from public.ticks o where o.item_id = m.item_id and o.user_id <> auth.uid() and o.status = 'fatto' and o.tries in ('vista','flash') and o.done_at < m.done_at)
+  from mine m;
+$$;
+revoke all on function public.my_firsts() from public, anon;
+grant execute on function public.my_firsts() to authenticated;

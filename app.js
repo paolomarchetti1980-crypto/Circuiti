@@ -3470,7 +3470,12 @@ async function loadTicks(){
   const { data, error } = await SB.from('ticks').select('item_id,wall_id,status,vote,rating,grade,done_at,moves,from_project,high,high_ups,high_at,updated_at,tries');
   ui.ticks = new Map(); ui.ticksErr = !!error;
   (data || []).forEach(t => ui.ticks.set(t.item_id, t));
+  await loadFirsts();
   render(); if(ui.sheet) renderSheet();
+}
+/* "prima salita" e "primo flash": il database dice solo su quali percorsi sei stato il primo (degli altri non si vede niente) */
+async function loadFirsts(){
+  try{ const { data, error } = await SB.rpc('my_firsts'); if(!error && Array.isArray(data)) ui.firsts = new Map(data.map(r => [r.item_id, r])); }catch(e){}
 }
 async function loadTickSum(){
   try{ let { data, error } = await SB.rpc('tick_stats3'); if(error) ({ data, error } = await SB.rpc('tick_stats')); if(error) ({ data, error } = await SB.rpc('tick_summary')); if(!error && Array.isArray(data)){ ui.tsum = new Map(data.map(r => [r.item_id, r])); render(); } }catch(e){}
@@ -3489,6 +3494,7 @@ async function saveTick(w, c, next, restore){
   const r = next ? await SB.from('ticks').upsert({ item_id: c.id, wall_id: w.id, status: next.status, vote: next.vote || null, rating: next.rating || null, grade: next.grade, done_at: next.done_at, moves: next.moves, from_project: next.from_project, high: next.high || null, high_ups: next.high_ups || 0, high_at: next.high_at || null, tries: next.tries || null, updated_at: new Date().toISOString() })
                  : await SB.from('ticks').delete().eq('item_id', c.id);
   if(r && r.error){ if(prev) ui.ticks.set(c.id, prev); else ui.ticks.delete(c.id); render(); toast('Non riesco a salvare: ' + (r.error.message || 'riprova tra poco.')); return; }
+  if(before && !restore && next && next.status === 'fatto') await loadFirsts();
   if(before && !restore){ const now = earnedBadges(), got = [...now].filter(id => !before.has(id)); if(got.length){ const b = BADGES.find(x => x.id === got[got.length - 1]); badgeCelebrate(b); setNewB(newB().concat(got)); } }
 }
 function tick(status){
@@ -3562,7 +3568,9 @@ function mineItems(){
   return out;
 }
 /* ---------- badge: calcolati dalle salite del cliente, nessun dato in più ---------- */
-const B_FAM = { tent: ['Tentativi', '#a3e635'], cost: ['Costanza', '#ff7a1a'], var: ['Varietà', '#22c3e6'], col: ['Colori', '#e5312b'], prog: ['Progressi', '#4dd4ac'], gym: ['Per la palestra', '#23b45a'], km: ['Chilometraggio', '#8a4dff'], tec: ['Tecnica', '#ffd400'], ora: ['Orari', '#5b8cff'], sed: ['Sedute', '#ff5fa2'] };
+const B_FAM = { tent: ['Tentativi', '#a3e635'], vel: ['Primi e veloci', '#ff8a5c'], cost: ['Costanza', '#ff7a1a'], var: ['Varietà', '#22c3e6'], col: ['Colori', '#e5312b'], prog: ['Progressi', '#4dd4ac'], gym: ['Per la palestra', '#23b45a'], km: ['Chilometraggio', '#8a4dff'], tec: ['Tecnica', '#ffd400'], ora: ['Orari', '#5b8cff'], sed: ['Sedute', '#ff5fa2'] };
+/* inizio del giorno N giorni dopo una data "AAAA-MM-GG" (ora locale) */
+const dayAfter = (iso, n) => { const p = String(iso).split('-').map(Number), d = new Date(p[0], (p[1] || 1) - 1, p[2] || 1); d.setDate(d.getDate() + n); return d; };
 function badgeStats(){
   const T = ui.ticks ? [...ui.ticks.values()] : [], done = T.filter(t => t.status === 'fatto');
   const find = t => { const w = S.walls.find(x => x.id === t.wall_id), c = w && w.circuits.find(x => x.id === t.item_id); return { w, c }; };
@@ -3590,6 +3598,14 @@ function badgeStats(){
     dayHardFlash: (() => { const m = {}; D.filter(x => x.isB && x.at && firstGo(x.t.tries) && ['giallo','rosso','nero'].includes(x.g)).forEach(x => { const k = dayKey(x.at); m[k] = (m[k] || 0) + 1; }); return Math.max(0, ...Object.values(m)); })(),
     dayWorked: (() => { const m = {}; D.filter(x => x.at && (x.t.tries === 'lavorato' || x.t.tries === 'super')).forEach(x => { const k = dayKey(x.at); m[k] = (m[k] || 0) + 1; }); return Math.max(0, ...Object.values(m)); })(), nSuper: D.filter(x => x.t.tries === 'super').length, nTries: D.filter(x => x.t.tries).length,
     flashG: D.some(x => x.isB && firstGo(x.t.tries) && ['giallo','rosso','nero'].includes(x.g)), flashR: D.some(x => x.isB && firstGo(x.t.tries) && ['rosso','nero'].includes(x.g)),
+    /* primi e veloci: date di montaggio e smontaggio del percorso, dalla foto della palestra */
+    nFirst: D.filter(x => { const f = ui.firsts && ui.firsts.get(x.t.item_id); return f && f.primo; }).length,
+    firstFlash: D.some(x => { const f = ui.firsts && ui.firsts.get(x.t.item_id); return f && f.primo_flash; }),
+    nFresh: D.filter(x => x.c && x.c.dateSet && x.at && x.at < dayAfter(x.c.dateSet, 3)).length,
+    nLast: D.filter(x => x.c && x.c.dateRemoved && x.at && x.at >= dayAfter(x.c.dateRemoved, -3) && x.at < dayAfter(x.c.dateRemoved, 1)).length,
+    nBeta: D.filter(x => x.c && x.c.dateSet && x.at && x.t.rating && x.t.vote && x.at < dayAfter(x.c.dateSet, 7)).length,
+    trail: secs.some(w => { const on = w.circuits.filter(c => c.diff && c.dateSet && !isOff(c)); if(on.length < 3) return false; const set = on.map(c => c.dateSet).sort().pop();
+      return on.every(c => { const x = D.find(d => d.c === c); return x && x.at && x.at < dayAfter(set, 8); }); }),
     nRate: T.filter(t => t.status === 'fatto' && t.rating).length, nVote: T.filter(t => t.status === 'fatto' && t.vote).length, bestDay: Math.max(0, ...Object.values(days)) };
 }
 const BADGES = [
@@ -3613,11 +3629,17 @@ const BADGES = [
   ...[[1, 'Non mollo'], [10, 'Testa dura'], [25, 'Irriducibile']].map(([k, n]) => ({ id: 'gr' + k, f: 'tent', name: n, desc: k === 1 ? 'Un percorso lavorato, chiuso in più sessioni' : k + ' percorsi lavorati, chiusi in più sessioni', ok: s => s.nGrit >= k, left: s => k === 1 ? 'chiudi un percorso lavorato' : s.nGrit + ' di ' + k, big: k > 1 ? String(k) : null })),
   { id: 'gdf', f: 'tent', name: 'Giornata di grazia', desc: '3 boulder gialli o più duri al primo tentativo nello stesso giorno', ok: s => s.dayHardFlash >= 3, left: s => 'record: ' + s.dayHardFlash + ' in un giorno' },
   { id: 'gdw', f: 'tent', name: 'Giornata da ricordare', desc: '3 percorsi lavorati (o superlavorati) chiusi nello stesso giorno', ok: s => s.dayWorked >= 3, left: s => 'record: ' + s.dayWorked + ' in un giorno' },
+  ...[[1, 'Prima salita'], [5, 'Apriporta'], [20, 'Pioniere']].map(([k, n]) => ({ id: 'fa' + k, f: 'vel', name: n, desc: k === 1 ? 'Il primo cliente a chiudere un percorso nuovo' : 'Prima salita su ' + k + ' percorsi diversi', ok: s => s.nFirst >= k, left: s => k === 1 ? 'chiudi per primo un percorso appena montato' : s.nFirst + ' di ' + k, big: k > 1 ? String(k) : null })),
+  { id: 'ffl', f: 'vel', name: 'Primo flash', desc: 'Il primo cliente a chiudere un percorso a vista o flash', ok: s => s.firstFlash, left: s => 'chiudi per primo un percorso al primo tentativo' },
+  ...[[1, 'Fresco di tracciatura'], [10, 'Sempre sul pezzo'], [25, 'Segugio']].map(([k, n]) => ({ id: 'fr' + k, f: 'vel', name: n, desc: (k === 1 ? 'Un percorso fatto' : k + ' percorsi fatti') + ' entro 2 giorni dal montaggio', ok: s => s.nFresh >= k, left: s => k === 1 ? 'chiudi un percorso entro 2 giorni dal montaggio' : s.nFresh + ' di ' + k, big: k > 1 ? String(k) : null })),
+  { id: 'trail', f: 'vel', name: 'Apripista', desc: 'Tutti i boulder di un settore entro una settimana dal rimontaggio', ok: s => s.trail, left: s => 'chiudi tutto un settore nella prima settimana' },
+  { id: 'last', f: 'vel', name: 'Appena in tempo', desc: 'Un percorso fatto negli ultimi 3 giorni prima dello smontaggio', ok: s => s.nLast >= 1, left: s => 'chiudi un percorso poco prima che lo smontino' },
   { id: 'sup1', f: 'tent', name: 'Assedio', desc: 'Un percorso superlavorato, chiuso dopo settimane', ok: s => s.nSuper >= 1, left: s => 'chiudi un percorso dopo settimane di prove' },
   { id: 'proj', f: 'prog', name: 'Progetto chiuso', desc: 'Un percorso passato da Progetto a Fatto', ok: s => s.proj, left: s => 'segna un progetto, poi chiudilo' },
   /* per la palestra: più riscontri sui percorsi. Gradimento (1-10) e parere sul grado contano a parte */
   ...[[1, 'Mi piace!'], [10, 'Occhio critico'], [50, 'Critico di fiducia'], [100, 'Voce della palestra']].map(([k, n]) => ({ id: 'g' + k, f: 'gym', name: n, desc: k === 1 ? 'Il primo voto di gradimento a un percorso' : k + ' percorsi votati da 1 a 10', ok: s => s.nRate >= k, left: s => k === 1 ? 'dai un voto da 1 a 10 a un percorso fatto' : s.nRate + ' di ' + k, big: k > 1 ? String(k) : null })),
   ...[[1, 'Primo parere'], [10, 'Metro alla mano'], [50, 'Giudice di parete'], [100, 'Bilancia d\'oro']].map(([k, n]) => ({ id: 'p' + k, f: 'gym', name: n, desc: k === 1 ? 'Il primo parere sul grado (facile, giusto, duro)' : k + ' pareri sul grado dei percorsi', ok: s => s.nVote >= k, left: s => k === 1 ? 'di\' se il grado ti è sembrato facile, giusto o duro' : s.nVote + ' di ' + k, big: k > 1 ? String(k) : null })),
+  ...[[5, 'Beta tester'], [20, 'Collaudatore'], [50, 'Banco di prova']].map(([k, n]) => ({ id: 'bt' + k, f: 'gym', name: n, desc: k + ' percorsi nuovi (montati da meno di una settimana) con gradimento e parere sul grado', ok: s => s.nBeta >= k, left: s => s.nBeta + ' di ' + k, big: String(k) })),
   ...[[10, 'Diario di bordo'], [50, 'Cronista']].map(([k, n]) => ({ id: 'tr' + k, f: 'gym', name: n, desc: k + ' percorsi fatti con i tentativi segnati', ok: s => s.nTries >= k, left: s => s.nTries + ' di ' + k, big: String(k) })),
   ...[100, 250, 500, 1000, 2500, 5000].map(k => ({ id: 'm' + k, f: 'km', name: k.toLocaleString('it-IT') + ' movimenti', desc: k.toLocaleString('it-IT') + ' movimenti sui circuiti fatti', ok: s => s.moves >= k, left: s => s.moves.toLocaleString('it-IT') + ' di ' + k.toLocaleString('it-IT'), big: k >= 1000 ? String(k / 1000).replace('.', ',') + 'k' : String(k) })),
   /* circuiti con piedi obbligati chiusi */
@@ -3646,6 +3668,12 @@ const B_ICO = {
   check: '<path d="M-10 0l6 6L10-8" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>',
   target: '<g fill="none" stroke="currentColor" stroke-width="2.2"><circle r="10"/><circle r="5.6"/></g><circle r="2"/><path d="M12-12L2-2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M12-12l-4.8.6.6 1.6 1.6.6z"/>',
   target2: '<g fill="none" stroke="currentColor" stroke-width="2.2"><circle r="10"/><circle r="5.6"/></g><circle r="2"/><path d="M5-13L-1 1h4l-2 8 7-11H4z" stroke="var(--bg)" stroke-width="1"/>',
+  flag: '<path d="M-11 10L-2-4l3 4 3-3 7 13z"/><path d="M-2-4v-8" stroke="currentColor" stroke-width="1.8"/><path d="M-2-12h8l-2 2.2 2 2.2h-8z"/>',
+  flagbolt: '<path d="M-11 10L-2-4l3 4 3-3 7 13z"/><path d="M-2-4v-8" stroke="currentColor" stroke-width="1.8"/><path d="M-2-12h9l-2 2.2 2 2.2h-9z"/><path d="M2-1.5L-1.5 3.5h2.4L0 8 4 2.2H1.6z" fill="var(--bg)"/>',
+  sprout: '<path d="M0 11V-1" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M0 1C-1-6-6-9-11-8c0 5 4 9 11 9z"/><path d="M0-2C1-8 5-11 10-10c0 5-3 8-10 8z"/><path d="M-7 11h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>',
+  trail: '<path d="M-12 7l6-6 4 4 9-9" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M11-9.5L10 0 1.6-8.4z"/><g fill="currentColor"><circle cx="-10" cy="11" r="1.4"/><circle cx="-5" cy="11" r="1.4"/><circle cx="0" cy="11" r="1.4"/><circle cx="5" cy="11" r="1.4"/></g>',
+  hourglass: '<path d="M-8-11h16M-8 11h16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M-6.5-10h13c0 6-6 7-6 10s6 4 6 10h-13c0-6 6-7 6-10s-6-4-6-10z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M-4.5 9.6c.6-3 4.5-3.2 4.5-5.6 0 2.4 3.9 2.6 4.5 5.6z"/><path d="M-1.4-4.6h2.8L0-2.2z"/>',
+  flask: '<path d="M-3.5-11h7M-2.5-11v7.5L-10 8a2.5 2.5 0 0 0 2.2 3.5h15.6A2.5 2.5 0 0 0 10 8L2.5-3.5V-11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M-6.6 3h13.2L9 8a1.4 1.4 0 0 1-1.2 2H-7.8A1.4 1.4 0 0 1-9 8z"/><circle cx="-1.5" cy="6" r="1.2" fill="var(--bg)"/><circle cx="2.5" cy="7.6" r=".9" fill="var(--bg)"/>',
   calbolt: '<rect x="-10" y="-8" width="20" height="18" rx="2.5"/><path d="M-10-3h20" stroke="var(--bg)" stroke-width="1.6"/><path d="M-5-11v5M5-11v5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M1.5-1L-3.5 5h3l-1.2 4.5L4 3H1z" fill="var(--bg)"/>',
   calstar: '<rect x="-10" y="-8" width="20" height="18" rx="2.5"/><path d="M-10-3h20" stroke="var(--bg)" stroke-width="1.6"/><path d="M-5-11v5M5-11v5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M0-.5l1.6 3.2 3.5.5-2.5 2.4.6 3.5L0 7.4l-3.2 1.7.6-3.5-2.5-2.4 3.5-.5z" fill="var(--bg)"/>',
   castle: '<path d="M-10 11V-4h4v-5h3v5h6v-5h3v5h4v15z"/><path d="M-2 11V4a2 2 0 0 1 4 0v7z" fill="var(--bg)"/><path d="M-10-4h20" stroke="var(--bg)" stroke-width="1"/>',
@@ -3713,6 +3741,10 @@ const B_LOOK = (() => {
   ser(['gr1', 'gr10', 'gr25'], 'loop', (st, id) => st.nGrit / num(id), true);
   ser(['vs1', 'vs10', 'vs25'], 'eye', (st, id) => st.nVista / num(id), true);
   L.sup1 = { t: 'g', i: 'castle', pr: null };
+  ser(['fa1', 'fa5', 'fa20'], 'flag', (st, id) => st.nFirst / num(id), true); L.ffl = { t: 'g', i: 'flagbolt', pr: null };
+  ser(['fr1', 'fr10', 'fr25'], 'sprout', (st, id) => st.nFresh / num(id), true);
+  L.trail = { t: 'g', i: 'trail', pr: null }; L.last = { t: 's', i: 'hourglass', pr: null };
+  ser(['bt5', 'bt20', 'bt50'], 'flask', (st, id) => st.nBeta / num(id), true);
   L.gdf = { t: 'g', i: 'calbolt', pr: st => st.dayHardFlash / 3 }; L.gdw = { t: 'g', i: 'calstar', pr: st => st.dayWorked / 3 };
   ser(['tr10', 'tr50'], 'book', (st, id) => st.nTries / num(id)); L.tr10.t = 's';
   ser(['hi5', 'hi20'], 'up', (st, id) => st.hiUps / num(id)); L.hi5.t = 's';
