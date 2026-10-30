@@ -418,6 +418,16 @@ async function readPhoto(file){
 const loadImg1 = src => new Promise((res,rej) => { const i = new Image(); if(!/^data:/.test(src)) i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = rej; i.src = src; });
 /* se una copia salvata male blocca la lettura dei pixel, riprova scavalcandola */
 const loadImg = src => loadImg1(src).catch(e => /^data:/.test(src) ? Promise.reject(e) : loadImg1(src + (src.includes('?') ? '&' : '?') + 'px=1'));
+/* tracciatore: menù a tendina con i nomi dello staff; "Altro…" apre la casella per un nome a mano (ospiti, nomi vecchi) */
+function setterField(c){
+  const names = [...new Set([...(ui.staffNames || []), ...(c.setter ? [c.setter] : [])])].sort((a, b) => a.localeCompare(b, 'it'));
+  const other = ui.setterOther || (!names.length);
+  return `<label class="field">Tracciatore<select id="bsetsel">`+
+    `<option value=""${c.setter ? '' : ' selected'}>— nessuno —</option>`+
+    names.map(n => `<option value="${esc(n)}"${!other && n === c.setter ? ' selected' : ''}>${esc(n)}</option>`).join('')+
+    `<option value="__altro"${other ? ' selected' : ''}>Altro nome…</option></select></label>`+
+    (other ? `<label class="field">Nome del tracciatore<input id="bsetter" value="${esc(c.setter || '')}" maxlength="40" autocomplete="off"></label>` : '');
+}
 function newCircuit(w){
   if(isSec(w)){
     /* il nome dato dal gestore nella lista Staff vale per tutti i telefoni; poi l'ultimo scritto a mano su questo telefono */
@@ -3950,7 +3960,7 @@ function dashHtml(){
     `<p class="note">Il rinnovo di un settore è la data del suo boulder in parete più vecchio. Nuovo nella 1ª settimana, recente nella 2ª, scaduto dalla 9ª (questa etichetta la vede solo lo staff). Tocca un settore per aprirlo.</p>`+
     `<div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
 }
-function openSheet(name){ ui.sheet = name; ui.confirm = null; renderSheet(); }
+function openSheet(name){ ui.sheet = name; ui.confirm = null; ui.setterOther = false; renderSheet(); }
 /* ricerca su tutti i circuiti della palestra */
 function sqAll(){ return secWalls().filter(w => !isSec(w)).flatMap(w => w.circuits.map(c => ({ w, c }))); }
 function sqSheet(mode){
@@ -4003,8 +4013,7 @@ function renderSheet(){
       `</div>`+
       `<div class="f2"><label class="field">Soprannome (facoltativo)<span style="display:flex;gap:6px;margin-top:4px"><input id="cname" value="${esc(c.name || '')}" maxlength="40" style="margin-top:0;flex:1;min-width:0"><button type="button" class="btn" data-act="cgen" aria-label="Proponi un soprannome" title="Proponi un soprannome" style="flex:none;font-size:18px;padding:6px 10px">🎲</button></span></label>`+
       `</div>`+
-      `<label class="field">Tracciatore<input id="bsetter" value="${esc(c.setter || '')}" maxlength="40" autocomplete="off" list="bsetlist"></label>`+
-      `<datalist id="bsetlist">${(ui.staffNames || []).map(n => `<option value="${esc(n)}">`).join('')}</datalist>`+
+      setterField(c)+
       `<div class="f2"><label class="field">Montato il<input id="bdset" type="date" value="${esc(c.dateSet || '')}"></label>`+
       `<label class="field">Smontato il<input id="bdrem" type="date" value="${esc(c.dateRemoved || '')}"></label></div>`+
       `<p class="field" style="margin-bottom:0">Caratteristiche</p>`+
@@ -4383,7 +4392,7 @@ async function staffName(email, name){
   if(error){ toast('Nome non salvato: ' + error.message); return; }
   const p = Array.isArray(ui.staff) && ui.staff.find(x => x.email === email); if(p) p.name = name;
   if(ME && ME.email.toLowerCase() === email.toLowerCase()) ME.name = name || undefined;
-  ui.staffNames = (Array.isArray(ui.staff) ? ui.staff : []).map(x => (x.name || '').trim()).filter(Boolean).sort();
+  ui.staffNames = (Array.isArray(ui.staff) ? ui.staff : []).map(x => (x.name || '').trim() || (x.email || '').split('@')[0]).filter(Boolean).sort();
   toast('Nome salvato: i nuovi boulder di questa persona useranno "' + (name || email.split('@')[0]) + '".');
 }
 async function staffDel(email){
@@ -4999,6 +5008,9 @@ document.addEventListener('input', e => {
   if(e.target.id === 'fbtext'){ ui.fbDraft = e.target.value; return; }
   if(e.target.id === 'sqmin' || e.target.id === 'sqmax'){ ui.sq[e.target.id === 'sqmin' ? 'min' : 'max'] = e.target.value; saveCF(); afterFilter(); renderSheet(); return; }
   if(!EDIT) return;
+  if(e.target.id === 'bsetsel' && c){ const v = e.target.value;
+    if(v === '__altro'){ ui.setterOther = true; renderSheet(); setTimeout(() => { const i = document.getElementById('bsetter'); if(i) i.focus(); }, 0); return; }
+    if(v) c.setter = v; else delete c.setter; try{ localStorage.setItem('boulder-setter', v); }catch(err){} renderChips(); touch(); if(ui.setterOther){ ui.setterOther = false; renderSheet(); } return; }
   if(e.target.id === 'bsetter' && c){ const v = e.target.value.trim(); if(v) c.setter = v; else delete c.setter; try{ localStorage.setItem('boulder-setter', v); }catch(err){} renderChips(); touch(); }
   if(e.target.id === 'cdset' && c){ if(e.target.value) c.dateSet = e.target.value; else delete c.dateSet; touch(); }
   if(e.target.id === 'bdset' && c){ if(e.target.value) c.dateSet = e.target.value; else delete c.dateSet; renderChips(); touch(); }
@@ -5223,7 +5235,7 @@ render();
           ME = { email: (session.user && session.user.email) || '', role, uid: session.user && session.user.id };
           try{ const { data: st } = await SB.from('editors').select('email,name');
             if(Array.isArray(st)){ const me = st.find(x => (x.email || '').toLowerCase() === ME.email.toLowerCase()); if(me && me.name) ME.name = me.name;
-              ui.staffNames = st.map(x => (x.name || '').trim()).filter(Boolean).sort(); } }catch(e){}
+              ui.staffNames = st.map(x => (x.name || '').trim() || (x.email || '').split('@')[0]).filter(Boolean).sort(); } }catch(e){}
         }
         else if(loginIntent() === 'cliente'){
           CL = { id: session.user.id, email: session.user.email || '' };

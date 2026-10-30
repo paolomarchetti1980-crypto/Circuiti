@@ -129,7 +129,7 @@ if(!(await pg.locator('.scard[data-act=opensec]:visible').count()) && !(await pg
   log('B.secModes', await txt(pg, '#modes button:not([hidden])'));
   await pg.tap('[data-act="cedit"]', {timeout:5000}); await pg.waitForTimeout(200);
   await pg.tap('[data-act="bdiff"][data-v="verde"]', {timeout:5000}); await pg.tap('[data-act="hcolor"][data-c="#8a4dff"]', {timeout:5000}); await pg.tap('[data-act="btag"][data-v="Tallone"]', {timeout:5000});
-  await pg.fill('#bsetter', 'Marco'); await pg.fill('#bnotes', 'nota');
+  await pg.selectOption('#bsetsel', '__altro'); await pg.waitForTimeout(300); await pg.fill('#bsetter', 'Marco'); await pg.fill('#bnotes', 'nota');
   log('B.bTitle', await pg.textContent('#card h2'));
   await pg.tap('[data-act="close"]', {timeout:5000}); await pg.waitForTimeout(200);
   await P(pg, 0.4, 0.8); await pg.waitForTimeout(2500); await P(pg, 0.5, 0.5); await pg.waitForTimeout(2500);
