@@ -2539,115 +2539,52 @@ function finishBDraw(w, c){
   ui.draft = []; ui.bdraw = false; ui.sel = null; ui.markUndo = null; touch(); render();
 }
 /* boulder: linea indicativa disegnata a mano dal tracciatore (direzione generale, non le prese) */
-/* linea automatica. Parte dalla zona tra le prese di partenza e i piedi di partenza e arriva al Top;
-   la direzione la dà la posizione media delle prese in 3 fasce (non l'ordine in cui sono state segnate).
-   Poi il percorso si cerca su una griglia della foto che evita le prese: quelle segnate in tutti i boulder
-   del settore e quelle che si vedono nella foto (colore/contrasto). Infine si tira dritto dove si può. */
+/* linea automatica, sul modello delle linee disegnate a mano dai tracciatori:
+   parte in mezzo alle prese di partenza, arriva appena sotto il Top (se ce n'è più d'uno, il più lontano dalla partenza)
+   e passa nel mezzo delle prese del blocco, seguendole nell'ordine in cui si sale (media pesata, curva morbida).
+   Poi gira attorno alle prese del blocco stesso; le prese degli altri boulder si possono attraversare. */
 const lineCache = {};
 function autoLine(c, w){
   const H = c.holds, W = w.w; if(H.length < 2) return null;
-  const avg = l => [l.reduce((t,h) => t + h.x, 0)/l.length, l.reduce((t,h) => t + h.y, 0)/l.length];
-  const st = H.filter(isStart), tops = H.filter(h => h.role === 'top');
-  /* partenza della linea: sotto i punti di partenza (mani e piedi) */
-  const st0 = st.length ? st : [H[0]];
-  const sBot = Math.max(...st0.map(h => holdBox(h, W).y1));
-  const S = [avg(st0)[0], Math.min(sBot + W*0.025, w.h - W*0.01)];
-  let T = tops.length ? avg(tops) : null;
-  if(!T){ let far = H[0]; H.forEach(h => { if(Math.hypot(h.x-S[0], h.y-S[1]) > Math.hypot(far.x-S[0], far.y-S[1])) far = h; }); T = [far.x, far.y]; }
-  const ax = T[0]-S[0], ay = T[1]-S[1], L2 = ax*ax + ay*ay; if(L2 < 1) return null;
-  const mid = H.filter(h => h.role === 'hold'), K = 3, bins = Array.from({length:K}, () => []);
-  mid.forEach(h => { const t = ((h.x-S[0])*ax + (h.y-S[1])*ay)/L2; if(t > 0.02 && t < 0.98) bins[Math.min(K-1, Math.floor(t*K))].push(h); });
-  const guide = [S]; bins.forEach(b => { if(b.length) guide.push(avg(b)); }); guide.push(T);
-  const bm = busyMap(w);
-  const key = JSON.stringify([guide.map(q => q.map(Math.round)), w.circuits.map(x => x.holds.length + ':' + (x.holds[0] ? Math.round(x.holds[0].x) : 0) + ':' + x.holds.map(h => isStart(h) ? (h.marks || []).length : '').join('')), !!bm]);
+  const key = JSON.stringify([W, H.map(h => [Math.round(h.x), Math.round(h.y), h.role, h.poly ? h.poly.length : h.r])]);
   const ce = lineCache[c.id]; if(ce && ce.key === key) return ce.pts;
-  let pts = routeLine(w, guide, bm, sBot);
-  if(!pts) pts = guide;
-  const out = pts.flatMap(q => [Math.round(q[0]), Math.round(q[1])]);
+  const avg = l => [l.reduce((t,h) => t + h.x, 0)/l.length, l.reduce((t,h) => t + h.y, 0)/l.length];
+  const far = (l, P) => l.reduce((a, b) => Math.hypot(b.x-P[0], b.y-P[1]) > Math.hypot(a.x-P[0], a.y-P[1]) ? b : a);
+  const st = H.filter(isStart), tops = H.filter(h => h.role === 'top');
+  const st0 = st.length ? st : [H.reduce((a, b) => b.y > a.y ? b : a)];
+  const shapes = H.map(h => ({ h, b: holdBox(h, W) })), m = W*0.012;
+  const near = (x, y, e) => x > e.b.x0 - m && x < e.b.x1 + m && y > e.b.y0 - m && y < e.b.y1 + m &&
+    (e.h.poly ? (inPoly(e.h.poly, x, y) || polyDist(x, y, e.h.poly) < m) : Math.hypot(x - e.h.x, y - e.h.y) < e.h.r*W*1.2 + m);
+  const busy = q => shapes.some(e => near(q[0], q[1], e));
+  /* gli estremi non stanno sopra una presa: si spostano nel punto libero più vicino */
+  const free = q => { if(!busy(q)) return q; for(let r = 1; r <= 12; r++) for(let k = 0; k < 16; k++){ const a = k/16*Math.PI*2, p = [q[0] + Math.cos(a)*r*W*0.01, q[1] + Math.sin(a)*r*W*0.01]; if(!busy(p)) return p; } return q; };
+  let S = avg(st0);
+  const t0 = tops.length ? far(tops, S) : far(H, S), T = [t0.x, t0.y];
+  const d = Math.hypot(S[0]-T[0], S[1]-T[1]); if(d < 1) return null;
+  const Te = free([T[0] + (S[0]-T[0])/d*W*0.04, T[1] + (S[1]-T[1])/d*W*0.04]); S = free(S);
+  /* prese intermedie in ordine di salita (proiezione sulla direzione partenza → Top) e media scorrevole */
+  const ax = Te[0]-S[0], ay = Te[1]-S[1], L2 = ax*ax + ay*ay;
+  const pts = [[S, 0]].concat(H.filter(h => h.role === 'hold').map(h => [[h.x, h.y], ((h.x-S[0])*ax + (h.y-S[1])*ay)/L2]).filter(q => q[1] > -0.1 && q[1] < 1.1), [[Te, 1]]);
+  const n = Math.max(20, Math.ceil(Math.sqrt(L2)/(W*0.01))), sg = 0.16;
+  let p = Array.from({length: n}, (_, k) => { const u = k/(n-1); let sx = 0, sy = 0, sw = 0;
+    pts.forEach(q => { const g = Math.exp(-((q[1]-u)**2)/(2*sg*sg)); sx += g*q[0][0]; sy += g*q[0][1]; sw += g; }); return [sx/sw, sy/sw]; });
+  p[0] = S; p[n-1] = Te;
+  /* gira attorno alle prese del blocco: i punti sopra una presa si spostano di lato, poi si ammorbidisce */
+  for(let it = 0; it < 90; it++){
+    const q = p.map(v => v.slice());
+    for(let k = 1; k < n-1; k++){
+      const tx = p[k+1][0]-p[k-1][0], ty = p[k+1][1]-p[k-1][1], tl = Math.hypot(tx, ty) || 1, nx = -ty/tl, ny = tx/tl;
+      shapes.forEach(e => { if(!near(p[k][0], p[k][1], e)) return;
+        const cx = (e.b.x0+e.b.x1)/2, cy = (e.b.y0+e.b.y1)/2, sgn = (p[k][0]-cx)*nx + (p[k][1]-cy)*ny >= 0 ? 1 : -1;
+        q[k][0] += sgn*nx*W*0.006; q[k][1] += sgn*ny*W*0.006; });
+    }
+    for(let k = 1; k < n-1; k++){ let sx = 0, sy = 0, sw = 0;
+      for(let j = -4; j <= 4; j++){ const i = Math.max(0, Math.min(n-1, k+j)), g = 5 - Math.abs(j); sx += g*q[i][0]; sy += g*q[i][1]; sw += g; }
+      p[k] = [sx/sw, sy/sw]; }
+  }
+  const out = rdpPts(p, W*0.0015).flatMap(q => [Math.round(q[0]), Math.round(q[1])]);
   lineCache[c.id] = { key, pts: out };
   return out;
-}
-function routeLine(w, guide, bm, sBot){
-  const W = w.w, Hh = w.h, s = bm ? bm.s : 140 / Math.max(W, Hh);
-  const gw = bm ? bm.bw : Math.max(8, Math.round(W*s)), gh = bm ? bm.bh : Math.max(8, Math.round(Hh*s)), N = gw*gh;
-  /* ostacoli: 0 parete libera … 1 presa */
-  const O0 = new Float32Array(N), B = new Float32Array(N);
-  if(bm) for(let i=0;i<N;i++) B[i] = bm.d[i];
-  w.circuits.forEach(x => { if(isOff(x)) return; x.holds.forEach(h => {
-    const p = h.poly ? h.poly : null, bb = holdBox(h, W);
-    const x0 = Math.max(0, Math.floor(bb.x0*s)), x1 = Math.min(gw-1, Math.ceil(bb.x1*s)), y0 = Math.max(0, Math.floor(bb.y0*s)), y1 = Math.min(gh-1, Math.ceil(bb.y1*s));
-    for(let yy=y0; yy<=y1; yy++) for(let xx=x0; xx<=x1; xx++){
-      const px = (xx+0.5)/s, py = (yy+0.5)/s;
-      if(p ? inPoly(p, px, py) : Math.hypot(px-h.x, py-h.y) <= h.r*W) O0[yy*gw+xx] = 1;
-    }
-  }); });
-  /* anche le tacche di partenza sono ostacoli */
-  wallMarks(w).forEach(segs => segs.forEach(q => {
-      const n = Math.ceil(Math.hypot(q[2]-q[0], q[3]-q[1])*s*2) + 1;
-      for(let k=0;k<=n;k++){ const gx = Math.round((q[0] + (q[2]-q[0])*k/n)*s - 0.5), gy = Math.round((q[1] + (q[3]-q[1])*k/n)*s - 0.5);
-        if(gx >= 0 && gy >= 0 && gx < gw && gy < gh) O0[gy*gw+gx] = 1; }
-  }));
-
-  /* allargo di una cella: la linea ha uno spessore */
-  const O = new Float32Array(N);
-  for(let y=0;y<gh;y++) for(let x=0;x<gw;x++){
-    let m = 0;
-    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){ const xx = x+dx, yy = y+dy; if(xx>=0 && yy>=0 && xx<gw && yy<gh){ const v = O0[yy*gw+xx]*(dx||dy ? 0.85 : 1); if(v > m) m = v; } }
-    O[y*gw+x] = m;
-  }
-  /* prese viste nella foto: si evitano, ma con meno forza di quelle segnate (sono tante e farebbero zig-zag) */
-  const Bs = new Float32Array(N);
-  for(let y=0;y<gh;y++) for(let x=0;x<gw;x++){ let m = 0; for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){ const xx = x+dx, yy = y+dy; if(xx>=0 && yy>=0 && xx<gw && yy<gh) m = Math.max(m, B[yy*gw+xx]*(dx||dy ? 0.7 : 1)); } Bs[y*gw+x] = m; }
-  /* distanza dalla linea guida, per non allontanarsi dalla zona del blocco */
-  const G = guide.map(q => [q[0]*s, q[1]*s]), span = Math.max(4, Math.hypot(G[G.length-1][0]-G[0][0], G[G.length-1][1]-G[0][1])*0.12);
-  const gd = (x, y) => { let d = 1e9; for(let k=0;k<G.length-1;k++) d = Math.min(d, segDist(x, y, G[k][0], G[k][1], G[k+1][0], G[k+1][1])); return d; };
-  const cost = new Float32Array(N); for(let y=0;y<gh;y++) for(let x=0;x<gw;x++){ const d = gd(x+0.5, y+0.5)/span; cost[y*gw+x] = 1 + 60*O[y*gw+x] + 4*Bs[y*gw+x]*Bs[y*gw+x] + 0.5*d*d; }
-  const cl = (v, m) => Math.max(0, Math.min(m-1, Math.round(v)));
-  /* partenza e arrivo: il punto di parete libera più vicino (non si parte né si arriva sopra una presa) */
-  /* si cerca solo dalla parte dell'altra estremità: la linea non deve girare attorno alle prese di partenza o al Top */
-  const freeNear = (x0, y0, toward, back, minY) => { let best = null, bd = 1e9;
-    const L = Math.hypot(toward[0]-x0, toward[1]-y0) || 1, ux = (toward[0]-x0)/L, uy = (toward[1]-y0)/L;
-    for(let dy=-8; dy<=8; dy++) for(let dx=-8; dx<=8; dx++){ const x = x0+dx, y = y0+dy; if(x<0 || y<0 || x>=gw || y>=gh) continue;
-      if(dx*ux + dy*uy < -back || y < minY) continue;
-      const i = y*gw+x; if(O[i] >= 0.3 || Bs[i] >= 0.5) continue;
-      const d = Math.hypot(dx, dy) + 0.6*Math.abs(dx*uy - dy*ux); if(d < bd){ bd = d; best = [x, y]; } }
-    return best || [x0, y0]; };
-  const g0 = [cl(G[0][0]-0.5, gw), cl(G[0][1]-0.5, gh)], g1 = [cl(G[G.length-1][0]-0.5, gw), cl(G[G.length-1][1]-0.5, gh)];
-  const [sx, sy] = freeNear(g0[0], g0[1], g1, 99, Math.ceil(sBot*s)), [tx, ty] = freeNear(g1[0], g1[1], g0, 0, -1);
-  /* A* su 8 vicini */
-  const dist = new Float32Array(N).fill(Infinity), prev = new Int32Array(N).fill(-1), done = new Uint8Array(N);
-  const heap = []; const push = (i, f) => { heap.push([f, i]); let k = heap.length-1; while(k){ const p = (k-1)>>1; if(heap[p][0] <= heap[k][0]) break; [heap[p], heap[k]] = [heap[k], heap[p]]; k = p; } };
-  const pop = () => { const top = heap[0], last = heap.pop(); if(heap.length){ heap[0] = last; let k = 0; for(;;){ const l = 2*k+1, r = l+1; let m = k; if(l < heap.length && heap[l][0] < heap[m][0]) m = l; if(r < heap.length && heap[r][0] < heap[m][0]) m = r; if(m === k) break; [heap[m], heap[k]] = [heap[k], heap[m]]; k = m; } } return top; };
-  const s0 = sy*gw+sx, t0 = ty*gw+tx; dist[s0] = 0; push(s0, 0);
-  const NB = [[1,0,1],[-1,0,1],[0,1,1],[0,-1,1],[1,1,1.414],[1,-1,1.414],[-1,1,1.414],[-1,-1,1.414]];
-  while(heap.length){
-    const [, i] = pop(); if(done[i]) continue; done[i] = 1; if(i === t0) break;
-    const x = i % gw, y = (i - x)/gw;
-    for(const [dx, dy, l] of NB){
-      const xx = x+dx, yy = y+dy; if(xx<0 || yy<0 || xx>=gw || yy>=gh) continue;
-      const j = yy*gw+xx; if(done[j]) continue;
-      const nd = dist[i] + l*(cost[i] + cost[j])/2;
-      if(nd < dist[j]){ dist[j] = nd; prev[j] = i; push(j, nd + Math.hypot(tx-xx, ty-yy)); }
-    }
-  }
-  if(prev[t0] < 0 && t0 !== s0) return null;
-  const path = []; for(let i = t0; i >= 0; i = prev[i]){ path.push([i % gw + 0.5, Math.floor(i / gw) + 0.5]); if(i === s0) break; }
-  path.reverse();
-  const at = q => O[cl(q[1]-0.5, gh)*gw + cl(q[0]-0.5, gw)];
-  const atB = q => Bs[cl(q[1]-0.5, gh)*gw + cl(q[0]-0.5, gw)];
-  const P = path; if(P.length < 2) return null;
-  /* ammorbidisco: ogni punto si avvicina alla media dei vicini, ma solo se non finisce su una presa */
-  const Q = P.map(q => q.slice());
-  for(let it=0; it<120; it++){
-    for(let k=1;k<Q.length-1;k++){
-      const u = Math.max(0, k-2), v = Math.min(Q.length-1, k+2);
-      const mx = (Q[k-1][0] + Q[k+1][0] + Q[u][0] + Q[v][0])/4, my = (Q[k-1][1] + Q[k+1][1] + Q[u][1] + Q[v][1])/4;
-      const c2 = [Q[k][0] + (mx - Q[k][0])*0.5, Q[k][1] + (my - Q[k][1])*0.5];
-      const o2 = at(c2), b2 = atB(c2); if((o2 < 0.35 || o2 <= at(Q[k])) && (b2 < 0.7 || b2 <= atB(Q[k]) + 0.1)) Q[k] = c2;
-    }
-  }
-  const out = rdpPts(Q, 0.5);
-  return out.map(q => [q[0]/s, q[1]/s]);
 }
 /* boulder: linea indicativa (disegnata a mano dal tracciatore, oppure automatica). Non copre le prese del blocco. */
 function lineSVG(pts, W, col, c, k){
