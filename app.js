@@ -1545,12 +1545,85 @@ async function detect(w, x, y, ts, strict){
   const done = busy('Rilevo la presa…');
   try{ await nextPaint(); return await detect0(w, x, y, ts, strict); } finally { done(); }
 }
+/* colore (Lab) attorno a un punto e colore tipico dentro un contorno, dalla foto */
+function cropLab(im, X0, Y0, W0, H0, max){
+  const f = Math.min(1, max / Math.max(W0, H0)), cw = Math.max(1, Math.round(W0*f)), ch = Math.max(1, Math.round(H0*f));
+  const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+  const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(im, X0, Y0, W0, H0, 0, 0, cw, ch);
+  return { d: g.getImageData(0, 0, cw, ch).data, cw, ch, f };
+}
+const labDist = (a, b) => Math.hypot((a[0] - b[0])*0.5, a[1] - b[1], a[2] - b[2]);
+async function smallOnVolume(w, x, y, r){
+  if(!r.poly || r.poly.length < 6) return null;
+  const L = Math.max(w.w, w.h), area = polyArea(r.poly);
+  if(area < (L*0.04)*(L*0.04)) return null;   /* già piccolo: è la presa */
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for(let i = 0; i < r.poly.length; i += 2){ x0 = Math.min(x0, r.poly[i]); x1 = Math.max(x1, r.poly[i]); y0 = Math.min(y0, r.poly[i+1]); y1 = Math.max(y1, r.poly[i+1]); }
+  const im = await loadImg(w.img);
+  /* colore sotto il dito: dischetto piccolo, mediana (scarta bullone e riflessi) */
+  const rad = Math.max(3, L*0.006), T = cropLab(im, Math.max(0, x - rad), Math.max(0, y - rad), rad*2, rad*2, 40), tp = [];
+  for(let i = 0; i < T.cw*T.ch; i++) tp.push(rgb2lab(T.d[i*4], T.d[i*4+1], T.d[i*4+2]));
+  const med = (v, k) => v.map(c => c[k]).sort((a, b) => a - b)[v.length >> 1];
+  const tap = [med(tp, 0), med(tp, 1), med(tp, 2)];
+  /* colore del contorno trovato, lontano dal dito */
+  const C = cropLab(im, x0, y0, x1 - x0, y1 - y0, 160), vp = [];
+  for(let gy = 0; gy < C.ch; gy += 2) for(let gx = 0; gx < C.cw; gx += 2){ const X = x0 + (gx + 0.5)/C.f, Y = y0 + (gy + 0.5)/C.f;
+    if(Math.hypot(X - x, Y - y) < rad*4 || !inPoly(r.poly, X, Y)) continue; const i = (gy*C.cw + gx)*4; vp.push(rgb2lab(C.d[i], C.d[i+1], C.d[i+2])); }
+  if(vp.length < 20) return null;
+  const vol = [med(vp, 0), med(vp, 1), med(vp, 2)];
+  if(labDist2(tap, vol) < 12) return null;   /* stesso colore: il dito è sul volume (o sulla presa grande), va bene così */
+  /* una maschera più piccola che contenga il dito e sia del colore del dito: SAM riguarda la zona ingrandita */
+  const fits = p => { if(!p || p.length < 6 || !inPoly(p, x, y)) return null; const a = polyArea(p); if(a >= area*0.12 || a < 30) return null;   /* molto più piccola: un pezzo grande è la seconda tinta della stessa presa (prese bicolore) */
+    const c = polyLab2(im, p); return c && labDist2(c, tap) < labDist2(c, vol) ? { p, a, c } : null; };
+  let best = null;
+  try{ for(const m of await samTilePoint(w, x, y)){ const f = fits(m.poly); if(f && m.q > 0.6 && (!best || f.a > best.a)) best = f; } }catch(e){}
+  if(!best){ try{ const c = await colorAuto(w, x, y, area*0.12); if(c) best = fits(c.poly); }catch(e){} }
+  if(!best) return null;
+  const p = best.p; let A = 0, cx = 0, cy = 0;
+  for(let i = 0, n = p.length/2; i < n; i++){ const ax = p[2*i], ay = p[2*i+1], bx = p[(2*i+2) % p.length], by = p[(2*i+3) % p.length], c = ax*by - bx*ay; A += c; cx += (ax+bx)*c; cy += (ay+by)*c; }
+  A /= 2; return { poly: p, cx: cx/(6*A), cy: cy/(6*A), area: Math.abs(A), solid: Math.abs(A)/(hullAreaFlat(p) || 1), sam: true };
+}
+const labDist2 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+/* SAM su un riquadro piccolo (18% della foto) attorno al punto: tutte e tre le maschere, in coordinate della foto */
+async function samTilePoint(w, x, y){
+  const { T, xs, ys } = fineGrid(w);
+  const pick = (v, P) => { let b = P[0], bm = -1e9; P.forEach(t => { const m = Math.min(v - t, t + T - v); if(m > bm){ bm = m; b = t; } }); return b; };
+  const tx = pick(x, xs), ty = pick(y, ys), E = await tileEmbed(w, tx, ty, T), s = E.s;
+  const r = await sam.dec.run({
+    image_embeddings: new ort.Tensor('float32', E.ed.slice(), E.edims),
+    point_coords: new ort.Tensor('float32', new Float32Array([(x - tx)*s, (y - ty)*s, 0, 0]), [1,2,2]),
+    point_labels: new ort.Tensor('float32', new Float32Array([1, -1]), [1,2]),
+    mask_input: new ort.Tensor('float32', new Float32Array(256*256), [1,1,256,256]),
+    has_mask_input: new ort.Tensor('float32', new Float32Array([0]), [1]),
+    orig_im_size: new ort.Tensor('float32', new Float32Array([1024, 1024]), [2])
+  });
+  const md = r.masks.data, iou = r.iou_predictions.data, nm = r.masks.dims[1], N = 1024*1024, out = [], k = 1/s;
+  for(let j = 0; j < nm; j++){
+    const mk = new Uint8Array(N), off = j*N; let a = 0; for(let i = 0; i < N; i++) if(md[off+i] > 0){ mk[i] = 1; a++; }
+    if(a < 20) continue;
+    const tr = maskToPoly(mk, 1024, 1024, (x - tx)*s, (y - ty)*s); if(!tr || !tr.inside || tr.pts.length < 8) continue;
+    const pts = rdpPts(smoothClosed(tr.pts.map(p => [tx + (p[0] + 0.5)*k, ty + (p[1] + 0.5)*k]), 2), Math.max(0.5, 0.7*k));
+    const poly = []; pts.forEach(p => poly.push(Math.round(p[0]), Math.round(p[1])));
+    out.push({ poly, q: iou[j] });
+  }
+  return out;
+}
+function polyLab2(im, poly){
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for(let i = 0; i < poly.length; i += 2){ x0 = Math.min(x0, poly[i]); x1 = Math.max(x1, poly[i]); y0 = Math.min(y0, poly[i+1]); y1 = Math.max(y1, poly[i+1]); }
+  const C = cropLab(im, x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0), 80), v = [];
+  for(let gy = 0; gy < C.ch; gy++) for(let gx = 0; gx < C.cw; gx++){ if(!inPoly(poly, x0 + (gx + 0.5)/C.f, y0 + (gy + 0.5)/C.f)) continue; const i = (gy*C.cw + gx)*4; v.push(rgb2lab(C.d[i], C.d[i+1], C.d[i+2])); }
+  if(v.length < 3) return null;
+  const med = k => v.map(c => c[k]).sort((a, b) => a - b)[v.length >> 1];
+  return [med(0), med(1), med(2)];
+}
 async function detect0(w, x, y, ts, strict){
   if(samMaybe()){
     try{
       let r = await samSegment(w, x, y, ts || 1, strict);
       /* al tocco normale (non nel rilevamento automatico, non con Contorno +/-) il colore corregge SAM */
       if(!strict && (!ts || ts === 1)){ try{ const c = await colorFix(w, x, y, r); if(c) r = c; }catch(e){ console.warn('colore', e); } }
+      /* presa piccola montata su un volume: il tocco prende tutto il volume. Se il colore sotto il dito è diverso
+         da quello del contorno trovato, si cerca la presa più piccola (il volume resta raggiungibile con "Contorno +") */
+      if(r && !strict && (!ts || ts === 1)){ try{ const s = await smallOnVolume(w, x, y, r); if(s) r = s; }catch(e){ console.warn('presa su volume', e); } }
       if(r) return r;
       if(r === null && strict) return null;
     }catch(e){ console.warn('SAM errore', e); }
