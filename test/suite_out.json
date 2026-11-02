@@ -65,6 +65,7 @@
   [
    "Numeri",
    "Linee",
+   "Oscura",
    "Altri circuiti"
   ]
  ],
@@ -208,7 +209,7 @@
    "walls": 4,
    "sectors": 1,
    "testCirc": true,
-   "sectorImg": "img/muro1.jpg?u=6v2i54t-1793625043744.jpg"
+   "sectorImg": "img/muro1.jpg?u=0lwzo7o-1793626969827.jpg"
   }
  ],
  [
@@ -294,7 +295,7 @@
  [
   "D.afterGrade",
   [
-   "Cagliostro e la Capra Nuovo",
+   "Lo Scorpione Elegante Nuovo",
    "Arancio",
    "Giallo"
   ]

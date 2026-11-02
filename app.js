@@ -182,11 +182,11 @@ let PUBREV = S.rev;
 let PUBWALLS = [];
 /* preferenze di visualizzazione (numeri, linee, altri blocchi, oscura): sono di chi guarda, restano sul suo telefono
    e non vengono pubblicate. I numeri partono accesi. */
-const VIEW_KEYS = ['numbers', 'lines', 'others', 'othersV', 'dim'];   /* others = staff mentre traccia, othersV = chi guarda */
+const VIEW_KEYS = ['numbers', 'lines', 'others', 'othersV', 'dim', 'dimC'];   /* dimC = oscura sui circuiti, chi guarda (di base acceso) */   /* others = staff mentre traccia, othersV = chi guarda */
 function applyViewPrefs(){
   let v = {};
   try{ v = JSON.parse(localStorage.getItem('view-prefs') || '{}') || {}; }catch(e){}
-  Object.assign(S.prefs, { numbers: true, lines: false, others: true, othersV: false, dim: true }, v);
+  Object.assign(S.prefs, { numbers: true, lines: false, others: true, othersV: false, dim: true, dimC: true }, v);
 }
 function saveViewPrefs(){ const v = {}; VIEW_KEYS.forEach(k => v[k] = !!S.prefs[k]); try{ localStorage.setItem('view-prefs', JSON.stringify(v)); }catch(e){} }   /* muri come sono pubblicati adesso */
 let EDIT = false, SB = null, BASE = null, ME = null;
@@ -3094,7 +3094,10 @@ function renderPub(){
   b.textContent = ui.publishing ? 'Pubblico…' : 'Pubblica';
 }
 /* oscuramento del resto della foto: in Traccia solo se chiesto col tasto, a schermo intero sempre, altrimenti come da preferenza */
-function dimOn(editing){ return editing ? !!ui.editDim : (!!ui.full || S.prefs.dim || newC()); }
+function dimOn(editing){ if(editing) return !!ui.editDim; const w = curWall();
+  /* circuiti: chi guarda sceglie (con il muro scuro le prese degli altri colori si vedono poco, e per impararle serve vederle) */
+  if(w && !isSec(w)) return S.prefs.dimC !== false;
+  return !!ui.full || S.prefs.dim || newC(); }
 function renderStage(){
   const w = curWall(), st = $('#stage'), em = $('#empty'), z = $('#zoom');
   if(ui.home){ st.hidden = true; z.hidden = true; em.hidden = false; em.innerHTML = homeScreen(); return; }
@@ -3285,7 +3288,7 @@ function renderTools(){
     const p = S.prefs;
     /* circuiti: numeri (accesi di base), linee (spente) e altri circuiti del muro in trasparenza (spenti). Si ricordano su questo telefono */
     const tg = (k, l) => `<button class="btn ${p[k] ? 'on' : ''}" data-act="pref" data-k="${k}" aria-pressed="${!!p[k]}">${l}</button>`;
-    el.innerHTML = c && !isSec(w) ? `<div class="mini">${tg('numbers', 'Numeri')}${tg('lines', 'Linee')}${w.circuits.length > 1 ? tg('othersV', 'Altri circuiti') : ''}</div>` : '';
+    el.innerHTML = c && !isSec(w) ? `<div class="mini">${tg('numbers', 'Numeri')}${tg('lines', 'Linee')}${tg('dimC', 'Oscura')}${w.circuits.length > 1 ? tg('othersV', 'Altri circuiti') : ''}</div>` : '';
     return;
   }
   const h = c && ui.sel != null ? c.holds[ui.sel] : null;
