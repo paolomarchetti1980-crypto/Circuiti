@@ -114,8 +114,115 @@
   true
  ],
  [
-  "FAIL gestore",
-  "page.selectOption: Timeout 30000ms exceeded."
+  "B.genOk",
+  true
+ ],
+ [
+  "B.curbar",
+  "Test Circuito25° · Continuo · piedi obbligati · 0 movimenti6bModificaCircuiti (3)"
+ ],
+ [
+  "B.hands",
+  [
+   "Sinistra",
+   "Destra"
+  ]
+ ],
+ [
+  "B.holds",
+  [
+   "start:L:p",
+   "hold:R:p",
+   "hold:L:p",
+   "hold:R:p",
+   "hold:L:p"
+  ]
+ ],
+ [
+  "B.fields",
+  [
+   "6b",
+   "Continuo",
+   "obbligati",
+   25
+  ]
+ ],
+ [
+  "B.afterDup",
+  [
+   "start:L",
+   "hold:R",
+   "hold:L",
+   "hold:R",
+   "top:L",
+   "hold:R"
+  ]
+ ],
+ [
+  "B.pub",
+  true
+ ],
+ [
+  "B.wallTools",
+  [
+   "Sblocca muro",
+   "Torna ai circuiti"
+  ]
+ ],
+ [
+  "B.editDimBtn",
+  1
+ ],
+ [
+  "B.sector",
+  "Settore 1"
+ ],
+ [
+  "B.secModes",
+  []
+ ],
+ [
+  "B.bTitle",
+  "Verde 1"
+ ],
+ [
+  "B.boulder",
+  [
+   {
+    "diff": "verde",
+    "num": 1,
+    "color": "#23b45a",
+    "hc": "#8a4dff",
+    "tags": [
+     "Tallone"
+    ],
+    "setter": "Marco",
+    "n": 3,
+    "drawn": 1
+   }
+  ]
+ ],
+ [
+  "B.published",
+  {
+   "walls": 4,
+   "sectors": 1,
+   "testCirc": true,
+   "sectorImg": "img/muro1.jpg?u=bcivkl4-1793624027152.jpg"
+  }
+ ],
+ [
+  "B.afterReloadSec",
+  [
+   "Boulder"
+  ]
+ ],
+ [
+  "B.wallSheetBtns",
+  [
+   "Rinomina",
+   "Archivia settore"
+  ]
  ],
  [
   "C.modes",
@@ -127,7 +234,7 @@
  ],
  [
   "C.boulderWall",
-  "Nessun settore"
+  "Settori"
  ],
  [
   "C.boulderModes",
@@ -135,15 +242,26 @@
  ],
  [
   "C.overNew",
-  0
+  1
  ],
  [
-  "FAIL tracciatore",
-  "page.tap: Timeout 5000ms exceeded."
+  "C.bTitle",
+  "Giallo 1"
+ ],
+ [
+  "C.published",
+  {
+   "walls": 4,
+   "boulders": [
+    "verde1",
+    "giallo1"
+   ]
+  }
  ],
  [
   "D.clistRows",
   [
+   "Test Circuito25° · Continuo · piedi obbligati · 4 movimenti6b",
    "Arancio0 movimenti–",
    "Giallo4 movimenti–"
   ]
@@ -156,7 +274,7 @@
  ],
  [
   "D.active",
-  "Arancio0 movimenti–"
+  "Test Circuito25° · Continuo · piedi obbligati · 4 movimenti6b"
  ],
  [
   "D.dimOn",
@@ -169,13 +287,15 @@
  [
   "D.viewFilters",
   [
+   "Novità · 1",
    "Filtri"
   ]
  ],
  [
   "D.afterGrade",
   [
-   "Ercole sul Lancio",
+   "Braccio di Ferro Silenzioso Nuovo",
+   "Arancio",
    "Giallo"
   ]
  ],
@@ -185,10 +305,33 @@
  ],
  [
   "D.bRows",
+  [
+   "Verde 1"
+  ]
+ ],
+ [
+  "D.bOn",
   []
  ],
  [
-  "FAIL gestore",
-  "page.tap: Timeout 5000ms exceeded."
+  "D.clientShowChips",
+  0
+ ],
+ [
+  "D.bDots",
+  0
+ ],
+ [
+  "D.staff",
+  [
+   "p@x.it · gestoretu"
+  ]
+ ],
+ [
+  "D.staff2",
+  [
+   "p@x.it · gestoretu",
+   "nuovo@x.it · tracciatoreTogli"
+  ]
  ]
 ]

@@ -91,7 +91,7 @@ if(!(await pg.locator('.scard[data-act=opensec]:visible').count()) && !(await pg
   await pg.tap('[data-act="clist"] >> nth=-1', {timeout:5000}); await pg.waitForTimeout(200);
   await pg.tap('#card [data-act="addc"]', {timeout:5000}); await pg.waitForTimeout(300);
   log('B.newName', (await pg.inputValue('#cname')).length > 3);
-  await pg.selectOption('#cgrade', '6b'); await pg.selectOption('#cstyle', 'Tacche');
+  await pg.selectOption('#cgrade', '6b'); await pg.tap('[data-act="tgopen"][data-v="3"]', {timeout:5000}); await pg.tap('[data-act="btag"][data-v="Continuo"]', {timeout:5000});
   await pg.tap('[data-act="cfeet"][data-v="obbligati"]', {timeout:5000}); await pg.selectOption('#cangle', '25');
   await pg.tap('[data-act="cgen"]', {timeout:5000}); const nm = await pg.inputValue('#cname'); log('B.genOk', nm.length > 3);
   await pg.fill('#cname', 'Test Circuito');
@@ -102,7 +102,7 @@ if(!(await pg.locator('.scard[data-act=opensec]:visible').count()) && !(await pg
   let d = await draft(pg);
   const w0 = d.walls.find(w => w.id === d.active); const c0 = w0.circuits.find(c => c.name === 'Test Circuito');
   log('B.holds', c0 ? c0.holds.map(h => h.role + ':' + h.hand + ':' + (h.poly ? 'p' : 'c')) : null);
-  log('B.fields', c0 ? [c0.grade, c0.style, c0.feet, c0.angle] : null);
+  log('B.fields', c0 ? [c0.grade, (c0.tags || []).join(','), c0.feet, c0.angle] : null);
   // seleziona presa e cambia ruolo in arrivo
   const last = c0.holds[c0.holds.length-1];
   const bb = await pg.locator('#stage').boundingBox();
