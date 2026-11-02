@@ -128,7 +128,7 @@ if(!(await pg.locator('.scard[data-act=opensec]:visible').count()) && !(await pg
   log('B.sector', await pg.textContent('#wallName'));
   log('B.secModes', await txt(pg, '#modes button:not([hidden])'));
   await pg.tap('[data-act="cedit"]', {timeout:5000}); await pg.waitForTimeout(200);
-  await pg.tap('[data-act="bdiff"][data-v="verde"]', {timeout:5000}); await pg.tap('[data-act="hcolor"][data-c="#8a4dff"]', {timeout:5000}); await pg.tap('[data-act="btag"][data-v="Tallone"]', {timeout:5000});
+  await pg.tap('[data-act="bdiff"][data-v="verde"]', {timeout:5000}); await pg.tap('[data-act="hcolor"][data-c="#8a4dff"]', {timeout:5000}); await pg.tap('[data-act="tgopen"][data-v="4"]', {timeout:5000}); await pg.tap('[data-act="btag"][data-v="Tallone"]', {timeout:5000});
   await pg.evaluate(() => { const s = document.getElementById('bsetsel'), o = document.createElement('option'); o.value = o.textContent = 'Marco'; s.appendChild(o); }); await pg.selectOption('#bsetsel', 'Marco'); await pg.fill('#bnotes', 'nota');
   log('B.bTitle', await pg.textContent('#card h2'));
   await pg.tap('[data-act="close"]', {timeout:5000}); await pg.waitForTimeout(200);
@@ -198,7 +198,7 @@ if(!(await pg.locator('.scard[data-act=opensec]:visible').count()) && !(await pg
   log('D.bRows', await txt(pg, '.lrow b'));
   await (async()=>{ if(await pg.locator('#prevBtn.on').count()) await pg.tap('#prevBtn.on'); })(); await pg.waitForTimeout(200);
   await pg.tap('#chips .lrow >> nth=0', {timeout:5000}); await pg.waitForTimeout(300);
-  await pg.tap('[data-act="cedit"]', {timeout:5000}); await pg.fill('#bdrem', '2026-01-01'); await pg.tap('[data-act="close"]', {timeout:5000});
+  await pg.tap('[data-act="cedit"]', {timeout:5000}); await pg.tap('[data-act="boff"]', {timeout:5000}); await pg.tap('[data-act="boff"]', {timeout:5000}); await pg.tap('[data-act="close"]', {timeout:5000});
   await pg.tap('#prevBtn', {timeout:5000}); await pg.waitForTimeout(300);
   log('D.bOn', await txt(pg, '.lrow b'));
   log('D.clientShowChips', await pg.locator('[data-act="bshow"]').count());
