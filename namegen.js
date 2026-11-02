@@ -15,6 +15,13 @@ const ESCL = ['Mamma mia!','Mannaggia!','Accipicchia!','Caspita!','Perbacco!','S
 const PAROLE = [['tacca',F],['svaso',M],['volume',M],['ribaltamento',M],['tallonaggio',M],['strapiombo',M],['dulfer',M],['bidito',M],['monodito',M],['lancio',M],['incrocio',M],['dinamico',M],['spigolo',M],['diedro',M],['tetto',M],['placca',F],['fessura',F],['pinza',F],['rovescio',M],['magnesite',F],['caduta',F],['sosta',F],['uscita',F],['partenza',F],['catena',F]];
 /* cose che possono capitare ai personaggi: "La Vendetta di Diabolik", "Lo Sbadiglio di Napoleone" */
 const VICENDE = [['vendetta',F],['segreto',M],['sbadiglio',M],['ritorno',M],['sogno',M],['salto',M],['scivolone',M],['volo',M],['tesoro',M],['scherzo',M],['merenda',F],['siesta',F],['fuga',F],['sfida',F],['rivincita',F],['gita',F],['paura',F],['furia',F],['pazienza',F],['tentazione',F],['promessa',F],['scommessa',F],['corsa',F],['nostalgia',F],['impresa',F],['ultima mossa',F],['grande giorno',M],['primo tiro',M],['passo falso',M],['colpo di genio',M]];
+/* pirati, cucina romana, mitologia, cielo: altri mondi da cui pescare, perché i nomi non si somiglino tutti */
+const PIRATI = [['galeone',M],['corsaro',M],['bucaniere',M],['forziere',M],['arrembaggio',M],['cannone',M],['ancora',F],['bussola',F],['mappa',F],['vela',F],['ciurma',F],['polena',F],['taverna',F],['cassa',F],['gamba di legno',F],['benda',F],['scialuppa',F],['bottiglia',F],['vedetta',F],['tempesta',F],['nave fantasma',F],['isola del tesoro',F],['albero maestro',M],['capitano',M],['mozzo',M],['nostromo',M],['doblone',M],['rum',M],['naufragio',M],['faro',M]];
+const CUCINA = [['supplì',M],['carbonara',F],['amatriciana',F],['gricia',F],['cacio e pepe',M],['maritozzo',M],['carciofo',M],['saltimbocca',M],['coda alla vaccinara',F],['pizza bianca',F],['porchetta',F],['trapizzino',M],['cornetto',M],['grattachecca',F],['abbacchio',M],['puntarelle',F],['fiore di zucca',M],['tiramisù',M],['cannolo',M],['arancino',M],['polpetta',F],['frittata',F],['bomboloni',M],['ciambella',F],['peperoncino',M]];
+const MITI = [['Minotauro',M],['Medusa',F],['Icaro',M],['Pegaso',M],['Ciclope',M],['Sirena',F],['Centauro',M],['Fenice',F],['Prometeo',M],['Atlante',M],['Sisifo',M],['Chimera',F],['Idra',F],['Cerbero',M],['Arianna',F],['Dedalo',M],['Calipso',F],['Polifemo',M],['Orfeo',M],['Pandora',F]];
+const CIELO = [['cometa',F],['aurora',F],['stella cadente',F],['via lattea',F],['costellazione',F],['nebulosa',F],['saturno',M],['plenilunio',M],['solstizio',M],['equinozio',M],['arcobaleno',M],['fulmine',M],['tuono',M],['grandine',F],['brezza',F],['scirocco',M],['tramontana',F],['libeccio',M],['bora',F],['zenit',M]];
+/* modi di dire, girati sull'arrampicata */
+const MODI = ['Chi va piano va lontano','Tutto fumo e niente arrosto','Piano piano si va lontano','Non dire gatto','Tra il dire e il fare','Ogni lasciata è persa','Chi la dura la vince','Sbagliando si impara','Il troppo stroppia','Meglio tardi che mai','Acqua in bocca','In bocca al lupo','Roma non fu fatta in un giorno','Chi si ferma è perduto','Ride bene chi ride ultimo','Tanto va la gatta al lardo','Non è tutto oro','Il buongiorno si vede dal mattino','A mali estremi','Campa cavallo','Fare il passo più lungo','Tirare la corda','Appeso a un filo','Con le mani in pasta','Avere le mani bucate'];
 /* parole legate allo stile del circuito */
 const STILE = {
   'Dinamico': [['salto',M],['lancio',M],['volo',M],['balzo',M],['tuffo',M]],
@@ -25,7 +32,21 @@ const STILE = {
   'Coordinazione': [['giravolta',F],['valzer',M],['intreccio',M],['capriola',F],['tango',M]],
   'Tacche': [['unghia',F],['lama',F],['rasoio',M],['graffio',M],['spina',F]],
   'Svasi': [['carezza',F],['scivolo',M],['sapone',M],['velluto',M],['saponetta',F]],
-  'Volumi': [['montagna',F],['onda',F],['collina',F],['cupola',F],['piramide',F]]
+  'Volumi': [['montagna',F],['onda',F],['collina',F],['cupola',F],['piramide',F]],
+  /* caratteristiche nuove (2/11) */
+  'Continuo': [['maratona',F],['traversata',F],['catena',F],['fiume',M],['nastro',M]],
+  'Fisico': [['morsa',F],['artiglio',M],['ruggito',M],['stretta',F],['zampata',F]],
+  'Di singolo': [['colpo',M],['scatto',M],['botta',F],['schiocco',M],['sparo',M]],
+  'Discontinuo': [['singhiozzo',M],['altalena',F],['zigzag',M],['ottovolante',M],['saliscendi',M]],
+  'Delicato': [['piuma',F],['carezza',F],['sussurro',M],['ricamo',M],['bolla',F]],
+  'Coordinativo': [['giravolta',F],['valzer',M],['intreccio',M],['capriola',F],['tango',M]],
+  'Pinze': [['tenaglia',F],['morsa',F],['pinzetta',F],['chela',F],['molletta',F]],
+  'Buchi': [['tana',F],['pozzo',M],['nido',M],['groviera',F],['cratere',M]],
+  'Maniglie': [['scala',F],['ringhiera',F],['corrimano',M],['manubrio',M],['passerella',F]],
+  'Rovesci': [['capovolta',F],['sottosopra',M],['rovescio',M],['inversione',F],['specchio',M]],
+  'Strapiombo': [['tetto',M],['balcone',M],['pancia',F],['grotta',F],['abisso',M]],
+  'Appoggiato': [['scivolo',M],['pendio',M],['rampa',F],['lastra',F],['sapone',M]],
+  'Loop': [['giostra',F],['carosello',M],['girotondo',M],['vortice',M],['anello',M]]
 };
 const pick = a => a[Math.floor(Math.random()*a.length)];
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
@@ -35,14 +56,28 @@ const art = (w, g) => g === F ? (vowel(w) ? "L'" : 'La ') : vowel(w) ? "L'" : lo
 const di = (w, g) => g === F ? (vowel(w) ? "dell'" : 'della ') : vowel(w) ? "dell'" : lo(w) ? 'dello ' : 'del ';
 const adj = (g) => { const a = pick(AGG); return g === F ? a[1] : a[0]; };
 const person = () => pick(Math.random() < 0.5 ? FUMETTI : STORICI);
+const mondo = () => pick([PIRATI, CUCINA, CIELO, ANIMALI, AMBIENTI]);
 function one(style){
-  const sw = STILE[style];
+  /* lo stile può essere un elenco di caratteristiche: se ne sceglie una che ha parole sue */
+  const ss = (Array.isArray(style) ? style : [style]).filter(x => STILE[x]);
+  const sw = ss.length ? STILE[pick(ss)] : null;
   const r = Math.random();
   /* spunto dallo stile (se c'è), anche coi personaggi */
   if(sw && r < 0.35){
     const [x, gx] = pick(sw);
     if(Math.random() < 0.4){ const [p] = person(); return art(x, gx) + cap(x) + ' di ' + p; }
     const [y, gy] = pick(ANIMALI.concat(AMBIENTI)); return art(x, gx) + cap(x) + ' ' + di(y, gy) + cap(y);
+  }
+  /* altri mondi (circa un nome su tre) */
+  if(Math.random() < 0.33){
+    const q = Math.random();
+    if(q < 0.18) return pick(MODI);
+    if(q < 0.34){ const [m, gm] = pick(MITI); return m + ' ' + cap(adj(gm)); }
+    if(q < 0.48){ const [m] = pick(MITI), [y, gy] = pick(PIRATI.concat(CUCINA, CIELO)); return art(y, gy) + y.split(' ').map(cap).join(' ') + ' di ' + m; }
+    const W = mondo(), [n, g] = pick(W);
+    if(q < 0.66) return art(n, g) + n.split(' ').map(cap).join(' ') + ' ' + cap(adj(g));
+    if(q < 0.82){ const [p] = person(); return art(n, g) + n.split(' ').map(cap).join(' ') + ' di ' + p; }
+    const [y, gy] = pick(mondo()); return art(n, g) + n.split(' ').map(cap).join(' ') + ' ' + di(y, gy) + y.split(' ').map(cap).join(' ');
   }
   const k = Math.random();
   if(k < 0.18){ const [n, g] = pick(ANIMALI.concat(AMBIENTI)); return cap(n) + ' ' + cap(adj(g)); }
@@ -59,9 +94,11 @@ function one(style){
   if(Math.random() < 0.5){ const e = pick(['Mannaggia','Accidenti','Addio','Gloria']); return e + ' ' + (gw === F ? (vowel(w) ? "all'" : 'alla ') : vowel(w) ? "all'" : lo(w) ? 'allo ' : 'al ') + cap(w) + '!'; }
   const e = pick(['Evviva','Viva','Abbasso']); return e + ' ' + art(w, gw).toLowerCase() + cap(w) + '!';
 }
+/* niente doppioni sullo stesso muro: né lo stesso nome né una parola importante già usata (Bradipo, Napoleone…) */
+const words = n => String(n).toLowerCase().replace(/[!?'’.,]/g, ' ').split(/\s+/).filter(w => w.length > 4);
 window.genCircuitName = function(style, used){
-  const u = new Set((used || []).map(s => String(s).toLowerCase()));
-  for(let i=0; i<40; i++){ const n = one(style); if(!u.has(n.toLowerCase())) return n; }
+  const u = new Set((used || []).map(s => String(s).toLowerCase())), uw = new Set((used || []).flatMap(words));
+  for(let i=0; i<80; i++){ const n = one(style); if(u.has(n.toLowerCase())) continue; if(i < 60 && words(n).some(w => uw.has(w))) continue; return n; }
   return one(style);
 };
 })();
