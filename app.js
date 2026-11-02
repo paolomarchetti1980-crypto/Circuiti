@@ -34,7 +34,7 @@ const BODY = `
       </div>
     </div>
     <div class="zoom" id="zoom" hidden>
-      <button id="numTg" class="dimtg" data-act="pref" data-k="numbers" aria-label="Numeri delle prese" title="Numeri delle prese" hidden><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><text x="12" y="16.3" text-anchor="middle" font-family="Barlow, Arial" font-weight="700" font-size="12" fill="currentColor">12</text></svg></button>
+      <button id="numTg" class="dimtg" data-act="pref" data-k="numbers" aria-label="Numeri delle prese" title="Numeri delle prese" hidden><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10.2 7.5l-1.2 9M14.9 7.5l-1.2 9M7.6 10.4h9.2M7.2 13.6h9.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
       <button id="lineTg" class="dimtg" data-act="pref" data-k="lines" aria-label="Linea del circuito" title="Linea del circuito" hidden><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19L10 11 15 14 19 5" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5" cy="19" r="2.2" fill="currentColor"/><circle cx="10" cy="11" r="2.2" fill="currentColor"/><circle cx="15" cy="14" r="2.2" fill="currentColor"/><circle cx="19" cy="5" r="2.2" fill="currentColor"/></svg></button>
       <button id="dimTg" class="dimtg" data-act="dimtg" aria-label="Faro: illumina tutto il muro o lascialo scuro" hidden></button>
       <button data-act="zoom" data-d="1" aria-label="Ingrandisci">+</button>
