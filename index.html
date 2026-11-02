@@ -53,6 +53,7 @@ button,label.btn{cursor:pointer}
 .zoom{position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;gap:6px}
 .zoom button{width:42px;height:42px;border-radius:12px;border:1px solid var(--line);background:var(--panel);font:700 20px/1 Barlow,sans-serif}
 .zoom .dimtg{display:flex;align-items:center;justify-content:center;color:var(--muted)}.zoom .dimtg.on{color:var(--accent);border-color:var(--accent)}.zoom .dimtg[hidden]{display:none}
+#app.ccomp .zoom .dimtg{width:38px;height:38px}
 .empty{margin:auto;max-width:340px;padding:24px;text-align:center}
 .empty h1{font:700 26px/1.15 "Barlow Semi Condensed",Barlow,sans-serif;margin:0 0 10px}
 .empty p{margin:0 0 18px;color:var(--muted)}
@@ -199,7 +200,7 @@ button,label.btn{cursor:pointer}
 #app.ccomp .stagewrap{flex:0 0 28%}
 #app.ccomp .dock{flex:1;max-height:none;margin-top:-16px}
 #app.ccomp .zoom button:not(.dimtg){display:none}
-#app.ccomp .zoom{top:10px;bottom:auto}
+#app.ccomp .zoom{top:10px;bottom:auto;gap:6px}
 #app.ccomp .stagewrap::after{content:"Tocca per schermo intero";position:absolute;right:10px;bottom:26px;padding:5px 10px;border-radius:999px;background:rgba(18,19,21,.8);border:1px solid rgba(255,255,255,.2);font:600 12px Barlow,sans-serif;color:#fff;pointer-events:none}
 .sqbar{display:flex;align-items:center;gap:10px;width:100%;margin:0 0 12px;padding:13px 14px;border-radius:14px;border:1px solid var(--line);background:var(--panel);color:var(--ink);text-align:left;font:600 16px Barlow,sans-serif}
 .sqbar span{flex:1}
@@ -353,5 +354,5 @@ button,label.btn{cursor:pointer}
 </style></head><body><div id="root"></div>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="namegen.js?v=198"></script><script id="app-js" src="app.js?v=198"></script>
+<script src="namegen.js?v=199"></script><script id="app-js" src="app.js?v=199"></script>
 </body></html>

@@ -34,6 +34,8 @@ const BODY = `
       </div>
     </div>
     <div class="zoom" id="zoom" hidden>
+      <button id="numTg" class="dimtg" data-act="pref" data-k="numbers" aria-label="Numeri delle prese" title="Numeri delle prese" hidden><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><text x="12" y="16.3" text-anchor="middle" font-family="Barlow, Arial" font-weight="700" font-size="12" fill="currentColor">12</text></svg></button>
+      <button id="lineTg" class="dimtg" data-act="pref" data-k="lines" aria-label="Linea del circuito" title="Linea del circuito" hidden><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19L10 11 15 14 19 5" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5" cy="19" r="2.2" fill="currentColor"/><circle cx="10" cy="11" r="2.2" fill="currentColor"/><circle cx="15" cy="14" r="2.2" fill="currentColor"/><circle cx="19" cy="5" r="2.2" fill="currentColor"/></svg></button>
       <button id="dimTg" class="dimtg" data-act="dimtg" aria-label="Faro: illumina tutto il muro o lascialo scuro" hidden></button>
       <button data-act="zoom" data-d="1" aria-label="Ingrandisci">+</button>
       <button data-act="zoom" data-d="-1" aria-label="Riduci">&minus;</button>
@@ -3121,6 +3123,8 @@ function renderStage(){
   /* chi guarda (boulder e circuiti): faro acceso = muro illuminato a colori pieni; spento = muro scuro, si vede il percorso */
   { const t = $('#dimTg'), show = !bOver() && !!curCircuit() && !(EDIT && S.mode !== 'view'), k = isSec(w) ? 'dimB' : 'dimC', lit = S.prefs[k] !== false;
     /* lit = muro oscurato: il faro è SPENTO (buio); faro acceso = muro illuminato, a colori pieni */
+    /* circuiti: numeri e linea, icone sulla foto come il faro */
+    [['numTg', 'numbers'], ['lineTg', 'lines']].forEach(([id, pk]) => { const b = $('#' + id); if(!b) return; const on = !!S.prefs[pk]; b.hidden = !show || isSec(w); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
     if(t){ t.hidden = !show; t.setAttribute('aria-pressed', String(!lit)); t.classList.toggle('on', !lit); t.title = lit ? 'Faro spento: il muro è scuro, si vede solo il percorso' : 'Faro acceso: muro illuminato, a colori pieni'; t.innerHTML = lit ? SPOT_OFF : SPOT_ON; } }
   st.classList.toggle('edit', EDIT && S.mode !== 'view');
   st.classList.toggle('linedraw', !!ui.bline || drawMode());
@@ -3407,7 +3411,7 @@ function renderFull(){
     (isSec(w) && c.notes ? `<p class="bnotes">${esc(c.notes)}</p>` : '')+
     /* circuiti: numeri, linee e altri circuiti si accendono qui, dove si guarda il percorso */
     (!isSec(w) ? (() => { const p = S.prefs, tg = (k, l) => `<button class="btn ${p[k] ? 'on' : ''}" data-act="pref" data-k="${k}" aria-pressed="${!!p[k]}">${l}</button>`;
-      return `<div class="mini" style="margin-top:10px">${tg('numbers', 'Numeri')}${tg('lines', 'Linee')}${w.circuits.length > 1 ? tg('othersV', 'Altri circuiti') : ''}</div>`; })() : '')+
+      return w.circuits.length > 1 ? `<div class="mini" style="margin-top:10px">${tg('othersV', 'Altri circuiti')}</div>` : ''; })() : '')+
     hidNote(c)+
     tickPanel(w, c)+
     (newC() ? `<div class="row fnavrow" style="margin-top:10px;flex-wrap:nowrap">`+
