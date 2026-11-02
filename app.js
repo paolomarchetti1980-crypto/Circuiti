@@ -130,13 +130,23 @@ function numField(w, c){
 }
 /* boulder: move, stile e particolarità (si possono scegliere più voci) */
 /* boulder: un solo elenco di caratteristiche, a gruppi (prima c'era anche un menu "Stile" che ripeteva le stesse voci) */
-const BTAG_GROUPS = [['Parete', ['Placca','Verticale','Strapiombo','Tetto','Spigolo','Diedro']],
-  ['Movimento', ['Partenza seduta','Traverso','Dinamico','Lancio','Equilibrio','Compressione','Opposizione','Coordinazione','Tallone','Punta','Incastro','Ribaltamento','Uscita alta','Morfologico']],
-  ['Prese', ['Tacche','Svasi','Pinze','Buchi','Volumi']],
-  ['Richiede', ['Forza','Tecnica','Resistenza']]];
+/* caratteristiche del boulder (2/11, versione di Paolo): ogni gruppo risponde a una domanda; "una" = una sola scelta nel gruppo */
+const BTAG_GROUPS = [
+  ['Inclinazione', ['Appoggiato','Verticale','Strapiombo','Tetto'], 'una'],
+  ['Conformazione', ['Spigolo','Diedro','Traverso','Rimonto','Variegato']],
+  ['Prese', ['Maniglie','Tacche','Svasi','Pinze','Buchi','Rovesci','Laterali','Piatte','Volumi']],
+  ['Movimento', ['Statico','Dinamico','Coordinazione','Bloccaggi','Compressione','Opposizione','Equilibrio']],
+  ['Piedi', ['Aderenza','Tallone','Punta','Incastro','Lolotte','Bicicletta','Microappoggi']],
+  ['Stile', ['Fisico','Tecnico','Coordinativo','Delicato'], 'una'],
+  ['Da sapere', ['Morfologico','Partenza sit','Partenza saltata','Pareti adiacenti','Spigoli vicini']]];
+/* nomi vecchi → nuovi (i boulder già segnati restano validi senza toccare i dati) */
+const BTAG_OLD = { Placca: 'Appoggiato', Forza: 'Fisico', Tecnica: 'Tecnico', Ribaltamento: 'Rimonto', 'Partenza seduta': 'Partenza sit' };
 const BTAGS = BTAG_GROUPS.flatMap(g => g[1]);
 /* il vecchio "stile" di un boulder vale come caratteristica (Tecnico → Tecnica) */
-const bTags = c => { const t = (c && c.tags || []).slice(); const st = c && c.style === 'Tecnico' ? 'Tecnica' : c && c.style; if(st && !t.includes(st)) t.unshift(st); return t; };
+const bTags = c => { const t = [], add = x => { const y = BTAG_OLD[x] || x; if(BTAGS.includes(y) && !t.includes(y)) t.push(y); };   /* le voci tolte (es. Resistenza) non si mostrano più */
+  if(c && c.style) add(c.style); (c && c.tags || []).forEach(add);
+  /* in ordine di gruppo, così la scheda e l'elenco si leggono sempre uguali */
+  return t.sort((a, b) => (BTAGS.indexOf(a) + 1 || 999) - (BTAGS.indexOf(b) + 1 || 999)); };
 
 /* lo stato arriva dal database (vedi avvio in fondo); qui si parte vuoti */
 const S = {
@@ -4017,7 +4027,7 @@ function dashHtml(){
     `<p class="note">Il rinnovo di un settore è la data del suo boulder in parete più vecchio. Nuovo nella 1ª settimana, recente nella 2ª, scaduto dalla 9ª (questa etichetta la vede solo lo staff). Tocca un settore per aprirlo.</p>`+
     `<div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
 }
-function openSheet(name){ ui.sheet = name; ui.confirm = null; renderSheet(); }
+function openSheet(name){ ui.sheet = name; ui.confirm = null; ui.tgOpen = null; renderSheet(); }
 /* ricerca su tutti i circuiti della palestra */
 function sqAll(){ return secWalls().filter(w => !isSec(w)).flatMap(w => w.circuits.map(c => ({ w, c }))); }
 function sqSheet(mode){
@@ -4074,7 +4084,10 @@ function renderSheet(){
       `<div class="f2"><label class="field">Montato il<input id="bdset" type="date" value="${esc(c.dateSet || '')}"></label>`+
       `<label class="field">Smontato il<input id="bdrem" type="date" value="${esc(c.dateRemoved || '')}"></label></div>`+
       `<p class="field" style="margin-bottom:0">Caratteristiche</p>`+
-      BTAG_GROUPS.map(([g, l]) => `<p class="tgroup">${g}</p><div class="tags">${l.map(t => `<button class="tag ${tags.includes(t) ? 'on' : ''}" data-act="btag" data-v="${esc(t)}" aria-pressed="${tags.includes(t)}">${esc(t)}</button>`).join('')}</div>`).join('')+
+      /* un gruppo alla volta: chiusi si vede cosa è scelto, toccando si apre */
+      `<div class="tgrps">`+BTAG_GROUPS.map(([g, l, one], k) => { const sel = l.filter(t => tags.includes(t)), open = ui.tgOpen === k;
+        return `<div class="tgrp ${open ? 'open' : ''}"><button class="tghead" data-act="tgopen" data-v="${k}" aria-expanded="${open}"><span>${g}${one ? ' <small>· una sola</small>' : ''}</span><b>${sel.length ? esc(sel.join(', ')) : '<i>—</i>'}</b><em aria-hidden="true">${open ? '▴' : '▾'}</em></button>`+
+          (open ? `<div class="tags">${l.map(t => `<button class="tag ${tags.includes(t) ? 'on' : ''}" data-act="btag" data-v="${esc(t)}" aria-pressed="${tags.includes(t)}">${esc(t)}</button>`).join('')}</div>` : '')+`</div>`; }).join('')+`</div>`+
       `<label class="field">Note<textarea id="bnotes" maxlength="600" placeholder="Es. partenza con mani sulla tacca bassa, spigolo escluso…">${esc(c.notes || '')}</textarea></label>`+
       `<div class="row"><button class="btn danger" data-act="delc">${ui.confirm === 'delc' ? 'Tocca ancora per eliminare' : 'Elimina boulder'}</button>`+
       `<button class="btn primary" data-act="close">Fatto</button></div>`+
@@ -4905,9 +4918,11 @@ document.addEventListener('click', e => {
       if(c.holdColor === b.dataset.c) delete c.holdColor; else c.holdColor = b.dataset.c;
       touch(); renderChips(); renderSheet(); break;
     }
+    case 'tgopen': { const k = +b.dataset.v; ui.tgOpen = ui.tgOpen === k ? null : k; renderSheet(); break; }
     case 'btag': {
       if(!c) break;
-      const t = b.dataset.v, l = bTags(c); delete c.style;
+      const t = b.dataset.v, grp = BTAG_GROUPS.find(g => g[1].includes(t)); let l = bTags(c); delete c.style;
+      if(!l.includes(t) && grp && grp[2] === 'una') l = l.filter(x => !grp[1].includes(x));   /* gruppo a scelta singola: sostituisce */
       c.tags = l.includes(t) ? l.filter(x => x !== t) : l.concat(t);
       if(!c.tags.length) delete c.tags;
       touch(); renderSheet(); renderChips(); break;
