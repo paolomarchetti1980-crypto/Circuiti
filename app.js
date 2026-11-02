@@ -34,6 +34,7 @@ const BODY = `
       </div>
     </div>
     <div class="zoom" id="zoom" hidden>
+      <button id="dimTg" class="dimtg" data-act="pref" data-k="dimB" aria-label="Oscura il muro" title="Oscura il muro" hidden><svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 2.5a7.5 7.5 0 0 1 0 15z" fill="currentColor"/></svg></button>
       <button data-act="zoom" data-d="1" aria-label="Ingrandisci">+</button>
       <button data-act="zoom" data-d="-1" aria-label="Riduci">&minus;</button>
     </div>
@@ -182,11 +183,11 @@ let PUBREV = S.rev;
 let PUBWALLS = [];
 /* preferenze di visualizzazione (numeri, linee, altri blocchi, oscura): sono di chi guarda, restano sul suo telefono
    e non vengono pubblicate. I numeri partono accesi. */
-const VIEW_KEYS = ['numbers', 'lines', 'others', 'othersV', 'dim', 'dimC'];   /* dimC = oscura sui circuiti, chi guarda (di base acceso) */   /* others = staff mentre traccia, othersV = chi guarda */
+const VIEW_KEYS = ['numbers', 'lines', 'others', 'othersV', 'dim', 'dimC', 'dimB'];   /* dimC = oscura sui circuiti, chi guarda (di base acceso) */   /* others = staff mentre traccia, othersV = chi guarda */
 function applyViewPrefs(){
   let v = {};
   try{ v = JSON.parse(localStorage.getItem('view-prefs') || '{}') || {}; }catch(e){}
-  Object.assign(S.prefs, { numbers: true, lines: false, others: true, othersV: false, dim: true, dimC: true }, v);
+  Object.assign(S.prefs, { numbers: true, lines: false, others: true, othersV: false, dim: true, dimC: true, dimB: true }, v);
 }
 function saveViewPrefs(){ const v = {}; VIEW_KEYS.forEach(k => v[k] = !!S.prefs[k]); try{ localStorage.setItem('view-prefs', JSON.stringify(v)); }catch(e){} }   /* muri come sono pubblicati adesso */
 let EDIT = false, SB = null, BASE = null, ME = null;
@@ -3097,6 +3098,7 @@ function renderPub(){
 function dimOn(editing){ if(editing) return !!ui.editDim; const w = curWall();
   /* circuiti: chi guarda sceglie (con il muro scuro le prese degli altri colori si vedono poco, e per impararle serve vederle) */
   if(w && !isSec(w)) return S.prefs.dimC !== false;
+  if(w && isSec(w)) return S.prefs.dimB !== false;
   return !!ui.full || S.prefs.dim || newC(); }
 function renderStage(){
   const w = curWall(), st = $('#stage'), em = $('#empty'), z = $('#zoom');
@@ -3113,6 +3115,8 @@ function renderStage(){
   }
   if(bGrid()){ st.hidden = true; z.hidden = true; em.hidden = false; em.innerHTML = sectorGrid(); return; }
   st.hidden = false; em.hidden = true; em.innerHTML = ''; z.hidden = false;
+  /* boulder, chi guarda: tasto per oscurare o no il resto del muro (sui circuiti è tra i tasti sotto) */
+  { const t = $('#dimTg'), on = isSec(w) && !bOver() && !!curCircuit() && !(EDIT && S.mode !== 'view'); if(t){ t.hidden = !on; t.setAttribute('aria-pressed', String(S.prefs.dimB !== false)); t.classList.toggle('on', S.prefs.dimB !== false); } }
   st.classList.toggle('edit', EDIT && S.mode !== 'view');
   st.classList.toggle('linedraw', !!ui.bline || drawMode());
   const im = $('#photo');
@@ -3140,8 +3144,7 @@ function holdColText(c){
   return hc ? 'prese ' + (PL[hc[0]] || hc[0].toLowerCase()) : '';
 }
 function bMeta(c){
-  const t = (c.tags || []).slice(0, 3).join(', ');
-  return [holdColText(c), c.setter || '', c.dateSet && !isOff(c) ? fmtDate(c.dateSet) : '', expText(c), t].filter(Boolean).map(esc).join(' · ');
+  return [holdColText(c), c.setter || '', c.dateSet && !isOff(c) ? fmtDate(c.dateSet) : '', expText(c)].filter(Boolean).map(esc).join(' · ');   /* le caratteristiche le mette chi chiama (niente doppioni) */
 }
 /* movimenti: ogni passaggio dopo la partenza (sulla stessa presa si può passare più volte) */
 const moveHolds = c => (c.holds || []).filter(h => h.role === 'hold' || h.role === 'top');
