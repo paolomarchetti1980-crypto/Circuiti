@@ -142,6 +142,28 @@ const BTAG_GROUPS = [
 /* nomi vecchi → nuovi (i boulder già segnati restano validi senza toccare i dati) */
 const BTAG_OLD = { Placca: 'Appoggiato', Forza: 'Fisico', Tecnica: 'Tecnico', Ribaltamento: 'Rimonto', 'Partenza seduta': 'Partenza sit' };
 const BTAGS = BTAG_GROUPS.flatMap(g => g[1]);
+/* caratteristiche dei circuiti (2/11, versione di Paolo). Piedi liberi/obbligati restano a parte */
+const CTAG_GROUPS = [
+  ['Tipo', ['Continuità','Resistenza','Forza-resistenza','Potenza'], 'una'],
+  ['Prese predominanti', ['Maniglie','Tacche','Svasi','Pinze','Buchi','Rovesci','Laterali','Piatte','Volumi']],
+  ['Movimenti crux', ['Statico','Dinamico','Coordinazione','Bloccaggi','Compressione','Opposizione','Equilibrio','Body tension']],
+  ['Stile', ['Continuo','Fisico','Di singolo','Discontinuo'], 'una'],
+  ['Da sapere', ['Loop','Con riposi','Partenza sit','Con rilanci']]];
+const CTAGS = CTAG_GROUPS.flatMap(g => g[1]);
+const CTAG_OLD = { Forza: 'Fisico' };
+const cTags = c => { const t = [], add = x => { const y = CTAG_OLD[x] || x; if(CTAGS.includes(y) && !t.includes(y)) t.push(y); };
+  if(c && c.style) add(c.style); (c && c.tags || []).forEach(add);
+  return t.sort((a, b) => CTAGS.indexOf(a) - CTAGS.indexOf(b)); };
+const cStile = c => cTags(c).find(t => CTAG_GROUPS[3][1].includes(t)) || '';
+const tagGroups = w => w && isSec(w) ? BTAG_GROUPS : CTAG_GROUPS;
+const tagsOf = (w, c) => w && isSec(w) ? bTags(c) : cTags(c);
+/* righe dei gruppi: chiuse si vede cosa è scelto, toccando si apre (una alla volta) */
+function tagGroupsHtml(w, c){
+  const tags = tagsOf(w, c);
+  return `<div class="tgrps">`+tagGroups(w).map(([g, l, one], k) => { const sel = l.filter(t => tags.includes(t)), open = ui.tgOpen === k;
+    return `<div class="tgrp ${open ? 'open' : ''}"><button class="tghead" data-act="tgopen" data-v="${k}" aria-expanded="${open}"><span>${g}${one ? ' <small>· una sola</small>' : ''}</span><b>${sel.length ? esc(sel.join(', ')) : '<i>—</i>'}</b><em aria-hidden="true">${open ? '▴' : '▾'}</em></button>`+
+      (open ? `<div class="tags">${l.map(t => `<button class="tag ${tags.includes(t) ? 'on' : ''}" data-act="btag" data-v="${esc(t)}" aria-pressed="${tags.includes(t)}">${esc(t)}</button>`).join('')}</div>` : '')+`</div>`; }).join('')+`</div>`;
+}
 /* il vecchio "stile" di un boulder vale come caratteristica (Tecnico → Tecnica) */
 const bTags = c => { const t = [], add = x => { const y = BTAG_OLD[x] || x; if(BTAGS.includes(y) && !t.includes(y)) t.push(y); };   /* le voci tolte (es. Resistenza) non si mostrano più */
   if(c && c.style) add(c.style); (c && c.tags || []).forEach(add);
@@ -209,7 +231,7 @@ try{ const r = JSON.parse(sessionStorage.getItem('mr-resume') || 'null'); sessio
 function rememberPlace(){ try{ if(!ui.home) sessionStorage.setItem('mr-resume', JSON.stringify({ sec: ui.section, lvl: ui.bLevel, t: Date.now() })); }catch(e){} }
 function saveBUI(){ try{ localStorage.setItem('boulder-ui', JSON.stringify({ sec: ui.section, show: ui.bShow, c: ui.bColor, last: ui.lastSec })); }catch(e){} }
 function saveCF(){ try{ localStorage.setItem('circ-filters2', JSON.stringify(ui.sq)); }catch(e){} }
-const cMatch = c => { const q = ui.sq; return (q.ang === '' || String(c.angle) === q.ang) && (!q.sty || c.style === q.sty) && (!q.feet || c.feet === q.feet) &&
+const cMatch = c => { const q = ui.sq; return (q.ang === '' || String(c.angle) === q.ang) && (!q.sty || !CTAG_GROUPS[3][1].includes(q.sty) || cStile(c) === q.sty) && (!q.feet || c.feet === q.feet) &&
   (!q.min || (gradeIdx(c.grade) < 999 && gradeIdx(c.grade) >= gradeIdx(q.min))) && (!q.max || gradeIdx(c.grade) <= gradeIdx(q.max)); };
 const sqCount = () => { const q = ui.sq; return (q.ang !== '' ? 1 : 0) + (q.min || q.max ? 1 : 0) + (q.sty ? 1 : 0) + (q.feet ? 1 : 0); };
 /* dopo un cambio di filtro: se il blocco attivo non è più in elenco, si passa al primo visibile */
@@ -473,17 +495,17 @@ function setterField(c){
     `</select></label>`;
 }
 function newCircuit(w){
-  if(isSec(w)){
-    /* il nome dato dal gestore nella lista Staff vale per tutti i telefoni; poi l'ultimo scritto a mano su questo telefono */
-    let setter = (ME && ME.name) || ''; if(!setter){ try{ setter = localStorage.getItem('boulder-setter') || ''; }catch(e){} }
-    if(!setter && ME && ME.email) setter = ME.email.split('@')[0];
-    return { id: uid(), name: '', color: NODIFF, holds: [], dateSet: todayISO(), ...(setter ? { setter } : {}) };
-  }
+  /* il nome dato dal gestore nella lista Staff vale per tutti i telefoni; poi l'ultimo scelto su questo telefono */
+  let setter = (ME && ME.name) || ''; if(!setter){ try{ setter = localStorage.getItem('boulder-setter') || ''; }catch(e){} }
+  if(!setter && ME && ME.email) setter = ME.email.split('@')[0];
+  if(isSec(w)) return { id: uid(), name: '', color: NODIFF, holds: [], dateSet: todayISO(), ...(setter ? { setter } : {}) };
   const used = w.circuits.map(c => c.color);
   const p = PALETTE.find(p => !used.includes(p[1])) || PALETTE[0];
   let n = w.circuits.length + 1; while(w.circuits.some(c => c.name === 'Circuito ' + n)) n++;
   const name = window.genCircuitName ? window.genCircuitName('', w.circuits.map(c => c.name)) : 'Circuito ' + n;
-  return { id: uid(), name, color: p[1], holds: [], dateSet: todayISO() };
+  /* l'inclinazione è quasi sempre quella del muro: si riprende dall'ultimo circuito che ce l'ha */
+  const ang = w.circuits.slice().reverse().find(c => c.angle != null);
+  return { id: uid(), name, color: p[1], holds: [], dateSet: todayISO(), ...(setter ? { setter } : {}), ...(ang ? { angle: ang.angle } : {}) };
 }
 function roleFor(c){ return c && c.holds.length ? 'hold' : 'start'; }
 /* mano della prossima presa: l'opposta dell'ultima segnata (si parte con la sinistra) */
@@ -3126,7 +3148,7 @@ const movesOf = c => moveHolds(c).length;
 const movesText = c => { const n = movesOf(c), f = (c.holds || []).filter(isFoot).length; return (n === 1 ? '1 movimento' : n + ' movimenti') + (f ? ' · ' + (f === 1 ? '1 piede obbligato' : f + ' piedi obbligati') : ''); };
 function circMeta(c){
   if(curWall() && isSec(curWall())) return bMeta(c);
-  return [c.angle != null ? c.angle + '°' : '', c.style || '', c.feet ? 'piedi ' + c.feet : '', movesText(c)].filter(Boolean).map(esc).join(' · ');
+  return [c.angle != null ? c.angle + '°' : '', cStile(c), c.feet ? 'piedi ' + c.feet : '', movesText(c)].filter(Boolean).map(esc).join(' · ');
 }
 /* filtri dei boulder: stato (in parete / smontati / tutti), grado, colore delle prese */
 function bFilters(w){
@@ -4043,7 +4065,7 @@ function sqSheet(mode){
   const all = sqAll(), q = ui.sq;
   const angles = [...new Set(all.map(x => x.c.angle).filter(x => x != null))].sort((a, b) => a - b);
   const grades = GRADES.filter(g => g && all.some(x => x.c.grade === g));
-  const styles = STYLES.filter(st => st && all.some(x => x.c.style === st));
+  const styles = CTAG_GROUPS[3][1].filter(st => all.some(x => cStile(x.c) === st));
   const chip = (act, v, l, on) => `<button class="fchip ${on ? 'on' : ''}" data-act="${act}" data-v="${v}">${l}</button>`;
   const gsel = (id, val, l) => `<select id="${id}" class="fsel" aria-label="${l}"><option value="">${l}</option>${grades.map(g => `<option value="${g}" ${val === g ? 'selected' : ''}>${g}</option>`).join('')}</select>`;
   const res = all.filter(({ c }) => cMatch(c))
@@ -4093,10 +4115,7 @@ function renderSheet(){
       `<div class="f2"><label class="field">Montato il<input id="bdset" type="date" value="${esc(c.dateSet || '')}"></label>`+
       `<label class="field">Scadenza<input id="bdexp" type="date" value="${esc(expOf(c))}"></label></div>`+
       `<p class="field" style="margin-bottom:0">Caratteristiche</p>`+
-      /* un gruppo alla volta: chiusi si vede cosa è scelto, toccando si apre */
-      `<div class="tgrps">`+BTAG_GROUPS.map(([g, l, one], k) => { const sel = l.filter(t => tags.includes(t)), open = ui.tgOpen === k;
-        return `<div class="tgrp ${open ? 'open' : ''}"><button class="tghead" data-act="tgopen" data-v="${k}" aria-expanded="${open}"><span>${g}${one ? ' <small>· una sola</small>' : ''}</span><b>${sel.length ? esc(sel.join(', ')) : '<i>—</i>'}</b><em aria-hidden="true">${open ? '▴' : '▾'}</em></button>`+
-          (open ? `<div class="tags">${l.map(t => `<button class="tag ${tags.includes(t) ? 'on' : ''}" data-act="btag" data-v="${esc(t)}" aria-pressed="${tags.includes(t)}">${esc(t)}</button>`).join('')}</div>` : '')+`</div>`; }).join('')+`</div>`+
+      tagGroupsHtml(w, c)+
       `<label class="field">Note<textarea id="bnotes" maxlength="600" placeholder="Es. partenza con mani sulla tacca bassa, spigolo escluso…">${esc(c.notes || '')}</textarea></label>`+
       `<div class="row"><button class="btn danger" data-act="delc">${ui.confirm === 'delc' ? 'Tocca ancora per eliminare' : 'Elimina boulder'}</button>`+
       `<button class="btn primary" data-act="close">Fatto</button></div>`+
@@ -4112,9 +4131,10 @@ function renderSheet(){
       `<label class="field">Nome<span style="display:flex;gap:8px;margin-top:4px"><input id="cname" value="${esc(c.name)}" maxlength="40" style="margin-top:0;flex:1"><button type="button" class="btn" data-act="cgen" aria-label="Proponi un nome" title="Proponi un nome" style="flex:none;font-size:20px;padding:6px 12px">🎲</button></span></label>`+
       `<label class="field">Montato il<input id="cdset" type="date" value="${esc(c.dateSet || '')}"></label>`+setterField(c)+
       `<label class="field">Grado<select id="cgrade">${GRADES.map(gradeOpt).join('')}</select></label>`+
-      `<label class="field">Stile<select id="cstyle">${STYLES.map(styleOpt).join('')}</select></label>`+
+
       `<p class="field" style="margin-bottom:4px">Piedi</p><div class="seg" role="group" aria-label="Piedi" style="margin:0 0 12px">`+
         [['','—'],['liberi','Liberi'],['obbligati','Obbligati']].map(o => `<button data-act="cfeet" data-v="${o[0]}" aria-pressed="${(c.feet || '') === o[0]}">${o[1]}</button>`).join('')+`</div>`+
+      `<p class="field" style="margin-bottom:0">Caratteristiche</p>`+tagGroupsHtml(w, c)+
       `<label class="field">Inclinazione (gradi dalla verticale)<select id="cangle"><option value="" ${c.angle == null ? 'selected' : ''}>—</option>${ANGLES.map(a => `<option value="${a}" ${c.angle === a ? 'selected' : ''}>${a}°</option>`).join('')}</select></label>`+
       `<div class="row"><button class="btn danger" data-act="delc">${ui.confirm === 'delc' ? 'Tocca ancora per eliminare' : 'Elimina circuito'}</button>`+
       `<button class="btn primary" data-act="close">Fatto</button></div>`;
@@ -4887,7 +4907,7 @@ document.addEventListener('click', e => {
       saveBUI(); afterFilter(); break;
     case 'cgen': {
       if(!c || !w || !window.genCircuitName) break;
-      { const st = isSec(w) ? (bTags(c).map(t => t === 'Tecnica' ? 'Tecnico' : t).find(t => STYLES.includes(t)) || '') : (c.style || '');   /* il soprannome si ispira alle caratteristiche */
+      { const st = isSec(w) ? (bTags(c).map(t => t === 'Tecnica' ? 'Tecnico' : t).find(t => STYLES.includes(t)) || '') : (cTags(c).find(t => STYLES.includes(t)) || (cStile(c) === 'Fisico' ? 'Forza' : ''));   /* il soprannome si ispira alle caratteristiche */
       c.name = window.genCircuitName(st, w.circuits.filter(x => x !== c).map(x => x.name)); }
       const inp = document.getElementById('cname'); if(inp) inp.value = c.name;
       touch(); renderChips(); break;
@@ -4933,7 +4953,7 @@ document.addEventListener('click', e => {
     case 'bunoff': if(c && w){ delete c.dateRemoved; delete c.offByArch; if(diffOf(c) && w.circuits.some(x => x !== c && x.diff === c.diff && x.num === c.num && !isOff(x))) assignNum(w, c); touch(); render(); renderSheet(); renderChips(); } break;
     case 'btag': {
       if(!c) break;
-      const t = b.dataset.v, grp = BTAG_GROUPS.find(g => g[1].includes(t)); let l = bTags(c); delete c.style;
+      const t = b.dataset.v, grp = tagGroups(w).find(g => g[1].includes(t)); let l = tagsOf(w, c); delete c.style;
       if(!l.includes(t) && grp && grp[2] === 'una') l = l.filter(x => !grp[1].includes(x));   /* gruppo a scelta singola: sostituisce */
       c.tags = l.includes(t) ? l.filter(x => x !== t) : l.concat(t);
       if(!c.tags.length) delete c.tags;
