@@ -135,7 +135,7 @@ const BTAG_GROUPS = [
   ['Inclinazione', ['Appoggiato','Verticale','Strapiombo','Tetto'], 'una'],
   ['Conformazione', ['Spigolo','Diedro','Traverso','Rimonto','Variegato']],
   ['Prese', ['Maniglie','Tacche','Svasi','Pinze','Buchi','Rovesci','Laterali','Piatte','Volumi']],
-  ['Movimento', ['Statico','Dinamico','Coordinazione','Bloccaggi','Compressione','Opposizione','Equilibrio']],
+  ['Movimento', ['Statico','Dinamico','Coordinazione','Bloccaggi','Compressione','Opposizione','Equilibrio','Body tension']],
   ['Piedi', ['Aderenza','Tallone','Punta','Incastro','Lolotte','Bicicletta','Microappoggi']],
   ['Stile', ['Fisico','Tecnico','Coordinativo','Delicato'], 'una'],
   ['Da sapere', ['Morfologico','Partenza sit','Partenza saltata','Pareti adiacenti','Spigoli vicini']]];
