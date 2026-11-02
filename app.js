@@ -2950,7 +2950,7 @@ function sectorGrid(){
         const last = on.map(c => c.dateSet || '').sort().pop();
         const t = todayISO(), lim = new Date(Date.now() + 7*864e5).toISOString().slice(0,10);
         const due = on.filter(c => expOf(c) && expOf(c) >= t && expOf(c) <= lim).length, gone = on.filter(isExp).length;
-        staff = `<span class="sinfo">${last ? 'ultimo montaggio ' + fmtDate(last) : 'nessun montaggio'}${due ? `<br><b>${due} in scadenza entro 7 giorni</b>` : ''}${gone ? `<br><b>${gone} ${gone === 1 ? 'scaduto' : 'scaduti'}</b>` : ''}</span>`;
+        staff = `<span class="sinfo">${last ? 'ultima tracciatura ' + fmtDate(last) : 'nessuna tracciatura'}${due ? `<br><b>${due} in scadenza entro 7 giorni</b>` : ''}${gone ? `<br><b>${gone} ${gone === 1 ? 'scaduto' : 'scaduti'}</b>` : ''}</span>`;
       }
     } else {
       const gs = w.circuits.map(c => c.grade).filter(g => gradeIdx(g) < 999).sort((x, y) => gradeIdx(x) - gradeIdx(y));
@@ -3391,7 +3391,7 @@ function renderFull(){
   el.hidden = false;
   el.innerHTML = `<div class="row" style="flex-wrap:nowrap;align-items:center;gap:12px">`+
     `<i class="dot" style="background:${colOf(c)};width:16px;height:16px"></i>`+
-    `<span class="ctext" style="flex:1"><b>${tickMark(c)}${isSec(w) ? bTitleHtml(c) : cTitleHtml(c)}</b><small>${isSec(w) ? esc([c.setter ? 'di ' + c.setter : '', c.dateSet ? 'montato ' + fmtDate(c.dateSet) : '', expText(c)].filter(Boolean).join(' · ')) : circMeta(c) + (c.setter ? ' · di ' + esc(c.setter) : '')}</small></span>${isSec(w) ? '' : gradeBadge(c.grade)}</div>`+
+    `<span class="ctext" style="flex:1"><b>${tickMark(c)}${isSec(w) ? bTitleHtml(c) : cTitleHtml(c)}</b><small>${isSec(w) ? esc([c.setter ? 'di ' + c.setter : '', c.dateSet ? 'tracciato ' + fmtDate(c.dateSet) : '', expText(c)].filter(Boolean).join(' · ')) : circMeta(c) + (c.setter ? ' · di ' + esc(c.setter) : '')}</small></span>${isSec(w) ? '' : gradeBadge(c.grade)}</div>`+
     (isSec(w) && bTags(c).length ? `<div class="tags" style="margin:10px 0 0">${bTags(c).map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : '')+
     (isSec(w) && c.notes ? `<p class="bnotes">${esc(c.notes)}</p>` : '')+
     hidNote(c)+
@@ -3666,10 +3666,10 @@ const BADGES = [
   ...[[1, 'Non mollo'], [10, 'Testa dura'], [25, 'Irriducibile']].map(([k, n]) => ({ id: 'gr' + k, f: 'tent', name: n, desc: k === 1 ? 'Un percorso lavorato, chiuso in più sessioni' : k + ' percorsi lavorati, chiusi in più sessioni', ok: s => s.nGrit >= k, left: s => k === 1 ? 'chiudi un percorso lavorato' : s.nGrit + ' di ' + k, big: k > 1 ? String(k) : null })),
   { id: 'gdf', f: 'tent', name: 'Giornata di grazia', desc: '3 boulder gialli o più duri al primo tentativo nello stesso giorno', ok: s => s.dayHardFlash >= 3, left: s => 'record: ' + s.dayHardFlash + ' in un giorno' },
   { id: 'gdw', f: 'tent', name: 'Giornata da ricordare', desc: '3 percorsi lavorati (o superlavorati) chiusi nello stesso giorno', ok: s => s.dayWorked >= 3, left: s => 'record: ' + s.dayWorked + ' in un giorno' },
-  ...[[1, 'Prima salita'], [5, 'Apriporta'], [20, 'Pioniere']].map(([k, n]) => ({ id: 'fa' + k, f: 'vel', name: n, desc: k === 1 ? 'Il primo cliente a chiudere un percorso nuovo' : 'Prima salita su ' + k + ' percorsi diversi', ok: s => s.nFirst >= k, left: s => k === 1 ? 'chiudi per primo un percorso appena montato' : s.nFirst + ' di ' + k, big: k > 1 ? String(k) : null })),
+  ...[[1, 'Prima salita'], [5, 'Apriporta'], [20, 'Pioniere']].map(([k, n]) => ({ id: 'fa' + k, f: 'vel', name: n, desc: k === 1 ? 'Il primo cliente a chiudere un percorso nuovo' : 'Prima salita su ' + k + ' percorsi diversi', ok: s => s.nFirst >= k, left: s => k === 1 ? 'chiudi per primo un percorso appena tracciato' : s.nFirst + ' di ' + k, big: k > 1 ? String(k) : null })),
   { id: 'ffl', f: 'vel', name: 'Primo flash', desc: 'Il primo cliente a chiudere un percorso a vista o flash', ok: s => s.firstFlash, left: s => 'chiudi per primo un percorso al primo tentativo' },
-  ...[[1, 'Fresco di tracciatura'], [10, 'Sempre sul pezzo'], [25, 'Segugio']].map(([k, n]) => ({ id: 'fr' + k, f: 'vel', name: n, desc: (k === 1 ? 'Un percorso fatto' : k + ' percorsi fatti') + ' entro 2 giorni dal montaggio', ok: s => s.nFresh >= k, left: s => k === 1 ? 'chiudi un percorso entro 2 giorni dal montaggio' : s.nFresh + ' di ' + k, big: k > 1 ? String(k) : null })),
-  { id: 'trail', f: 'vel', name: 'Apripista', desc: 'Tutti i boulder di un settore entro una settimana dal rimontaggio', ok: s => s.trail, left: s => 'chiudi tutto un settore nella prima settimana' },
+  ...[[1, 'Fresco di tracciatura'], [10, 'Sempre sul pezzo'], [25, 'Segugio']].map(([k, n]) => ({ id: 'fr' + k, f: 'vel', name: n, desc: (k === 1 ? 'Un percorso fatto' : k + ' percorsi fatti') + ' entro 2 giorni dalla tracciatura', ok: s => s.nFresh >= k, left: s => k === 1 ? 'chiudi un percorso entro 2 giorni dalla tracciatura' : s.nFresh + ' di ' + k, big: k > 1 ? String(k) : null })),
+  { id: 'trail', f: 'vel', name: 'Apripista', desc: 'Tutti i boulder di un settore entro una settimana dalla nuova tracciatura', ok: s => s.trail, left: s => 'chiudi tutto un settore nella prima settimana' },
   { id: 'last', f: 'vel', name: 'Appena in tempo', desc: 'Un boulder fatto negli ultimi 3 giorni prima della scadenza', ok: s => s.nLast >= 1, left: s => 'chiudi un boulder poco prima che scada' },
   { id: 'cesa', f: 'vel', name: 'Zona Cesarini', desc: 'Un boulder fatto dopo la scadenza, prima che lo smontino', ok: s => s.nCesa >= 1, left: s => 'chiudi un boulder già scaduto' },
   { id: 'sup1', f: 'tent', name: 'Assedio', desc: 'Un percorso superlavorato, chiuso dopo settimane', ok: s => s.nSuper >= 1, left: s => 'chiudi un percorso dopo settimane di prove' },
@@ -3677,7 +3677,7 @@ const BADGES = [
   /* per la palestra: più riscontri sui percorsi. Gradimento (1-10) e parere sul grado contano a parte */
   ...[[1, 'Mi piace!'], [10, 'Occhio critico'], [50, 'Critico di fiducia'], [100, 'Voce della palestra']].map(([k, n]) => ({ id: 'g' + k, f: 'gym', name: n, desc: k === 1 ? 'Il primo voto di gradimento a un percorso' : k + ' percorsi votati da 1 a 10', ok: s => s.nRate >= k, left: s => k === 1 ? 'dai un voto da 1 a 10 a un percorso fatto' : s.nRate + ' di ' + k, big: k > 1 ? String(k) : null })),
   ...[[1, 'Primo parere'], [10, 'Metro alla mano'], [50, 'Giudice di parete'], [100, 'Bilancia d\'oro']].map(([k, n]) => ({ id: 'p' + k, f: 'gym', name: n, desc: k === 1 ? 'Il primo parere sul grado (facile, giusto, duro)' : k + ' pareri sul grado dei percorsi', ok: s => s.nVote >= k, left: s => k === 1 ? 'di\' se il grado ti è sembrato facile, giusto o duro' : s.nVote + ' di ' + k, big: k > 1 ? String(k) : null })),
-  ...[[5, 'Beta tester'], [20, 'Collaudatore'], [50, 'Banco di prova']].map(([k, n]) => ({ id: 'bt' + k, f: 'gym', name: n, desc: k + ' percorsi nuovi (montati da meno di una settimana) con gradimento e parere sul grado', ok: s => s.nBeta >= k, left: s => s.nBeta + ' di ' + k, big: String(k) })),
+  ...[[5, 'Beta tester'], [20, 'Collaudatore'], [50, 'Banco di prova']].map(([k, n]) => ({ id: 'bt' + k, f: 'gym', name: n, desc: k + ' percorsi nuovi (tracciati da meno di una settimana) con gradimento e parere sul grado', ok: s => s.nBeta >= k, left: s => s.nBeta + ' di ' + k, big: String(k) })),
   ...[[10, 'Diario di bordo'], [50, 'Cronista']].map(([k, n]) => ({ id: 'tr' + k, f: 'gym', name: n, desc: k + ' percorsi fatti con i tentativi segnati', ok: s => s.nTries >= k, left: s => s.nTries + ' di ' + k, big: String(k) })),
   ...[100, 250, 500, 1000, 2500, 5000].map(k => ({ id: 'm' + k, f: 'km', name: k.toLocaleString('it-IT') + ' movimenti', desc: k.toLocaleString('it-IT') + ' movimenti sui circuiti fatti', ok: s => s.moves >= k, left: s => s.moves.toLocaleString('it-IT') + ' di ' + k.toLocaleString('it-IT'), big: k >= 1000 ? String(k / 1000).replace('.', ',') + 'k' : String(k) })),
   /* circuiti con piedi obbligati chiusi */
@@ -4052,7 +4052,7 @@ function dashHtml(){
       (r.noGrade ? `<small class="dmiss">${r.noGrade} senza grado</small>` : '')+
       `</span></button>`).join('')}</div>`+
     `<p class="dlab">Chi ha tracciato (ultimi 30 giorni)</p>`+
-    (setters.length ? `<div class="list">${setters.map(([k, n]) => `<div class="wrow"><span style="flex:1">${esc(k)}</span><b>${n}</b></div>`).join('')}</div>` : `<p class="hint">Nessun boulder montato negli ultimi 30 giorni.</p>`)+
+    (setters.length ? `<div class="list">${setters.map(([k, n]) => `<div class="wrow"><span style="flex:1">${esc(k)}</span><b>${n}</b></div>`).join('')}</div>` : `<p class="hint">Nessun boulder tracciato negli ultimi 30 giorni.</p>`)+
     `<p class="note">Il rinnovo di un settore è la data del suo boulder in parete più vecchio. Nuovo nella 1ª settimana, recente nella 2ª, scaduto dalla 9ª (questa etichetta la vede solo lo staff). Tocca un settore per aprirlo.</p>`+
     `<div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
 }
@@ -4110,7 +4110,7 @@ function renderSheet(){
       `<div class="f2"><label class="field">Soprannome (facoltativo)<span style="display:flex;gap:6px;margin-top:4px"><input id="cname" value="${esc(c.name || '')}" maxlength="40" style="margin-top:0;flex:1;min-width:0"><button type="button" class="btn" data-act="cgen" aria-label="Proponi un soprannome" title="Proponi un soprannome" style="flex:none;font-size:18px;padding:6px 10px">🎲</button></span></label>`+
       `</div>`+
       setterField(c)+
-      `<div class="f2"><label class="field">Montato il<input id="bdset" type="date" value="${esc(c.dateSet || '')}"></label>`+
+      `<div class="f2"><label class="field">Tracciato il<input id="bdset" type="date" value="${esc(c.dateSet || '')}"></label>`+
       `<label class="field">Scadenza<input id="bdexp" type="date" value="${esc(expOf(c))}"></label></div>`+
       `<p class="field" style="margin-bottom:0">Caratteristiche</p>`+
       tagGroupsHtml(w, c)+
@@ -4118,7 +4118,7 @@ function renderSheet(){
       `<div class="row"><button class="btn danger" data-act="delc">${ui.confirm === 'delc' ? 'Tocca ancora per eliminare' : 'Elimina boulder'}</button>`+
       `<button class="btn primary" data-act="close">Fatto</button></div>`+
       (isOff(c) ? `<div class="row"><button class="btn" data-act="bunoff">Rimetti in parete</button></div><p class="note">Smontato il ${esc(fmtDate(c.dateRemoved))}.</p>`
-        : `<div class="row"><button class="btn" data-act="boff">${ui.confirm === 'boff' ? 'Tocca ancora: lo smonto oggi' : 'Smonta ora'}</button></div><p class="note">La scadenza è teorica (di base 9 settimane dal montaggio): dopo resta in parete come "scaduto". Va tra gli smontati quando archivi il settore; "Smonta ora" solo per un boulder tolto prima (presa rotta, cambiato…).</p>`);
+        : `<div class="row"><button class="btn" data-act="boff">${ui.confirm === 'boff' ? 'Tocca ancora: lo smonto oggi' : 'Smonta ora'}</button></div><p class="note">La scadenza è teorica (di base 9 settimane dalla tracciatura): dopo resta in parete come "scaduto". Va tra gli smontati quando archivi il settore; "Smonta ora" solo per un boulder tolto prima (presa rotta, cambiato…).</p>`);
   } else if(ui.sheet === 'clist' && w && isSec(w)){
     h = `<h2>Boulder · ${esc(w.name)}</h2>` + bFilters(w) + bRows(w, 'crow') +
       `<div class="row" style="margin-top:14px">${EDIT ? `<button class="btn primary" data-act="addc">+ Nuovo boulder</button>` : ''}<button class="btn" data-act="close">Chiudi</button></div>`;
@@ -4378,7 +4378,7 @@ async function printBlocks(all){
     for(const b of list){
       const pic = await composeBlock(w, b, { numbers: !isSec(w), others: false, dim: true });
       const meta = isSec(w)
-        ? [bTags(b).join(', '), b.setter ? 'tracciato da ' + b.setter : '', b.dateSet ? 'montato il ' + fmtDate(b.dateSet) : '', holdColText(b)].filter(Boolean)
+        ? [bTags(b).join(', '), b.setter ? 'tracciato da ' + b.setter : '', b.dateSet ? 'tracciato il ' + fmtDate(b.dateSet) : '', holdColText(b)].filter(Boolean)
         : [b.grade ? 'grado ' + b.grade : '', b.style, b.feet ? 'piedi ' + b.feet : '', b.angle != null ? b.angle + '°' : '', movesText(b)].filter(Boolean);
       html += `<section class="ppage"><header><span>Monkey Island Roma</span><span>${esc(w.name)}</span></header>`+
         `<h1><i style="background:${colOf(b)}"></i>${esc(blockTitle(w, b))}${!isSec(w) && b.grade ? `<b>${esc(b.grade)}</b>` : ''}</h1>`+
