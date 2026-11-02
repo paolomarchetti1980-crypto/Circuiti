@@ -3296,7 +3296,7 @@ function renderTools(){
     const p = S.prefs;
     /* circuiti: numeri (accesi di base), linee (spente) e altri circuiti del muro in trasparenza (spenti). Si ricordano su questo telefono */
     const tg = (k, l) => `<button class="btn ${p[k] ? 'on' : ''}" data-act="pref" data-k="${k}" aria-pressed="${!!p[k]}">${l}</button>`;
-    el.innerHTML = c && !isSec(w) ? `<div class="mini">${tg('numbers', 'Numeri')}${tg('lines', 'Linee')}${w.circuits.length > 1 ? tg('othersV', 'Altri circuiti') : ''}</div>` : '';
+    el.innerHTML = '';   /* numeri, linee e altri circuiti: nella vista a schermo intero */
     return;
   }
   const h = c && ui.sel != null ? c.holds[ui.sel] : null;
@@ -3405,6 +3405,9 @@ function renderFull(){
     `<span class="ctext" style="flex:1"><b>${tickMark(c)}${isSec(w) ? bTitleHtml(c) : cTitleHtml(c)}</b><small>${isSec(w) ? esc([c.setter ? 'di ' + c.setter : '', c.dateSet ? 'tracciato ' + fmtDate(c.dateSet) : '', expText(c)].filter(Boolean).join(' · ')) : circMeta(c) + (c.setter ? ' · di ' + esc(c.setter) : '')}</small></span>${isSec(w) ? '' : gradeBadge(c.grade)}</div>`+
     (isSec(w) && bTags(c).length ? `<div class="tags" style="margin:10px 0 0">${bTags(c).map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : '')+
     (isSec(w) && c.notes ? `<p class="bnotes">${esc(c.notes)}</p>` : '')+
+    /* circuiti: numeri, linee e altri circuiti si accendono qui, dove si guarda il percorso */
+    (!isSec(w) ? (() => { const p = S.prefs, tg = (k, l) => `<button class="btn ${p[k] ? 'on' : ''}" data-act="pref" data-k="${k}" aria-pressed="${!!p[k]}">${l}</button>`;
+      return `<div class="mini" style="margin-top:10px">${tg('numbers', 'Numeri')}${tg('lines', 'Linee')}${w.circuits.length > 1 ? tg('othersV', 'Altri circuiti') : ''}</div>`; })() : '')+
     hidNote(c)+
     tickPanel(w, c)+
     (newC() ? `<div class="row fnavrow" style="margin-top:10px;flex-wrap:nowrap">`+

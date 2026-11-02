@@ -54,11 +54,11 @@
  ],
  [
   "A.fcard",
-  "Giallo4 movimenti–‹Giallo · 2 di 2›"
+  "Giallo4 movimenti–NumeriLineeAltri circuiti‹Giallo · 2 di 2›"
  ],
  [
   "A.fcardPrev",
-  "Arancio0 movimenti–‹Arancio · 1 di 2›"
+  "Arancio0 movimenti–NumeriLineeAltri circuiti‹Arancio · 1 di 2›"
  ],
  [
   "A.prefs",
@@ -208,7 +208,7 @@
    "walls": 4,
    "sectors": 1,
    "testCirc": true,
-   "sectorImg": "img/muro1.jpg?u=txlar8c-1793628715456.jpg"
+   "sectorImg": "img/muro1.jpg?u=8wqsg12-1793629742713.jpg"
   }
  ],
  [
@@ -294,7 +294,7 @@
  [
   "D.afterGrade",
   [
-   "Il Nastro di Mandrake Nuovo",
+   "Il Nastro del Koala Nuovo",
    "Arancio",
    "Giallo"
   ]

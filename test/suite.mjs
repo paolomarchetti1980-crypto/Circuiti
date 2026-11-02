@@ -68,10 +68,10 @@ await session(null, async (pg) => {
   log('A.fcard', (await pg.textContent('#fcard')).replace(/\s+/g,' ').trim());
   await pg.tap('[data-act="fnav"][data-d="-1"]', {timeout:5000}); await pg.waitForTimeout(300);
   log('A.fcardPrev', (await pg.textContent('#fcard')).replace(/\s+/g,' ').trim());
-  await pg.goBack(); await pg.waitForTimeout(300);
-  log('A.prefs', await txt(pg, '.mini .btn'));
-  await pg.tap('[data-act="pref"][data-k="lines"]', {timeout:5000}); await pg.waitForTimeout(300);
+  log('A.prefs', await txt(pg, '#fcard .mini .btn'));
+  await pg.tap('#fcard [data-act="pref"][data-k="lines"]', {timeout:5000}); await pg.waitForTimeout(300);
   log('A.ovLabels', await pg.evaluate(()=>[...document.querySelectorAll('#ov text')].map(t=>t.textContent)));
+  await pg.goBack(); await pg.waitForTimeout(300);
   await pg.tap('[data-act="sec"][data-v="boulder"]', {timeout:5000}); await pg.waitForTimeout(300);
   log('A.boulderEmpty', (await pg.textContent('#empty')).replace(/\s+/g,' ').trim());
   await pg.tap('#menuBtn', {timeout:5000}); await pg.waitForTimeout(200);
