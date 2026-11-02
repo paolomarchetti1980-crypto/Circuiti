@@ -54,17 +54,15 @@
  ],
  [
   "A.fcard",
-  "Giallo4 movimenti–Altri circuiti‹Giallo · 2 di 2›"
+  "Giallo4 movimenti–‹Giallo · 2 di 2›"
  ],
  [
   "A.fcardPrev",
-  "Arancio0 movimenti–Altri circuiti‹Arancio · 1 di 2›"
+  "Arancio0 movimenti–‹Arancio · 1 di 2›"
  ],
  [
   "A.prefs",
-  [
-   "Altri circuiti"
-  ]
+  []
  ],
  [
   "A.ovLabels",
@@ -206,7 +204,7 @@
    "walls": 4,
    "sectors": 1,
    "testCirc": true,
-   "sectorImg": "img/muro1.jpg?u=nhjca2u-1793630608608.jpg"
+   "sectorImg": "img/muro1.jpg?u=9oiwrie-1793631214177.jpg"
   }
  ],
  [
@@ -292,7 +290,7 @@
  [
   "D.afterGrade",
   [
-   "La Traversata del Leone Nuovo",
+   "Lo Scirocco del Nostromo Nuovo",
    "Arancio",
    "Giallo"
   ]
