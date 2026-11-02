@@ -99,7 +99,7 @@ const bTitleHtml = c => esc(bTitle(c)) + (c.name && diffOf(c) ? ` <span style="f
    I settori si rinnovano interi a rotazione, quindi l'etichetta va sul settore; un singolo boulder ce l'ha
    solo se è stato aggiunto dopo il rinnovo del suo settore (le eccezioni). */
 const daysOld = d => { if(!d || d > todayISO()) return null; const t = Date.parse(d + 'T00:00:00'); return isNaN(t) ? null : Math.floor((Date.now() - t) / 864e5); };
-const AGE_NEW = 7, AGE_RECENT = 14, AGE_EXPIRED = 56;
+const AGE_NEW = 7, AGE_RECENT = 14, AGE_EXPIRED = 63;   /* scadenza: 9 settimane (18 settori, due a settimana) */
 const ageLabel = d => { const a = daysOld(d); return a === null ? '' : a < AGE_NEW ? 'Nuovo' : a < AGE_RECENT ? 'Recente' : a >= AGE_EXPIRED ? 'Scaduto' : ''; };
 /* data di rinnovo del settore: il boulder in parete più vecchio */
 const secRenew = w => (w.circuits || []).filter(c => c.diff && c.dateSet && !isOff(c)).map(c => c.dateSet).sort()[0] || '';
@@ -249,6 +249,12 @@ const cCompact = () => !BO() && !ui.home && !ui.full && !bGrid() && (!EDIT || S.
 const bOver = () => BO() && !ui.home && !ui.full && !bGrid() && (bView() || (EDIT && ui.secOver && !scanHere()));
 const todayISO = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); };
 const isOff = c => !!(c && c.dateRemoved && c.dateRemoved <= todayISO());
+/* boulder: la scadenza è teorica (montaggio + 9 settimane, modificabile). Scaduto resta in parete;
+   va tra gli smontati solo archiviando il settore (o con "Smonta ora") */
+const addDaysISO = (iso, n) => { const p = String(iso).split('-').map(Number), d = new Date(p[0], (p[1] || 1) - 1, p[2] || 1); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); };
+const expOf = c => (c && (c.expires || (c.dateSet ? addDaysISO(c.dateSet, AGE_EXPIRED) : ''))) || '';
+const isExp = c => !!c && !isOff(c) && !!expOf(c) && expOf(c) < todayISO();
+const expText = c => isOff(c) ? 'smontato ' + fmtDate(c.dateRemoved) : !expOf(c) ? '' : isExp(c) ? 'scaduto il ' + fmtDate(expOf(c)) : 'scade il ' + fmtDate(expOf(c));
 const fmtDate = d => { if(!d) return ''; const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d); return m ? (+m[3]) + '/' + (+m[2]) + '/' + m[1].slice(2) : d; };
 const curCircuit = () => { const w = curWall(); return w ? (w.circuits.find(c => c.id === w.activeCircuit) || w.circuits[0] || null) : null; };
 const dirty = () => EDIT && S.rev > PUBREV;
@@ -2923,8 +2929,8 @@ function sectorGrid(){
       if(EDIT){
         const last = on.map(c => c.dateSet || '').sort().pop();
         const t = todayISO(), lim = new Date(Date.now() + 7*864e5).toISOString().slice(0,10);
-        const due = on.filter(c => c.dateRemoved && c.dateRemoved >= t && c.dateRemoved <= lim).length;
-        staff = `<span class="sinfo">${last ? 'ultimo montaggio ' + fmtDate(last) : 'nessun montaggio'}${due ? `<br><b>${due} da smontare entro 7 giorni</b>` : ''}</span>`;
+        const due = on.filter(c => expOf(c) && expOf(c) >= t && expOf(c) <= lim).length, gone = on.filter(isExp).length;
+        staff = `<span class="sinfo">${last ? 'ultimo montaggio ' + fmtDate(last) : 'nessun montaggio'}${due ? `<br><b>${due} in scadenza entro 7 giorni</b>` : ''}${gone ? `<br><b>${gone} ${gone === 1 ? 'scaduto' : 'scaduti'}</b>` : ''}</span>`;
       }
     } else {
       const gs = w.circuits.map(c => c.grade).filter(g => gradeIdx(g) < 999).sort((x, y) => gradeIdx(x) - gradeIdx(y));
@@ -3112,7 +3118,7 @@ function holdColText(c){
 }
 function bMeta(c){
   const t = (c.tags || []).slice(0, 3).join(', ');
-  return [holdColText(c), c.setter || '', isOff(c) ? 'smontato ' + fmtDate(c.dateRemoved) : c.dateSet ? fmtDate(c.dateSet) : '', t].filter(Boolean).map(esc).join(' · ');
+  return [holdColText(c), c.setter || '', c.dateSet && !isOff(c) ? fmtDate(c.dateSet) : '', expText(c), t].filter(Boolean).map(esc).join(' · ');
 }
 /* movimenti: ogni passaggio dopo la partenza (sulla stessa presa si può passare più volte) */
 const moveHolds = c => (c.holds || []).filter(h => h.role === 'hold' || h.role === 'top');
@@ -3365,7 +3371,7 @@ function renderFull(){
   el.hidden = false;
   el.innerHTML = `<div class="row" style="flex-wrap:nowrap;align-items:center;gap:12px">`+
     `<i class="dot" style="background:${colOf(c)};width:16px;height:16px"></i>`+
-    `<span class="ctext" style="flex:1"><b>${tickMark(c)}${isSec(w) ? bTitleHtml(c) : cTitleHtml(c)}</b><small>${isSec(w) ? esc([c.setter ? 'di ' + c.setter : '', c.dateSet ? 'montato ' + fmtDate(c.dateSet) : '', c.dateRemoved ? (isOff(c) ? 'smontato ' : 'smonta ') + fmtDate(c.dateRemoved) : ''].filter(Boolean).join(' · ')) : circMeta(c) + (c.setter ? ' · di ' + esc(c.setter) : '')}</small></span>${isSec(w) ? '' : gradeBadge(c.grade)}</div>`+
+    `<span class="ctext" style="flex:1"><b>${tickMark(c)}${isSec(w) ? bTitleHtml(c) : cTitleHtml(c)}</b><small>${isSec(w) ? esc([c.setter ? 'di ' + c.setter : '', c.dateSet ? 'montato ' + fmtDate(c.dateSet) : '', expText(c)].filter(Boolean).join(' · ')) : circMeta(c) + (c.setter ? ' · di ' + esc(c.setter) : '')}</small></span>${isSec(w) ? '' : gradeBadge(c.grade)}</div>`+
     (isSec(w) && bTags(c).length ? `<div class="tags" style="margin:10px 0 0">${bTags(c).map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : '')+
     (isSec(w) && c.notes ? `<p class="bnotes">${esc(c.notes)}</p>` : '')+
     hidNote(c)+
@@ -3612,7 +3618,8 @@ function badgeStats(){
     nFirst: D.filter(x => { const f = ui.firsts && ui.firsts.get(x.t.item_id); return f && f.primo; }).length,
     firstFlash: D.some(x => { const f = ui.firsts && ui.firsts.get(x.t.item_id); return f && f.primo_flash; }),
     nFresh: D.filter(x => x.c && x.c.dateSet && x.at && x.at < dayAfter(x.c.dateSet, 3)).length,
-    nLast: D.filter(x => x.c && x.c.dateRemoved && x.at && x.at >= dayAfter(x.c.dateRemoved, -3) && x.at < dayAfter(x.c.dateRemoved, 1)).length,
+    nLast: D.filter(x => x.isB && x.c && expOf(x.c) && x.at && x.at >= dayAfter(expOf(x.c), -3) && x.at < dayAfter(expOf(x.c), 1)).length,
+    nCesa: D.filter(x => x.isB && x.c && expOf(x.c) && x.at && x.at >= dayAfter(expOf(x.c), 1) && (!x.c.dateRemoved || x.at < dayAfter(x.c.dateRemoved, 1))).length,
     nBeta: D.filter(x => x.c && x.c.dateSet && x.at && x.t.rating && x.t.vote && x.at < dayAfter(x.c.dateSet, 7)).length,
     trail: secs.some(w => { const on = w.circuits.filter(c => c.diff && c.dateSet && !isOff(c)); if(on.length < 3) return false; const set = on.map(c => c.dateSet).sort().pop();
       return on.every(c => { const x = D.find(d => d.c === c); return x && x.at && x.at < dayAfter(set, 8); }); }),
@@ -3643,7 +3650,8 @@ const BADGES = [
   { id: 'ffl', f: 'vel', name: 'Primo flash', desc: 'Il primo cliente a chiudere un percorso a vista o flash', ok: s => s.firstFlash, left: s => 'chiudi per primo un percorso al primo tentativo' },
   ...[[1, 'Fresco di tracciatura'], [10, 'Sempre sul pezzo'], [25, 'Segugio']].map(([k, n]) => ({ id: 'fr' + k, f: 'vel', name: n, desc: (k === 1 ? 'Un percorso fatto' : k + ' percorsi fatti') + ' entro 2 giorni dal montaggio', ok: s => s.nFresh >= k, left: s => k === 1 ? 'chiudi un percorso entro 2 giorni dal montaggio' : s.nFresh + ' di ' + k, big: k > 1 ? String(k) : null })),
   { id: 'trail', f: 'vel', name: 'Apripista', desc: 'Tutti i boulder di un settore entro una settimana dal rimontaggio', ok: s => s.trail, left: s => 'chiudi tutto un settore nella prima settimana' },
-  { id: 'last', f: 'vel', name: 'Appena in tempo', desc: 'Un percorso fatto negli ultimi 3 giorni prima dello smontaggio', ok: s => s.nLast >= 1, left: s => 'chiudi un percorso poco prima che lo smontino' },
+  { id: 'last', f: 'vel', name: 'Appena in tempo', desc: 'Un boulder fatto negli ultimi 3 giorni prima della scadenza', ok: s => s.nLast >= 1, left: s => 'chiudi un boulder poco prima che scada' },
+  { id: 'cesa', f: 'vel', name: 'Zona Cesarini', desc: 'Un boulder fatto dopo la scadenza, prima che lo smontino', ok: s => s.nCesa >= 1, left: s => 'chiudi un boulder già scaduto' },
   { id: 'sup1', f: 'tent', name: 'Assedio', desc: 'Un percorso superlavorato, chiuso dopo settimane', ok: s => s.nSuper >= 1, left: s => 'chiudi un percorso dopo settimane di prove' },
   { id: 'proj', f: 'prog', name: 'Progetto chiuso', desc: 'Un percorso passato da Progetto a Fatto', ok: s => s.proj, left: s => 'segna un progetto, poi chiudilo' },
   /* per la palestra: più riscontri sui percorsi. Gradimento (1-10) e parere sul grado contano a parte */
@@ -3682,6 +3690,7 @@ const B_ICO = {
   flagbolt: '<path d="M-11 10L-2-4l3 4 3-3 7 13z"/><path d="M-2-4v-8" stroke="currentColor" stroke-width="1.8"/><path d="M-2-12h9l-2 2.2 2 2.2h-9z"/><path d="M2-1.5L-1.5 3.5h2.4L0 8 4 2.2H1.6z" fill="var(--bg)"/>',
   sprout: '<path d="M0 11V-1" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M0 1C-1-6-6-9-11-8c0 5 4 9 11 9z"/><path d="M0-2C1-8 5-11 10-10c0 5-3 8-10 8z"/><path d="M-7 11h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>',
   trail: '<path d="M-12 7l6-6 4 4 9-9" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M11-9.5L10 0 1.6-8.4z"/><g fill="currentColor"><circle cx="-10" cy="11" r="1.4"/><circle cx="-5" cy="11" r="1.4"/><circle cx="0" cy="11" r="1.4"/><circle cx="5" cy="11" r="1.4"/></g>',
+  whistle: '<circle cx="-2" cy="3" r="7.5"/><path d="M-2-4.5h12.5v5H4" /><circle cx="-2" cy="3" r="2.6" fill="var(--bg)"/><path d="M-9-7l-2.5-3M-5-9l-.8-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
   hourglass: '<path d="M-8-11h16M-8 11h16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M-6.5-10h13c0 6-6 7-6 10s6 4 6 10h-13c0-6 6-7 6-10s-6-4-6-10z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M-4.5 9.6c.6-3 4.5-3.2 4.5-5.6 0 2.4 3.9 2.6 4.5 5.6z"/><path d="M-1.4-4.6h2.8L0-2.2z"/>',
   flask: '<path d="M-3.5-11h7M-2.5-11v7.5L-10 8a2.5 2.5 0 0 0 2.2 3.5h15.6A2.5 2.5 0 0 0 10 8L2.5-3.5V-11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M-6.6 3h13.2L9 8a1.4 1.4 0 0 1-1.2 2H-7.8A1.4 1.4 0 0 1-9 8z"/><circle cx="-1.5" cy="6" r="1.2" fill="var(--bg)"/><circle cx="2.5" cy="7.6" r=".9" fill="var(--bg)"/>',
   calbolt: '<rect x="-10" y="-8" width="20" height="18" rx="2.5"/><path d="M-10-3h20" stroke="var(--bg)" stroke-width="1.6"/><path d="M-5-11v5M5-11v5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M1.5-1L-3.5 5h3l-1.2 4.5L4 3H1z" fill="var(--bg)"/>',
@@ -3753,7 +3762,7 @@ const B_LOOK = (() => {
   L.sup1 = { t: 'g', i: 'castle', pr: null };
   ser(['fa1', 'fa5', 'fa20'], 'flag', (st, id) => st.nFirst / num(id), true); L.ffl = { t: 'g', i: 'flagbolt', pr: null };
   ser(['fr1', 'fr10', 'fr25'], 'sprout', (st, id) => st.nFresh / num(id), true);
-  L.trail = { t: 'g', i: 'trail', pr: null }; L.last = { t: 's', i: 'hourglass', pr: null };
+  L.trail = { t: 'g', i: 'trail', pr: null }; L.last = { t: 's', i: 'hourglass', pr: null }; L.cesa = { t: 'g', i: 'whistle', pr: null };
   ser(['bt5', 'bt20', 'bt50'], 'flask', (st, id) => st.nBeta / num(id), true);
   L.gdf = { t: 'g', i: 'calbolt', pr: st => st.dayHardFlash / 3 }; L.gdw = { t: 'g', i: 'calstar', pr: st => st.dayWorked / 3 };
   ser(['tr10', 'tr50'], 'book', (st, id) => st.nTries / num(id)); L.tr10.t = 's';
@@ -4000,8 +4009,8 @@ function dashHtml(){
     const on = w.circuits.filter(c => !isOff(c)); on.forEach(c => all.push(c));
     const ren = secRenew(w), age = daysOld(ren);
     const later = on.filter(c => c.diff && c.dateSet && c.dateSet > ren).length;
-    const due = on.filter(c => c.dateRemoved && c.dateRemoved >= t && c.dateRemoved <= lim).length;
-    return { w, on, ren, age, later, due, miss: DIFFS.filter(d => !on.some(c => c.diff === d[0])), noGrade: on.filter(c => !c.diff).length };
+    const due = on.filter(c => expOf(c) && expOf(c) >= t && expOf(c) <= lim).length, gone = on.filter(isExp).length;
+    return { w, on, ren, age, later, due, gone, miss: DIFFS.filter(d => !on.some(c => c.diff === d[0])), noGrade: on.filter(c => !c.diff).length };
   }).sort((a, b) => (b.age ?? -1) - (a.age ?? -1));
 
   const bar = list => { const n = list.length || 1; return `<div class="dbar">${DIFFS.map(d => { const k = list.filter(c => c.diff === d[0]).length; return k ? `<i style="flex:${k};background:${d[2]}" title="${d[1]}: ${k}"></i>` : ''; }).join('')}</div>`+
@@ -4017,7 +4026,7 @@ function dashHtml(){
     `<p class="dlab">Gradi in palestra</p>${bar(all)}`+
     `<p class="dlab">Settori, dal più vecchio</p><div class="list">${rows.map(r => `<button class="wrow drow" data-act="dashsec" data-id="${r.w.id}"><span style="flex:1;min-width:0;text-align:left">`+
       `<b>${esc(r.w.name)}</b> ${tag(r.age)}<br>`+
-      `<small>${r.ren ? `rinnovato il ${fmtDate(r.ren)} (${r.age} gg fa) · ${r.on.length} boulder${r.later ? ` · ${r.later} aggiunti dopo` : ''}` : r.on.length ? `${r.on.length} boulder senza data` : 'nessun boulder in parete'}${r.due ? ` · <b>${r.due} da smontare entro 7 giorni</b>` : ''}</small>`+
+      `<small>${r.ren ? `rinnovato il ${fmtDate(r.ren)} (${r.age} gg fa) · ${r.on.length} boulder${r.later ? ` · ${r.later} aggiunti dopo` : ''}` : r.on.length ? `${r.on.length} boulder senza data` : 'nessun boulder in parete'}${r.due ? ` · <b>${r.due} in scadenza entro 7 giorni</b>` : ''}${r.gone ? ` · <b>${r.gone} ${r.gone === 1 ? 'scaduto' : 'scaduti'}</b>` : ''}</small>`+
       (r.on.length > r.noGrade ? bar(r.on) : '')+
       (r.on.length > r.noGrade && r.miss.length ? `<small class="dmiss">Mancano: ${r.miss.map(d => d[1].toLowerCase()).join(', ')}</small>` : '')+
       (r.noGrade ? `<small class="dmiss">${r.noGrade} senza grado</small>` : '')+
@@ -4082,7 +4091,7 @@ function renderSheet(){
       `</div>`+
       setterField(c)+
       `<div class="f2"><label class="field">Montato il<input id="bdset" type="date" value="${esc(c.dateSet || '')}"></label>`+
-      `<label class="field">Smontato il<input id="bdrem" type="date" value="${esc(c.dateRemoved || '')}"></label></div>`+
+      `<label class="field">Scadenza<input id="bdexp" type="date" value="${esc(expOf(c))}"></label></div>`+
       `<p class="field" style="margin-bottom:0">Caratteristiche</p>`+
       /* un gruppo alla volta: chiusi si vede cosa è scelto, toccando si apre */
       `<div class="tgrps">`+BTAG_GROUPS.map(([g, l, one], k) => { const sel = l.filter(t => tags.includes(t)), open = ui.tgOpen === k;
@@ -4091,7 +4100,8 @@ function renderSheet(){
       `<label class="field">Note<textarea id="bnotes" maxlength="600" placeholder="Es. partenza con mani sulla tacca bassa, spigolo escluso…">${esc(c.notes || '')}</textarea></label>`+
       `<div class="row"><button class="btn danger" data-act="delc">${ui.confirm === 'delc' ? 'Tocca ancora per eliminare' : 'Elimina boulder'}</button>`+
       `<button class="btn primary" data-act="close">Fatto</button></div>`+
-      `<p class="note">Con una data di smontaggio passata il boulder finisce tra gli "Smontati": resta consultabile ma non compare più tra quelli in parete.</p>`;
+      (isOff(c) ? `<div class="row"><button class="btn" data-act="bunoff">Rimetti in parete</button></div><p class="note">Smontato il ${esc(fmtDate(c.dateRemoved))}.</p>`
+        : `<div class="row"><button class="btn" data-act="boff">${ui.confirm === 'boff' ? 'Tocca ancora: lo smonto oggi' : 'Smonta ora'}</button></div><p class="note">La scadenza è teorica (di base 9 settimane dal montaggio): dopo resta in parete come "scaduto". Va tra gli smontati quando archivi il settore; "Smonta ora" solo per un boulder tolto prima (presa rotta, cambiato…).</p>`);
   } else if(ui.sheet === 'clist' && w && isSec(w)){
     h = `<h2>Boulder · ${esc(w.name)}</h2>` + bFilters(w) + bRows(w, 'crow') +
       `<div class="row" style="margin-top:14px">${EDIT ? `<button class="btn primary" data-act="addc">+ Nuovo boulder</button>` : ''}<button class="btn" data-act="close">Chiudi</button></div>`;
@@ -4919,6 +4929,8 @@ document.addEventListener('click', e => {
       touch(); renderChips(); renderSheet(); break;
     }
     case 'tgopen': { const k = +b.dataset.v; ui.tgOpen = ui.tgOpen === k ? null : k; renderSheet(); break; }
+    case 'boff': if(c){ if(ui.confirm !== 'boff'){ ui.confirm = 'boff'; renderSheet(); break; } ui.confirm = null; c.dateRemoved = todayISO(); touch(); render(); renderSheet(); renderChips(); toast('Smontato: resta tra gli Smontati del settore.'); } break;
+    case 'bunoff': if(c && w){ delete c.dateRemoved; delete c.offByArch; if(diffOf(c) && w.circuits.some(x => x !== c && x.diff === c.diff && x.num === c.num && !isOff(x))) assignNum(w, c); touch(); render(); renderSheet(); renderChips(); } break;
     case 'btag': {
       if(!c) break;
       const t = b.dataset.v, grp = BTAG_GROUPS.find(g => g[1].includes(t)); let l = bTags(c); delete c.style;
@@ -4938,10 +4950,12 @@ document.addEventListener('click', e => {
       if(!w) break;
       if(ui.confirm !== 'warch'){ ui.confirm = 'warch'; renderSheet(); break; }
       w.archived = true; ui.confirm = null; ui.sheet = null; ui.bLevel = 'sectors';
+      /* archiviare un settore = smontarne i boulder: la data vera di smontaggio è oggi (si toglie se lo si ripristina) */
+      if(isSec(w)){ const d = todayISO(); w.circuits.forEach(c => { if(!c.dateRemoved){ c.dateRemoved = d; c.offByArch = 1; } }); }
       { const l = secWalls(); S.active = l[0] ? l[0].id : null; }
       touch(); renderSheet(); render(); toast((isSec(w) ? 'Settore' : 'Muro') + ' archiviato. Ricordati di pubblicare.'); break;
     case 'archlist': ui.confirm = null; openSheet('arch'); break;
-    case 'wrestore': { const x = S.walls.find(q => q.id === b.dataset.id); if(x){ delete x.archived; if(!archWalls().length) ui.sheet = null; touch(); renderSheet(); render(); toast('Ripristinato: ' + x.name + '. Ricordati di pubblicare.'); } break; }
+    case 'wrestore': { const x = S.walls.find(q => q.id === b.dataset.id); if(x){ delete x.archived; (x.circuits || []).forEach(c => { if(c.offByArch){ delete c.dateRemoved; delete c.offByArch; } }); if(!archWalls().length) ui.sheet = null; touch(); renderSheet(); render(); toast('Ripristinato: ' + x.name + '. Ricordati di pubblicare.'); } break; }
     case 'wdel': {
       const id = b.dataset.id, x = S.walls.find(q => q.id === id); if(!x || !x.archived) break;
       if(ui.confirm !== 'wdel:' + id){ ui.confirm = 'wdel:' + id; renderSheet(); break; }
@@ -5102,6 +5116,7 @@ document.addEventListener('input', e => {
   if(e.target.id === 'bsetsel' && c){ const v = e.target.value; if(v) c.setter = v; else delete c.setter; try{ localStorage.setItem('boulder-setter', v); }catch(err){} renderChips(); touch(); return; }
   if(e.target.id === 'cdset' && c){ if(e.target.value) c.dateSet = e.target.value; else delete c.dateSet; touch(); }
   if(e.target.id === 'bdset' && c){ if(e.target.value) c.dateSet = e.target.value; else delete c.dateSet; renderChips(); touch(); }
+  if(e.target.id === 'bdexp' && c){ if(e.target.value && e.target.value !== (c.dateSet ? addDaysISO(c.dateSet, AGE_EXPIRED) : '')) c.expires = e.target.value; else delete c.expires; renderChips(); touch(); }
   if(e.target.id === 'bdrem' && c){
     if(e.target.value) c.dateRemoved = e.target.value; else delete c.dateRemoved;
     /* se torna in parete e il suo numero nel frattempo è stato preso, ne riceve uno libero */
