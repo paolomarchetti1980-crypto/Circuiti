@@ -34,7 +34,7 @@ const BODY = `
       </div>
     </div>
     <div class="zoom" id="zoom" hidden>
-      <button id="dimTg" class="dimtg" data-act="dimtg" aria-label="Faro sul percorso: oscura il resto del muro" hidden></button>
+      <button id="dimTg" class="dimtg" data-act="dimtg" aria-label="Faro: illumina tutto il muro o lascialo scuro" hidden></button>
       <button data-act="zoom" data-d="1" aria-label="Ingrandisci">+</button>
       <button data-act="zoom" data-d="-1" aria-label="Riduci">&minus;</button>
     </div>
@@ -3118,9 +3118,10 @@ function renderStage(){
   }
   if(bGrid()){ st.hidden = true; z.hidden = true; em.hidden = false; em.innerHTML = sectorGrid(); return; }
   st.hidden = false; em.hidden = true; em.innerHTML = ''; z.hidden = false;
-  /* chi guarda (boulder e circuiti): il faro acceso illumina il percorso e oscura il resto del muro */
+  /* chi guarda (boulder e circuiti): faro acceso = muro illuminato a colori pieni; spento = muro scuro, si vede il percorso */
   { const t = $('#dimTg'), show = !bOver() && !!curCircuit() && !(EDIT && S.mode !== 'view'), k = isSec(w) ? 'dimB' : 'dimC', lit = S.prefs[k] !== false;
-    if(t){ t.hidden = !show; t.setAttribute('aria-pressed', String(lit)); t.classList.toggle('on', lit); t.title = lit ? 'Faro acceso: il resto del muro è scuro' : 'Faro spento: muro a colori pieni'; t.innerHTML = lit ? SPOT_ON : SPOT_OFF; } }
+    /* lit = muro oscurato: il faro è SPENTO (buio); faro acceso = muro illuminato, a colori pieni */
+    if(t){ t.hidden = !show; t.setAttribute('aria-pressed', String(!lit)); t.classList.toggle('on', !lit); t.title = lit ? 'Faro spento: il muro è scuro, si vede solo il percorso' : 'Faro acceso: muro illuminato, a colori pieni'; t.innerHTML = lit ? SPOT_OFF : SPOT_ON; } }
   st.classList.toggle('edit', EDIT && S.mode !== 'view');
   st.classList.toggle('linedraw', !!ui.bline || drawMode());
   const im = $('#photo');
