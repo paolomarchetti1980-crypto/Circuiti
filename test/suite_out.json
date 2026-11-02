@@ -65,7 +65,6 @@
   [
    "Numeri",
    "Linee",
-   "Oscura",
    "Altri circuiti"
   ]
  ],
@@ -209,7 +208,7 @@
    "walls": 4,
    "sectors": 1,
    "testCirc": true,
-   "sectorImg": "img/muro1.jpg?u=nzrw1kj-1793627545292.jpg"
+   "sectorImg": "img/muro1.jpg?u=mu94ojz-1793628292566.jpg"
   }
  ],
  [
@@ -295,7 +294,7 @@
  [
   "D.afterGrade",
   [
-   "Polifemo Silenzioso Nuovo",
+   "La Cicala Pigra Nuovo",
    "Arancio",
    "Giallo"
   ]

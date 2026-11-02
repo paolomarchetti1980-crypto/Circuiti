@@ -34,7 +34,7 @@ const BODY = `
       </div>
     </div>
     <div class="zoom" id="zoom" hidden>
-      <button id="dimTg" class="dimtg" data-act="pref" data-k="dimB" aria-label="Oscura il muro" title="Oscura il muro" hidden><svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 2.5a7.5 7.5 0 0 1 0 15z" fill="currentColor"/></svg></button>
+      <button id="dimTg" class="dimtg" data-act="dimtg" aria-label="Faro sul percorso: oscura il resto del muro" hidden></button>
       <button data-act="zoom" data-d="1" aria-label="Ingrandisci">+</button>
       <button data-act="zoom" data-d="-1" aria-label="Riduci">&minus;</button>
     </div>
@@ -3095,6 +3095,9 @@ function renderPub(){
   b.textContent = ui.publishing ? 'Pubblico…' : 'Pubblica';
 }
 /* oscuramento del resto della foto: in Traccia solo se chiesto col tasto, a schermo intero sempre, altrimenti come da preferenza */
+/* faro: acceso con il fascio di luce, spento barrato */
+const SPOT_ON = '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3.5l5 1.6v4.8L4 11.5z" fill="currentColor"/><rect x="9" y="4.6" width="3" height="5.8" rx="1" fill="currentColor"/><path d="M12 5L22 1.5v13L12 10.4z" fill="currentColor" opacity=".38"/><path d="M6.5 11.5v4M5 21h3l-1.5-5.5z" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+const SPOT_OFF = '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3.5l5 1.6v4.8L4 11.5z" fill="currentColor"/><rect x="9" y="4.6" width="3" height="5.8" rx="1" fill="currentColor"/><path d="M6.5 11.5v4M5 21h3l-1.5-5.5z" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M3 2l18 19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 function dimOn(editing){ if(editing) return !!ui.editDim; const w = curWall();
   /* circuiti: chi guarda sceglie (con il muro scuro le prese degli altri colori si vedono poco, e per impararle serve vederle) */
   if(w && !isSec(w)) return S.prefs.dimC !== false;
@@ -3115,8 +3118,9 @@ function renderStage(){
   }
   if(bGrid()){ st.hidden = true; z.hidden = true; em.hidden = false; em.innerHTML = sectorGrid(); return; }
   st.hidden = false; em.hidden = true; em.innerHTML = ''; z.hidden = false;
-  /* boulder, chi guarda: tasto per oscurare o no il resto del muro (sui circuiti è tra i tasti sotto) */
-  { const t = $('#dimTg'), on = isSec(w) && !bOver() && !!curCircuit() && !(EDIT && S.mode !== 'view'); if(t){ t.hidden = !on; t.setAttribute('aria-pressed', String(S.prefs.dimB !== false)); t.classList.toggle('on', S.prefs.dimB !== false); } }
+  /* chi guarda (boulder e circuiti): il faro acceso illumina il percorso e oscura il resto del muro */
+  { const t = $('#dimTg'), show = !bOver() && !!curCircuit() && !(EDIT && S.mode !== 'view'), k = isSec(w) ? 'dimB' : 'dimC', lit = S.prefs[k] !== false;
+    if(t){ t.hidden = !show; t.setAttribute('aria-pressed', String(lit)); t.classList.toggle('on', lit); t.title = lit ? 'Faro acceso: il resto del muro è scuro' : 'Faro spento: muro a colori pieni'; t.innerHTML = lit ? SPOT_ON : SPOT_OFF; } }
   st.classList.toggle('edit', EDIT && S.mode !== 'view');
   st.classList.toggle('linedraw', !!ui.bline || drawMode());
   const im = $('#photo');
@@ -3291,7 +3295,7 @@ function renderTools(){
     const p = S.prefs;
     /* circuiti: numeri (accesi di base), linee (spente) e altri circuiti del muro in trasparenza (spenti). Si ricordano su questo telefono */
     const tg = (k, l) => `<button class="btn ${p[k] ? 'on' : ''}" data-act="pref" data-k="${k}" aria-pressed="${!!p[k]}">${l}</button>`;
-    el.innerHTML = c && !isSec(w) ? `<div class="mini">${tg('numbers', 'Numeri')}${tg('lines', 'Linee')}${tg('dimC', 'Oscura')}${w.circuits.length > 1 ? tg('othersV', 'Altri circuiti') : ''}</div>` : '';
+    el.innerHTML = c && !isSec(w) ? `<div class="mini">${tg('numbers', 'Numeri')}${tg('lines', 'Linee')}${w.circuits.length > 1 ? tg('othersV', 'Altri circuiti') : ''}</div>` : '';
     return;
   }
   const h = c && ui.sel != null ? c.holds[ui.sel] : null;
@@ -4745,7 +4749,7 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['acctage','badges','hi','prevtoday','fgo','bcolorall','rate','minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
+const PUBLIC_ACTS = ['acctage','badges','hi','tries','dimtg','prevtoday','fgo','bcolorall','rate','minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
 const MGR_ACTS = ['qr','qrprint','qrcopy','dash','dashsec','fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
@@ -5010,6 +5014,7 @@ document.addEventListener('click', e => {
     case 'printall': printBlocks(true); break;
     case 'publish': publish(); break;
     case 'pref': S.prefs[b.dataset.k] = !S.prefs[b.dataset.k]; saveViewPrefs(); render(); break;
+    case 'dimtg': { const k = w && isSec(w) ? 'dimB' : 'dimC'; S.prefs[k] = S.prefs[k] === false; saveViewPrefs(); render(); break; }
     case 'zoom': { const bx = $('#box').getBoundingClientRect(); applyZoom(ui.zoom * Math.pow(1.4, +b.dataset.d), bx.left + bx.width/2, bx.top + bx.height/2); break; }
     case 'clist': ui.confirm = null; openSheet('clist'); break;
     case 'cedit': if(c && EDIT) openSheet('circ'); break;
