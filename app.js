@@ -3386,6 +3386,8 @@ function render(){
   if(viewing && w && isSec(w)){ const v = sortedVisible(w); if(v.length && !v.some(x => x.id === w.activeCircuit)) w.activeCircuit = v[0].id; }
   if(ui.full && (!viewing || !curCircuit())) ui.full = false;
   $('#app').classList.toggle('full', !!ui.full);
+  if(!ui.full) ui.clean = false;
+  $('#app').classList.toggle('clean', !!ui.full && !!ui.clean);
   $('#app').classList.toggle('grid', bGrid() || ui.home);
   $('#app').classList.toggle('home', !!ui.home);
   $('#app').classList.toggle('over', bOver());
@@ -3429,10 +3431,18 @@ function hidNote(c){
     `<span>${n === 1 ? 'Una presa non si vede nella foto: è nascosta dietro il cerchio tratteggiato.' : n + ' prese non si vedono nella foto: sono nascoste dietro i cerchi tratteggiati.'}</span></p>`;
 }
 function setFull(on){
-  if(on && !ui.full){ ui.full = true; try{ history.pushState({ full: 1 }, ''); }catch(e){} }
+  ui.clean = false;
+  if(on && !ui.full){ ui.full = true; try{ history.pushState({ full: 1 }, ''); }catch(e){} cleanHint(); }
   else if(!on && ui.full){ ui.full = false; }
   ui.zoom = 1; render();
   if(ui.full) focusCircuit();
+}
+/* le prime due volte a schermo intero si spiega come vedere la foto senza niente sopra */
+function cleanHint(){
+  let n = 0; try{ n = +(localStorage.getItem('mr_cleanHint') || 0); }catch(e){}
+  if(n >= 2) return;
+  try{ localStorage.setItem('mr_cleanHint', String(n + 1)); }catch(e){}
+  setTimeout(() => { if(ui.full && !ui.clean) toast('Tocca la foto per vederla senza tasti; toccala di nuovo per farli tornare', 4500); }, 700);
 }
 /* a schermo intero si ingrandisce sul blocco: tutte le sue prese dentro lo schermo, con un po' di margine */
 function focusCircuit(){
@@ -4664,7 +4674,12 @@ async function publish(){
 }
 
 /* ---------- interazione ---------- */
-$('#box').addEventListener('click', () => { if(cCompact() && curCircuit() && Date.now() - ui.pinchAt > 350) setFull(true); });
+$('#box').addEventListener('click', () => {
+  if(Date.now() - ui.pinchAt <= 350) return;
+  if(cCompact() && curCircuit()) setFull(true);
+  /* a schermo intero un tocco sulla foto la lascia da sola (niente tasti, barra e scheda); un altro tocco li rimette */
+  else if(ui.full && !(EDIT && S.mode !== 'view')){ ui.clean = !ui.clean; render(); }
+});
 $('#stage').addEventListener('click', async e => {
   const w = curWall(), c = curCircuit();
   if(w && bOver() && Date.now() - ui.pinchAt > 350){
