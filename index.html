@@ -217,6 +217,8 @@ button,label.btn{cursor:pointer}
 .busy.go{pointer-events:auto;cursor:pointer}
 /* computer (mouse): il pannello in basso copre gli ultimi 16px della foto, dove sta la barra di scorrimento orizzontale */
 @media (pointer:fine){#box{bottom:16px}.zoom{bottom:26px}}
+/* telefoni e tablet: la foto si ingrandisce con due dita, quindi niente + e − sopra la foto */
+@media (pointer:coarse){.zoom button:not(.dimtg){display:none}#app.full .zoom{bottom:28px}#app.full .zoom .dimtg{width:38px;height:38px}}
 .fbrow{align-items:flex-start;gap:10px}
 .fbrow .fbmsg{display:block;margin:3px 0;white-space:pre-wrap;word-break:break-word;color:var(--ink)}
 .fbrow.fbdone{opacity:.55}
@@ -356,5 +358,5 @@ button,label.btn{cursor:pointer}
 </style></head><body><div id="root"></div>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="namegen.js?v=202"></script><script id="app-js" src="app.js?v=202"></script>
+<script src="namegen.js?v=203"></script><script id="app-js" src="app.js?v=203"></script>
 </body></html>
