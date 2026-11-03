@@ -1,6 +1,6 @@
 # Monkey Roads – documento di riferimento
 
-*Aggiornato al 30 ottobre 2026. Da caricare tra i documenti del progetto "Monkey Roads" su Claude.*
+*Aggiornato al 3 novembre 2026 (versione v200). Da caricare tra i documenti del progetto "Monkey Roads" su Claude.*
 
 Monkey Roads è la web app di **Monkey Island Roma**, la palestra di boulder di Paolo. Mostra i boulder e i circuiti della palestra sulla foto dei muri. Lo staff ci traccia i percorsi; i clienti li consultano e, con un account, segnano le proprie salite.
 
@@ -14,7 +14,9 @@ Monkey Roads è la web app di **Monkey Island Roma**, la palestra di boulder di 
 | Email (conferma account, password dimenticata) | Brevo, via SMTP collegato a Supabase; testi in italiano |
 | Segnalazioni dei clienti | Telegram, bot "Monkey Roads segnalazioni" (il token sta solo nel database) |
 | Lista per il lancio | `LANCIO.md` nel codice |
-| Note (messaggio per i tester, schermate da rivedere) | cartella `note/` nel codice |
+| Link per i tester (accende gli account solo su quel telefono) | https://paolomarchetti1980-crypto.github.io/Circuiti/#prova-account-6bfacd47 (per spegnere: `#prova-account-off`) |
+| Messaggio per i tester | in fondo a questo documento, e in `note/messaggio-tester.md` |
+| Note (schermate da rivedere) | cartella `note/` nel codice |
 | Informativa privacy (bozza) | artifact Docs "Informativa privacy – Monkey Roads (bozza)" |
 
 ### File del codice
@@ -54,7 +56,12 @@ Monkey Roads è la web app di **Monkey Island Roma**, la palestra di boulder di 
 - **Rilevazione (dal 27/10):** al tocco, se il riconoscimento non trova la presa (o prende solo il bullone) si usa il colore. Nel rilevamento automatico: le prese sopra i volumi vengono separate (solo colore deciso e forma compatta, così le chiazze di vernice si scartano) e c'è una seconda passata ingrandita per le prese piccole (contorni pieni, rilevamento circa un terzo più lento).
 - Rileva le prese e prepara il muro ("Blocca muro", poi "+ Nuovo circuito"). Finché il muro non è pronto lo vede solo il gestore.
 - **Tracciatura:** partenza (quadrato), prese con mano sinistra o destra, arrivo (rombo), **piedi obbligati** (tratteggio giallo con l'impronta). I numeri hanno tutti la stessa misura; mentre si traccia si possono vedere gli altri circuiti in trasparenza.
-- **Boulder:** colore, soprannome, tracciatore, date di montaggio e smontaggio, caratteristiche a gruppi (Parete, Movimento, Prese, Richiede), note. Il vecchio menu "Stile" è stato tolto per i boulder e resta per i circuiti.
+- **Boulder:** colore, **numero scelto dal tracciatore** (ordine di difficoltà nel colore del settore, 1 = il più facile; scegliendo un numero già usato i due boulder se lo scambiano), soprannome, **tracciatore da menu a tendina** (solo nomi dello staff), "Tracciato il", **Scadenza**, caratteristiche, note.
+- **Caratteristiche dei boulder (dal 2/11):** gruppi che si aprono uno alla volta. Inclinazione (una: Appoggiato, Verticale, Strapiombo, Tetto) · Conformazione · Prese · Movimento (con Body tension) · Piedi · Stile (una: Fisico, Tecnico, Coordinativo, Delicato) · Da sapere (Morfologico, Partenza sit, Partenza saltata, Pareti adiacenti, Spigoli vicini).
+- **Caratteristiche dei circuiti (dal 2/11):** Prese predominanti · Movimenti crux · Stile (uno: Continuo, Fisico, Di singolo, Discontinuo) · Da sapere (Loop, Con riposi, Partenza sit, Con rilanci). Piedi liberi/obbligati e inclinazione (0° di base) restano a parte.
+- **Scadenza dei boulder (dal 2/11):** teorica, tracciatura + 9 settimane, modificabile. Dopo resta in parete come "scaduto"; va tra gli smontati solo archiviando il settore (ripristinandolo tornano in parete). "Smonta ora" per il boulder tolto prima.
+- **Muri dei circuiti:** caricando la foto non si crea più un circuito vuoto; dopo "Blocca muro" compare "+ Nuovo circuito".
+- **Dado dei nomi:** animali, ambienti, personaggi, pirati, cucina romana, mitologia, cielo, modi di dire; evita le parole già usate sullo stesso muro e si ispira alle caratteristiche.
 - **Linea del boulder (dal 30/10, v184):** se il tracciatore non la disegna a mano, l'app la calcola imitando le linee di Paolo: parte in mezzo alle prese di partenza, arriva appena sotto il Top (con più Top, il più lontano dalla partenza), passa nel mezzo delle prese del blocco con una curva morbida e gira attorno solo a quelle (le prese degli altri boulder si possono attraversare). Su 19 boulder con linea a mano lo scarto medio è sceso dal 7,4% al 3,9% della larghezza della foto. Le linee disegnate a mano restano sempre quelle mostrate.
 - **Prese nascoste (boulder):** per una presa che nella foto non si vede, per esempio sulla faccia posteriore di un volume, il tracciatore usa il tasto "Presa nascosta" e tocca il punto in cui la presa sparisce. Su una presa già segnata c'è l'interruttore "Nascosta". Sulla foto compare un cerchio tratteggiato con una freccia curva, che il tracciatore gira con "Freccia ↺ ↻" finché non sta perpendicolare al bordo del volume. Nella scheda il cliente legge "Una presa non si vede nella foto…". Sui circuiti non c'è, perché le pareti dei circuiti non nascondono prese.
 - **Menu Altro → Gestione:** Pannello settori (età, gradi presenti e mancanti, chi traccia), Segnalazioni ricevute, QR code, Staff, Versioni precedenti, Vedi come tracciatore.
@@ -63,19 +70,19 @@ Monkey Roads è la web app di **Monkey Island Roma**, la palestra di boulder di 
 
 ### Clienti
 - Schermata iniziale con Boulder e Circuiti, settori a griglia, foto a schermo intero con frecce e "striscia dei pallini".
-- **Tasti per i circuiti:** Numeri (acceso), Linee (spento), Altri circuiti (spento). Ogni telefono ricorda le sue scelte.
+- **Icone sulla foto:** il **faro** (boulder e circuiti: spento = muro scuro, acceso = muro a colori pieni) e, sui circuiti, **Numeri** (cerchio con #) e **Linea**. Ogni telefono ricorda le sue scelte. "Altri circuiti" c'è solo per chi traccia.
 - **Stampa e Condividi immagine** dal menu, solo dentro un settore o un muro.
 - **Segnala un problema:** la segnalazione arriva su Telegram.
 - L'app funziona anche offline e si apre subito. All'apertura chiede solo il numero di versione e riscarica i dati solo se c'è stata una pubblicazione.
 
 ### Account clienti ("Le mie salite") – ancora spenti per il pubblico
 - **Iscrizione:** email e password, con l'occhio per vederla in chiaro, più "Chi crea l'account?": "almeno 14 anni" oppure "un genitore per un figlio sotto i 14". Poi conferma via email.
-- **Salite:** ✓ Fatto / ☆ Progetto, parere sul grado, gradimento da 1 a 10. Sui circuiti in progetto si segna **"fin dove sei arrivato"** (record e bandierina sulla foto).
+- **Salite:** ✓ Fatto / ☆ Progetto, **come l'hai fatto** (A vista, Flash, In giornata, Lavorato, Superlavorato), parere sul grado, gradimento da 1 a 10. Sui circuiti in progetto si segna **"fin dove sei arrivato"** (record e bandierina sulla foto).
 - **Annulla** dopo aver tolto un Fatto o un Progetto con record.
 - **Sempre sotto gli occhi:** pulsante con la montagna in alto, riquadro nella schermata iniziale, avanzamento "✓ 3/8 ☆ 1" su schermata iniziale e settori, ✓ e ☆ sui cartellini della foto.
 - **Le mie salite:** riquadro dei badge in cima, schede Boulder e Circuiti, "In parete adesso", "Da sempre" con grafico mensile, progetti con la barra del record.
-- **Badge:** sono 48, a toppa esagonale in bronzo, argento o oro, con un disegno per ognuno e il bordo che si riempie man mano. Animazione allo sblocco; pallino rosso finché non li vedi.
-  - Gruppi: Costanza, Varietà, Colori, Progressi, Per la palestra, Chilometraggio (solo movimenti dei circuiti, pietra miliare), Tecnica (piedi obbligati: elefante, orso, stambecco, scimmia), Orari, Sedute.
+- **Badge:** sono oltre 80, a toppa esagonale in bronzo, argento o oro, con un disegno per ognuno e il bordo che si riempie man mano. Animazione allo sblocco; pallino rosso finché non li vedi.
+  - Gruppi: Tentativi (a vista, flash, lavorati, giornate da ricordare, Assedio), Primi e veloci (Prima salita, Primo flash, Fresco di tracciatura, Apripista, Appena in tempo, Zona Cesarini), Costanza, Varietà, Colori, Progressi, Per la palestra (anche Beta tester, Diario di bordo), Chilometraggio, Tecnica (piedi obbligati), Orari, Sedute. Nomi e soglie da rivedere (vedi `LANCIO.md`).
   - L'orario di una salita è quello in cui si tocca Fatto.
 - **Cancella il mio account:** dal menu, elimina account e salite.
 
@@ -89,8 +96,8 @@ Monkey Roads è la web app di **Monkey Island Roma**, la palestra di boulder di 
   - `app_state`: tutti i muri e i percorsi in un unico documento, con lo storico in `app_state_history`.
   - `editors`: staff (email, ruolo, nome).
   - `feedback`: segnalazioni, con trigger verso Telegram.
-  - `ticks`: le salite dei clienti. Colonne: stato, voto, gradimento, grado, data, movimenti, da progetto, punto più alto, miglioramenti.
-- **Funzioni:** `is_editor`, `my_role`, `is_manager`, `tick_summary`, `tick_stats`, `delete_my_account`, `purge_inactive_clients`.
+  - `ticks`: le salite dei clienti. Colonne: stato, voto, gradimento, grado, data, movimenti, da progetto, punto più alto, miglioramenti, come l'ha fatto (`tries`).
+- **Funzioni:** `is_editor`, `my_role`, `is_manager`, `tick_summary`, `tick_stats`, `tick_stats3` (riepilogo staff con i tentativi), `my_firsts` (su quali percorsi il cliente è stato il primo), `delete_my_account`, `purge_inactive_clients`.
 - **Pulizia automatica:** ogni domenica alle 3 vengono cancellati gli account clienti inattivi da 24 mesi; lo staff è escluso.
 - **Limite email** di Supabase: 100 all'ora. Brevo gratuito: 300 al giorno.
 - **Costi:** zero con i piani gratuiti. Il piano Pro di Supabase (circa 23 €/mese) servirebbe solo per avere i backup giornalieri.
@@ -105,4 +112,47 @@ Monkey Roads è la web app di **Monkey Island Roma**, la palestra di boulder di 
 - **Dopo l'ok della dirigenza:** dati della palestra (ragione sociale, indirizzo, P. IVA, email privacy) nell'informativa; mittente e indirizzo della palestra su Brevo; dominio della palestra; verifica dell'informativa con il consulente.
 - **Il giorno del lancio:** cancellare gli account e le salite di prova, mettere `ACCT_LIVE = true`, provare da un telefono che non è dello staff.
 - **Dopo il lancio:** notifiche (progetto in smontaggio, settore rinnovato, nuovi circuiti), che il cliente sceglie; al massimo una al giorno, niente di notte.
-- **Da rivedere (Paolo):** la scheda del boulder → Caratteristiche.
+- **Da rivedere (Paolo):** i badge nuovi (nomi, soglie, disegni); se "Prima salita" deve escludere gli account dello staff.
+
+## Messaggio per i tester
+
+Link da mandare: https://paolomarchetti1980-crypto.github.io/Circuiti/#prova-account-6bfacd47
+
+### Messaggio completo
+
+Ciao! Ti va di provare in anteprima la nuova app di Monkey Island? 🐒
+
+Si chiama Monkey Roads: ci trovi tutti i boulder e i circuiti della palestra, e da ora puoi segnare quelli che hai fatto, i tuoi progetti, dare un voto ai percorsi e sbloccare dei badge.
+
+La stiamo facendo provare a pochi clienti prima di aprirla a tutti, quindi questo link funziona solo per te 👇
+https://paolomarchetti1980-crypto.github.io/Circuiti/#prova-account-6bfacd47
+
+Come fare:
+1. Apri il link e crea il tuo account (email e password)
+2. Conferma dalla mail che ti arriva
+3. Usala quando arrampichi e segna quello che fai
+
+📱 Android: dal menu di Chrome scegli "Installa app" e la trovi tra le app
+🍏 iPhone: per ora usala da Safari (salvala nei preferiti), non aggiungerla alla Home
+
+Se qualcosa non va o hai un'idea, nell'app c'è "Segnala un problema" nel menu ⋮: mi arriva subito.
+
+Tra un paio di settimane ti chiederò 5 domande veloci su com'è andata. Grazie! 🙌
+
+### Messaggio breve
+
+Ciao! Ti va di provare in anteprima la nuova app di Monkey Island? 🐒
+Segni i boulder e i circuiti fatti, i progetti, dai un voto ai percorsi e sblocchi badge.
+
+Il link funziona solo per chi è in prova 👇
+https://paolomarchetti1980-crypto.github.io/Circuiti/#prova-account-6bfacd47
+
+Crei l'account, confermi dalla mail e la usi quando arrampichi. Su iPhone per ora usala da Safari, non dalla Home.
+Se qualcosa non va: menu ⋮ → Segnala un problema.
+
+Tra due settimane ti chiedo com'è andata. Grazie! 🙌
+
+### Da ricordare
+
+- La mail di conferma arriva ancora dalla Gmail di Paolo (mittente di prova): avvisare i tester.
+- Gli account dei tester restano validi anche dopo il lancio.
