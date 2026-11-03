@@ -15,7 +15,7 @@ Monkey Roads è la web app di **Monkey Island Roma**, la palestra di boulder di 
 | Segnalazioni dei clienti | Telegram, bot "Monkey Roads segnalazioni" (il token sta solo nel database) |
 | Lista per il lancio | `LANCIO.md` nel codice |
 | Link per i tester (accende gli account solo su quel telefono) | https://paolomarchetti1980-crypto.github.io/Circuiti/#prova-account-6bfacd47 (per spegnere: `#prova-account-off`) |
-| Messaggio per i tester | in fondo a questo documento, e in `note/messaggio-tester.md` |
+| Messaggio per i tester | **nell'app: menu ⋮ → Gestione → QR code e link** (Copia / Invia messaggio); anche in fondo a questo documento e in `note/messaggio-tester.md` |
 | Note (schermate da rivedere) | cartella `note/` nel codice |
 | Informativa privacy (bozza) | artifact Docs "Informativa privacy – Monkey Roads (bozza)" |
 

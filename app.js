@@ -4000,13 +4000,24 @@ const qrItems = () => [{ id: '', name: 'Pagina iniziale', sub: 'tutta l\'app: bo
   .concat(S.walls.filter(w => isSec(w) && !w.archived).map(w => ({ id: w.id, name: w.name, sub: 'boulder di questo settore', w })))
   .concat(S.walls.filter(w => !isSec(w) && !w.archived).map(w => ({ id: w.id, name: w.name, sub: 'circuiti di questo muro', w })));
 function qrHtml(){
-  if(!window.qrcode){ loadQR().then(() => { if(ui.sheet === 'qr') renderSheet(); }, () => toast('Non riesco a caricare il generatore di QR: controlla la connessione.')); return `<h2>QR code</h2><p>Carico…</p>`; }
+  if(!window.qrcode){ loadQR().then(() => { if(ui.sheet === 'qr') renderSheet(); }, () => toast('Non riesco a caricare il generatore di QR: controlla la connessione.')); return `<h2>QR code e link</h2>` + testerBox() + `<p>Carico i QR…</p>`; }
   const items = qrItems();
-  return `<h2>QR code</h2><p class="note" style="margin:0 0 12px">Stampali e attaccali vicino a ogni settore o muro: inquadrandoli con la fotocamera del telefono si apre l'app direttamente lì. Il QR resta valido anche quando cambi i boulder: si rifà solo se crei un settore nuovo.</p>`+
+  return `<h2>QR code e link</h2>` + testerBox() + `<p class="note" style="margin:0 0 12px">Stampali e attaccali vicino a ogni settore o muro: inquadrandoli con la fotocamera del telefono si apre l'app direttamente lì. Il QR resta valido anche quando cambi i boulder: si rifà solo se crei un settore nuovo.</p>`+
     `<div class="row" style="margin:0 0 10px"><button class="btn primary" data-act="qrprint" data-id="*">Stampa tutti (${items.length})</button></div>`+
     `<div class="list">${items.map(it => `<div class="wrow qrrow">${qrSvg(wallLink(it.w), 64)}<span style="flex:1;min-width:0"><b>${esc(it.name)}</b><br><small>${esc(it.sub)}</small></span>`+
       `<span class="fbbtns"><button class="btn" data-act="qrprint" data-id="${esc(it.id)}">Stampa</button><button class="btn" data-act="qrcopy" data-id="${esc(it.id)}">Copia link</button></span></div>`).join('')}</div>`+
     `<div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
+}
+/* prova con i tester: link e messaggi pronti da copiare o inviare (stesso testo di note/messaggio-tester.md) */
+const TESTER_LINK = location.origin + location.pathname.replace(/index\.html$/, '') + '#prova-account-6bfacd47';
+const TESTER_MSG = { full: "Ciao! Ti va di provare in anteprima la nuova app di Monkey Island? 🐒\n\nSi chiama Monkey Roads: ci trovi tutti i boulder e i circuiti della palestra, e da ora puoi segnare quelli che hai fatto, i tuoi progetti, dare un voto ai percorsi e sbloccare dei badge.\n\nLa stiamo facendo provare a pochi clienti prima di aprirla a tutti, quindi questo link funziona solo per te 👇\nhttps://paolomarchetti1980-crypto.github.io/Circuiti/#prova-account-6bfacd47\n\nCome fare:\n1. Apri il link e crea il tuo account (email e password)\n2. Conferma dalla mail che ti arriva\n3. Usala quando arrampichi e segna quello che fai\n\n📱 Android: dal menu di Chrome scegli \"Installa app\" e la trovi tra le app\n🍏 iPhone: per ora usala da Safari (salvala nei preferiti), non aggiungerla alla Home\n\nSe qualcosa non va o hai un'idea, nell'app c'è \"Segnala un problema\" nel menu ⋮: mi arriva subito.\n\nTra un paio di settimane ti chiederò 5 domande veloci su com'è andata. Grazie! 🙌", short: "Ciao! Ti va di provare in anteprima la nuova app di Monkey Island? 🐒\nSegni i boulder e i circuiti fatti, i progetti, dai un voto ai percorsi e sblocchi badge.\n\nIl link funziona solo per chi è in prova 👇\nhttps://paolomarchetti1980-crypto.github.io/Circuiti/#prova-account-6bfacd47\n\nCrei l'account, confermi dalla mail e la usi quando arrampichi. Su iPhone per ora usala da Safari, non dalla Home.\nSe qualcosa non va: menu ⋮ → Segnala un problema.\n\nTra due settimane ti chiedo com'è andata. Grazie! 🙌" };
+const testerText = k => k === 'link' ? TESTER_LINK : TESTER_MSG[k].split('https://paolomarchetti1980-crypto.github.io/Circuiti/#prova-account-6bfacd47').join(TESTER_LINK);
+function testerBox(){
+  return `<div class="tbox"><b>Prova con i tester</b><small>Il link accende gli account solo sul telefono di chi lo apre. Per spegnerli su un telefono: lo stesso indirizzo con #prova-account-off alla fine.</small>`+
+    `<code>${esc(TESTER_LINK)}</code>`+
+    `<div class="row" style="margin:8px 0 0">${navigator.share ? `<button class="btn primary" data-act="tsend" data-v="full">Invia messaggio</button><button class="btn" data-act="tsend" data-v="short">Invia breve</button>` : ''}`+
+    `<button class="btn ${navigator.share ? '' : 'primary'}" data-act="tcopy" data-v="full">Copia messaggio</button><button class="btn" data-act="tcopy" data-v="short">Copia breve</button><button class="btn" data-act="tcopy" data-v="link">Copia link</button></div>`+
+    `<small style="margin-top:6px">La mail di conferma arriva ancora dalla Gmail di prova: avvisa i tester.</small></div>`;
 }
 async function qrPrint(id){
   try{ await loadQR(); }catch(e){ toast('Non riesco a caricare il generatore di QR.'); return; }
@@ -4203,7 +4214,7 @@ function renderSheet(){
     /* in alto quello che serve al gestore, raccolto sotto "Gestione"; poi stampa, app e account */
     const G = (mgr && S.walls.some(isSec) ? row('dash', 'Pannello settori', 'età dei boulder, gradi presenti e mancanti, chi traccia') : '')+
       (SB && gest ? row('fblist', 'Segnalazioni ricevute', 'problemi segnalati ed errori dell\'app') : '')+
-      (mgr && S.walls.some(w => !w.archived) ? row('qr', 'QR code', 'da attaccare ai muri: chi li inquadra apre quel settore') : '')+
+      (mgr && S.walls.some(w => !w.archived) ? row('qr', 'QR code e link', 'QR da attaccare ai muri, link e messaggio per i tester') : '')+
       (SB && gest ? row('staff', 'Staff', 'chi può tracciare e pubblicare') : '')+
       (SB && gest ? row('hist', 'Versioni precedenti', 'le ultime pubblicazioni, da ripristinare') : '')+
       (REAL_EDIT && ME.role === 'gestore' ? (ui.viewAs === 'tracciatore' ? row('viewas" data-v="gestore', 'Torna gestore', 'stai vedendo l\'app come un tracciatore') : row('viewas" data-v="tracciatore', 'Vedi come tracciatore', 'per controllare cosa può fare lo staff')) : '');
@@ -4756,7 +4767,7 @@ $('#stage').addEventListener('click', async e => {
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
 const PUBLIC_ACTS = ['acctage','badges','hi','tries','dimtg','prevtoday','fgo','bcolorall','rate','minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
-const MGR_ACTS = ['qr','qrprint','qrcopy','dash','dashsec','fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
+const MGR_ACTS = ['qr','qrprint','qrcopy','tcopy','tsend','dash','dashsec','fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b || b.disabled) return;
   const a = b.dataset.act, w = curWall(), c = curCircuit();
@@ -4874,6 +4885,8 @@ document.addEventListener('click', e => {
       save(); try{ history.pushState({ grid: 1 }, ''); history.pushState({ sec: 1 }, ''); }catch(e){} setFull(true); break; }
     case 'qr': openSheet('qr'); break;
     case 'qrprint': qrPrint(b.dataset.id); break;
+    case 'tcopy': { const u = testerText(b.dataset.v); (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(() => toast(b.dataset.v === 'link' ? 'Link copiato' : 'Messaggio copiato: incollalo su WhatsApp o dove vuoi'), () => window.prompt('Copia:', u)); break; }
+    case 'tsend': { const u = testerText(b.dataset.v); try{ navigator.share({ text: u }).catch(() => {}); }catch(e){ toast('Non riesco ad aprire la condivisione: usa Copia.'); } break; }
     case 'qrcopy': { const it = qrItems().find(x => x.id === b.dataset.id); if(!it) break; const u = wallLink(it.w);
       (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(() => toast('Link copiato'), () => window.prompt('Copia il link:', u)); break; }
     case 'dashsec': {
