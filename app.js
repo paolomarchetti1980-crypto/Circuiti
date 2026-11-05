@@ -281,6 +281,11 @@ const expOf = c => (c && (c.expires || (c.dateSet ? addDaysISO(c.dateSet, AGE_EX
 const isExp = c => !!c && !isOff(c) && !!expOf(c) && expOf(c) < todayISO();
 const expText = c => isOff(c) ? 'smontato ' + fmtDate(c.dateRemoved) : !expOf(c) ? '' : isExp(c) ? 'scaduto il ' + fmtDate(expOf(c)) : 'scade il ' + fmtDate(expOf(c));
 const fmtDate = d => { if(!d) return ''; const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d); return m ? (+m[3]) + '/' + (+m[2]) + '/' + m[1].slice(2) : d; };
+/* percorso già pubblicato (c'è, con prese, nella versione pubblicata): resta bloccato finché non si preme "Modifica prese",
+   così un tocco per sbaglio non aggiunge prese che poi si pubblicano senza accorgersene */
+const baseC = (wid, cid) => { const bw = BASE && BASE.find(x => x.id === wid); return bw && (bw.circuits || []).find(x => x.id === cid) || null; };
+const pubC = (w, c) => { const b = w && c && baseC(w.id, c.id); return !!(b && (b.holds || []).length); };
+const cLocked = (w, c) => pubC(w, c) && !(ui.unl && ui.unl[c.id]);
 const curCircuit = () => { const w = curWall(); return w ? (w.circuits.find(c => c.id === w.activeCircuit) || w.circuits[0] || null) : null; };
 const dirty = () => EDIT && S.rev > PUBREV;
 
@@ -3342,6 +3347,13 @@ function renderTools(){
       `<button class="btn primary" data-act="desel">Fatto</button></div>`;
     return;
   }
+  if(c && cLocked(w, c)){
+    el.innerHTML = `<p class="hint">${sec ? 'Boulder' : 'Circuito'} già pubblicato: è bloccato, così un tocco per sbaglio non aggiunge prese. Tocca una presa per modificarla; per aggiungerne premi Modifica prese.</p>`+
+      `<div class="trow"><button class="btn primary" data-act="cunlock">Modifica prese</button>`+
+      (sec ? `<button class="btn" data-act="bline">${c.line ? 'Linea (tua)' : 'Linea'}</button>` : '')+
+      dimBtn+(sec ? '' : `<button class="btn ${S.prefs.others ? 'on' : ''}" data-act="pref" data-k="others" aria-pressed="${!!S.prefs.others}">Altri circuiti</button>`)+`</div>`;
+    return;
+  }
   /* nessuna selezione: si scelgono tipo (e mano) della prossima presa e si tocca la foto */
   const first = !c || !c.holds.length;
   let hint = first ? 'Tocca la presa di partenza' : 'Tocca la prossima presa';
@@ -4129,6 +4141,7 @@ function renderSheet(){
   let h = '';
   if(ui.sheet === 'csearch') h = sqSheet();
   else if(ui.sheet === 'cfilt') h = sqSheet('wall');
+  else if(ui.sheet === 'pubchk') h = pubChkSheet();
   else if(ui.sheet === 'circ' && c && EDIT && isSec(w)){
     const gradeOpt = v => `<option value="${v}" ${(c.grade || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
     const styleOpt = v => `<option value="${v}" ${(c.style || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
@@ -4656,9 +4669,35 @@ function setViewAs(v){
   renderSheet(); render();
   if(ui.viewAs && !ui.prevNew) toast(v === 'cliente' ? 'Anteprima: l\'app come la vede un cliente. Tocca la chiave inglese per tornare a lavorare.' : 'Vedi l\'app come un tracciatore.');
 }
+/* prima di pubblicare: i percorsi già pubblicati a cui sono cambiate le prese (aggiunte o tolte), da confermare */
+const holdKey = h => [h.role || '', Math.round(h.x), Math.round(h.y)].join('|');
+function pubChanges(){
+  const out = [];
+  S.walls.forEach(w => (w.circuits || []).forEach(c => {
+    const b = baseC(w.id, c.id); if(!b || !(b.holds || []).length) return;
+    const bk = b.holds.map(holdKey), nk = (c.holds || []).map(holdKey);
+    const left = bk.slice(); let add = 0;
+    nk.forEach(k => { const i = left.indexOf(k); if(i >= 0) left.splice(i, 1); else add++; });
+    const del = left.length;
+    if(add || del) out.push({ w, c, add, del });
+  }));
+  return out;
+}
+function pubChkSheet(){
+  const l = pubChanges();
+  if(!l.length) return `<h2>Pubblica</h2><p>Nessuna presa cambiata nei percorsi già pubblicati.</p><button class="btn primary" data-act="pubgo" style="width:100%">Pubblica</button>`;
+  const n = (k, one, many) => k === 1 ? '1 ' + one : k + ' ' + many;
+  return `<h2>Controlla prima di pubblicare</h2><p class="hint" style="margin-top:0">In questi percorsi già pubblicati sono cambiate le prese. Se non l'hai fatto apposta, annulla le modifiche alle prese.</p>`+
+    `<div class="list" style="gap:0;margin:0">` + l.map(({ w, c, add, del }) => `<div class="wrow" style="flex-wrap:wrap"><i class="dot" style="background:${colOf(c)}"></i><span class="ctext" style="flex:1;min-width:0"><b style="white-space:normal">${esc(isSec(w) ? bTitle(c) : c.name)}</b><small style="white-space:normal">${esc(w.name)} · ${[add ? n(add, 'presa aggiunta', 'prese aggiunte') : '', del ? n(del, 'presa tolta', 'prese tolte') : ''].filter(Boolean).join(', ')}</small></span>`+
+      `<span class="row" style="margin:6px 0 0;flex:1 1 100%;justify-content:flex-end;flex-wrap:nowrap"><button class="btn" data-act="pubsee" data-w="${w.id}" data-id="${c.id}">Guarda</button><button class="btn danger" data-act="pubrev" data-w="${w.id}" data-id="${c.id}">Annulla</button></span></div>`).join('') + `</div>`+
+    `<button class="btn primary" data-act="pubgo" style="width:100%;margin-top:14px">Va bene, pubblica</button>`+
+    `<button class="btn" data-act="close" style="width:100%;margin-top:8px">Non ancora</button>`;
+}
 async function publish(){
   if(!EDIT || !SB || ui.publishing || !dirty()) return;
   if(ui.scan){ toast('Prima aspetta la fine del rilevamento automatico, o fermalo: pubblicando l\'app si ricarica e lo interrompe.'); return; }
+  if(!ui.pubOk && pubChanges().length){ openSheet('pubchk'); return; }
+  ui.pubOk = false;
   ui.publishing = true; renderPub();
   try{
     await saveNow();
@@ -4743,6 +4782,11 @@ $('#stage').addEventListener('click', async e => {
     const h = c.holds[ui.sel];
     applySeg(h, await detect(w, x, y, h.ts || 1), x, y, w);
     ui.move = false; ui.busy = false; touch(); render(); return;
+  }
+  if(cLocked(w, c)){
+    const hl = hitIndex(c, w.w, x, y, ctol);
+    if(hl >= 0){ ui.sel = ui.sel === hl ? null : hl; ui.move = false; render(); return; }
+    toast((isSec(w) ? 'Boulder' : 'Circuito') + ' già pubblicato: per aggiungere prese premi "Modifica prese".'); return;
   }
   if(isSec(w) && ui.cand && ui.cand.cid === c.id && ui.sel == null){
     const k = ui.cand.list.findIndex(q => inPoly(q.poly, x, y));
@@ -5046,6 +5090,12 @@ document.addEventListener('click', e => {
     case 'printone': printBlocks(false); break;
     case 'printall': printBlocks(true); break;
     case 'publish': publish(); break;
+    case 'pubgo': ui.sheet = null; renderSheet(); ui.pubOk = true; publish(); break;
+    case 'cunlock': if(c){ (ui.unl = ui.unl || {})[c.id] = 1; render(); } break;
+    case 'pubrev': { const pw = S.walls.find(x => x.id === b.dataset.w), pc = pw && pw.circuits.find(x => x.id === b.dataset.id), bc = pw && baseC(pw.id, b.dataset.id);
+      if(pc && bc){ pc.holds = JSON.parse(JSON.stringify(bc.holds)); if(ui.unl) delete ui.unl[pc.id]; ui.sel = null; ui.move = false; touch(); toast('Prese di ' + (isSec(pw) ? bTitle(pc) : pc.name) + ' tornate come nella versione pubblicata.'); }
+      if(!pubChanges().length){ ui.sheet = null; renderSheet(); render(); } else { renderSheet(); render(); } break; }
+    case 'pubsee': { const pw = S.walls.find(x => x.id === b.dataset.w); if(pw){ ui.sheet = null; renderSheet(); ui.section = secOf(pw); ui.home = false; ui.full = false; if(isSec(pw)) ui.bLevel = 'sector'; S.active = pw.id; pw.activeCircuit = b.dataset.id; ui.sel = null; save(); render(); } break; }
     case 'pref': S.prefs[b.dataset.k] = !S.prefs[b.dataset.k]; saveViewPrefs(); render(); break;
     case 'dimtg': { const k = w && isSec(w) ? 'dimB' : 'dimC'; S.prefs[k] = S.prefs[k] === false; saveViewPrefs(); render(); break; }
     case 'zoom': { const bx = $('#box').getBoundingClientRect(); applyZoom(ui.zoom * Math.pow(1.4, +b.dataset.d), bx.left + bx.width/2, bx.top + bx.height/2); break; }
