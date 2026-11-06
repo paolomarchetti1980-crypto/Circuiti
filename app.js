@@ -4426,13 +4426,15 @@ async function printBlocks(all){
     let html = '';
     for(const b of list){
       const pic = await composeBlock(w, b, { numbers: !isSec(w), others: false, dim: true });
+      /* sotto il titolo solo i dati (il grado è già grande a destra), poi le caratteristiche su una riga a parte */
       const meta = isSec(w)
-        ? [bTags(b).join(', '), b.setter ? 'tracciato da ' + b.setter : '', b.dateSet ? 'tracciato il ' + fmtDate(b.dateSet) : '', holdColText(b)].filter(Boolean)
-        : [b.grade ? 'grado ' + b.grade : '', b.style, b.feet ? 'piedi ' + b.feet : '', b.angle != null ? b.angle + '°' : '', movesText(b)].filter(Boolean);
+        ? [holdColText(b), b.setter ? 'tracciato da ' + b.setter : '', b.dateSet ? 'tracciato il ' + fmtDate(b.dateSet) : ''].filter(Boolean)
+        : [b.angle != null ? b.angle + '°' : '', movesText(b), b.feet ? 'piedi ' + b.feet : '', b.setter ? 'tracciato da ' + b.setter : '', b.dateSet ? 'tracciato il ' + fmtDate(b.dateSet) : ''].filter(Boolean);
+      const ptags = isSec(w) ? bTags(b) : cTags(b);
       html += `<section class="ppage"><header><span>Monkey Island Roma</span><span>${esc(w.name)}</span></header>`+
         `<h1><i style="background:${colOf(b)}"></i>${esc(blockTitle(w, b))}${!isSec(w) && b.grade ? `<b>${esc(b.grade)}</b>` : ''}</h1>`+
         `<p class="pmeta">${meta.map(esc).join(' · ')}</p>`+
-        (isSec(w) && (b.tags || []).length ? `<p class="pmeta">${b.tags.map(esc).join(' · ')}</p>` : '')+
+        (ptags.length ? `<p class="pmeta">${ptags.map(esc).join(' · ')}</p>` : '')+
         (isSec(w) && b.notes ? `<p class="pnotes">${esc(b.notes)}</p>` : '')+
         `<img src="${pic.toDataURL('image/jpeg', 0.88)}" alt="">`+
         `<footer>Monkey Roads · stampato il ${today}</footer></section>`;
