@@ -3002,10 +3002,12 @@ function overlay(w, o){
       else { const r = h.r*w.w; d += `M${h.x-r},${h.y}a${r},${r} 0 1,0 ${2*r},0a${r},${r} 0 1,0 ${-2*r},0Z`; }
     });
     const mid = 'dm' + String(act.id).replace(/[^\w-]/g, '') + (o.edit ? 'e' : 'v'), op = o.edit ? .5 : .62;
+    /* stampa (ink): invece di scurire si schiarisce quasi a bianco, così si consuma poco inchiostro; le prese restano a colori con un contorno scuro */
     s += `<defs><mask id="${mid}" maskUnits="userSpaceOnUse" x="0" y="0" width="${w.w}" height="${w.h}"><rect x="0" y="0" width="${w.w}" height="${w.h}" fill="#fff"/><path d="${d}" fill="#000"/></mask></defs>`+
-         `<rect x="0" y="0" width="${w.w}" height="${w.h}" fill="#000" fill-opacity="${op}" mask="url(#${mid})"/>`;
+         (o.ink ? `<rect x="0" y="0" width="${w.w}" height="${w.h}" fill="#fff" fill-opacity="0.82" mask="url(#${mid})"/><path d="${d}" fill="none" stroke="#111" stroke-width="${Math.max(3, w.w*0.0028)}" stroke-linejoin="round"/>`
+                : `<rect x="0" y="0" width="${w.w}" height="${w.h}" fill="#000" fill-opacity="${op}" mask="url(#${mid})"/>`);
     /* boulder: sui volumi e sulle prese grandi del blocco si oscurano anche le prese d'altro colore montate sopra */
-    if(bo) act.holds.forEach(h => { const fm = foreignMask(w, act, h); if(fm) s += `<image href="${fm.url}" xlink:href="${fm.url}" x="${fm.x}" y="${fm.y}" width="${fm.w}" height="${fm.h}" preserveAspectRatio="none" opacity="${(op/0.62).toFixed(2)}"/>`; });
+    if(bo && !o.ink) act.holds.forEach(h => { const fm = foreignMask(w, act, h); if(fm) s += `<image href="${fm.url}" xlink:href="${fm.url}" x="${fm.x}" y="${fm.y}" width="${fm.w}" height="${fm.h}" preserveAspectRatio="none" opacity="${(op/0.62).toFixed(2)}"/>`; });
   }
   /* gli altri circuiti sopra all'oscuramento, in trasparenza: se no sparirebbero nel buio */
   if(o.others) visibleCircuits(w).forEach(c => { if(c !== act) s += circuitSVG(c, w.w, o.dim ? 0.45 : 0.28, {numbers:false, lines:false, boulder:bo, H: w.h, mk}); });
@@ -4425,7 +4427,7 @@ async function printBlocks(all){
     const today = new Date().toLocaleDateString('it-IT');
     let html = '';
     for(const b of list){
-      const pic = await composeBlock(w, b, { numbers: !isSec(w), others: false, dim: true });
+      const pic = await composeBlock(w, b, { numbers: !isSec(w), others: false, dim: true, ink: true });
       /* sotto il titolo solo i dati (il grado è già grande a destra), poi le caratteristiche su una riga a parte */
       const meta = isSec(w)
         ? [holdColText(b), b.setter ? 'tracciato da ' + b.setter : '', b.dateSet ? 'tracciato il ' + fmtDate(b.dateSet) : ''].filter(Boolean)
