@@ -3728,7 +3728,7 @@ function badgeStats(){
     flashG: D.some(x => x.isB && firstGo(x.t.tries) && ['giallo','rosso','nero'].includes(x.g)), flashR: D.some(x => x.isB && firstGo(x.t.tries) && ['rosso','nero'].includes(x.g)),
     /* primi e veloci: date di montaggio e smontaggio del percorso, dalla foto della palestra */
     nFirst: D.filter(x => { const f = ui.firsts && ui.firsts.get(x.t.item_id); return f && f.primo; }).length,
-    firstFlash: D.some(x => { const f = ui.firsts && ui.firsts.get(x.t.item_id); return f && f.primo_flash; }),
+    nFirstFl: D.filter(x => { const f = ui.firsts && ui.firsts.get(x.t.item_id); return f && f.primo_flash; }).length,
     nFresh: D.filter(x => x.c && x.c.dateSet && x.at && x.at < dayAfter(x.c.dateSet, 3)).length,
     nLast: D.filter(x => x.isB && x.c && expOf(x.c) && x.at && x.at >= dayAfter(expOf(x.c), -3) && x.at < dayAfter(expOf(x.c), 1)).length,
     nCesa: D.filter(x => x.isB && x.c && expOf(x.c) && x.at && x.at >= dayAfter(expOf(x.c), 1) && (!x.c.dateRemoved || x.at < dayAfter(x.c.dateRemoved, 1))).length,
@@ -3761,7 +3761,10 @@ const BADGES = [
     desc: k + ' boulder ' + gp + (g === 'nero' ? '' : ' o più duri') + ' al primo tentativo nello stesso giorno', ok: s => s.dayFl[g] >= k, left: s => 'il tuo record in un giorno: ' + s.dayFl[g] })),
   { id: 'gdw', f: 'tent', name: 'Giornata da ricordare', desc: '3 percorsi lavorati (o superlavorati) chiusi nello stesso giorno', ok: s => s.dayWorked >= 3, left: s => 'record: ' + s.dayWorked + ' in un giorno' },
   ...[[1, 'Prima salita'], [5, 'Apriporta'], [20, 'Pioniere']].map(([k, n]) => ({ id: 'fa' + k, f: 'vel', name: n, desc: k === 1 ? 'Il primo cliente a chiudere un percorso nuovo' : 'Prima salita su ' + k + ' percorsi diversi', ok: s => s.nFirst >= k, left: s => k === 1 ? 'chiudi per primo un percorso appena tracciato' : s.nFirst + ' di ' + k, big: k > 1 ? String(k) : null })),
-  { id: 'ffl', f: 'vel', name: 'Primo flash', desc: 'Il primo cliente a chiudere un percorso a vista o flash', ok: s => s.firstFlash, left: s => 'chiudi per primo un percorso al primo tentativo' },
+  /* primo flash: il primo cliente a chiudere un percorso al primo tentativo (a vista o flash); 'ffl' resta l'id del primo livello */
+  ...[['ffl', 1, 'Il Paparazzo'], ['ffl5', 5, 'Flash Gordon'], ['ffl20', 20, 'The Flash']].map(([id, k, n]) => ({ id, f: 'vel', name: n,
+    desc: k === 1 ? 'Il primo cliente a chiudere un percorso a vista o flash' : 'Primo flash su ' + k + ' percorsi diversi', ok: s => s.nFirstFl >= k,
+    left: s => k === 1 ? 'chiudi per primo un percorso al primo tentativo' : s.nFirstFl + ' di ' + k, big: k > 1 ? String(k) : null })),
   ...[[1, 'Fresco di tracciatura'], [10, 'Sempre sul pezzo'], [25, 'Segugio']].map(([k, n]) => ({ id: 'fr' + k, f: 'vel', name: n, desc: (k === 1 ? 'Un percorso fatto' : k + ' percorsi fatti') + ' entro 2 giorni dalla tracciatura', ok: s => s.nFresh >= k, left: s => k === 1 ? 'chiudi un percorso entro 2 giorni dalla tracciatura' : s.nFresh + ' di ' + k, big: k > 1 ? String(k) : null })),
   { id: 'trail', f: 'vel', name: 'Apripista', desc: 'Tutti i boulder di un settore entro una settimana dalla nuova tracciatura', ok: s => s.trail, left: s => 'chiudi tutto un settore nella prima settimana' },
   { id: 'last', f: 'vel', name: 'Appena in tempo', desc: 'Un boulder fatto negli ultimi 3 giorni prima della scadenza', ok: s => s.nLast >= 1, left: s => 'chiudi un boulder poco prima che scada' },
@@ -3874,7 +3877,7 @@ const B_LOOK = (() => {
   ser(['gr1', 'gr10', 'gr25'], 'loop', (st, id) => st.nGrit / num(id), true);
   ser(['vs1', 'vs10', 'vs25'], 'eye', (st, id) => st.nVista / num(id), true);
   L.sup1 = { t: 'g', i: 'castle', pr: null };
-  ser(['fa1', 'fa5', 'fa20'], 'flag', (st, id) => st.nFirst / num(id), true); L.ffl = { t: 'g', i: 'flagbolt', pr: null };
+  ser(['fa1', 'fa5', 'fa20'], 'flag', (st, id) => st.nFirst / num(id), true); ser(['ffl', 'ffl5', 'ffl20'], 'flagbolt', (st, id) => st.nFirstFl / (id === 'ffl' ? 1 : num(id)), true);
   ser(['fr1', 'fr10', 'fr25'], 'sprout', (st, id) => st.nFresh / num(id), true);
   L.trail = { t: 'g', i: 'trail', pr: null }; L.last = { t: 's', i: 'hourglass', pr: null }; L.cesa = { t: 'g', i: 'whistle', pr: null };
   ser(['bt5', 'bt20', 'bt50'], 'flask', (st, id) => st.nBeta / num(id), true);
