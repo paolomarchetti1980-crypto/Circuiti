@@ -30,6 +30,6 @@ oppure chi apre il link segreto di prova. Prima di accenderli per tutti:
 
 - [ ] **Scheda del boulder → Caratteristiche** (26/10): ci devo rimettere mano. Schermata: `note/2026-10-26-caratteristiche-boulder.png`
 
-- [ ] **Badge nuovi** (30/10, v188–v190): gruppi "Tentativi" e "Primi e veloci", Beta tester, Diario di bordo/Cronista. Nomi, soglie e disegni da guardare con calma (Le mie salite → I miei badge). "Prima salita" non esclude gli account dello staff.
+- [x] **Badge nuovi** (rivisti il 9/11): approvati tutti così come sono. "Prima salita" e "Primo flash" ora escludono lo staff; "Giornata da ricordare" conta anche i superlavorati.
 
 - Messaggio e link per i tester: `note/messaggio-tester.md`
