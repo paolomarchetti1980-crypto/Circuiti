@@ -96,8 +96,8 @@ function colOf(c){
 }
 const diffOf = c => DIFFS.find(d => d[0] === (c && c.diff)) || null;
 const diffIdx = c => { const i = DIFFS.findIndex(d => d[0] === (c && c.diff)); return i < 0 ? 99 : i; };
-const bTitle = c => { const d = diffOf(c); return d ? d[1] + ' ' + (c.num || 1) : 'Nuovo boulder'; };
-const bTitleHtml = c => esc(bTitle(c)) + (c.name && diffOf(c) ? ` <span style="font-weight:600;color:var(--muted)">· ${esc(c.name)}</span>` : '') + (bLabel(c) ? ` <span class="newb ${bLabel(c) === 'Recente' ? 'rec' : ''}">${bLabel(c)}</span>` : '');
+const bTitle = c => { const d = diffOf(c); return d ? d[1] + ' ' + (c.num || 1) : c && c.evn ? 'Blocco ' + (c.num || 1) : 'Nuovo boulder'; };
+const bTitleHtml = c => esc(bTitle(c)) + (c.name && (diffOf(c) || c.evn) ? ` <span style="font-weight:600;color:var(--muted)">· ${esc(c.name)}</span>` : '') + (bLabel(c) ? ` <span class="newb ${bLabel(c) === 'Recente' ? 'rec' : ''}">${bLabel(c)}</span>` : '');
 /* età dei boulder, a settimane: 1ª settimana "Nuovo", 2ª "Recente" (per i clienti), dalla 9ª "Scaduto" (solo per lo staff).
    I settori si rinnovano interi a rotazione, quindi l'etichetta va sul settore; un singolo boulder ce l'ha
    solo se è stato aggiunto dopo il rinnovo del suo settore (le eccezioni). */
@@ -108,7 +108,7 @@ const ageLabel = d => { const a = daysOld(d); return a === null ? '' : a < AGE_N
 const secRenew = w => (w.circuits || []).filter(c => c.diff && c.dateSet && !isOff(c)).map(c => c.dateSet).sort()[0] || '';
 const secLabel = w => { if(!isSec(w)) return ''; const l = ageLabel(secRenew(w)); return l === 'Scaduto' ? (EDIT ? l : '') : (EDIT ? '' : l); };
 const wallOfC = c => S.walls.find(w => (w.circuits || []).includes(c));
-const bLabel = c => { if(EDIT || !c || !c.diff || isOff(c)) return ''; const l = ageLabel(c.dateSet); if(l !== 'Nuovo' && l !== 'Recente') return ''; const w = wallOfC(c); return w && c.dateSet > secRenew(w) ? l : ''; };
+const bLabel = c => { if(EDIT || !c || !c.diff || c.ev || isOff(c)) return ''; const l = ageLabel(c.dateSet); if(l !== 'Nuovo' && l !== 'Recente') return ''; const w = wallOfC(c); return w && c.dateSet > secRenew(w) ? l : ''; };
 const isNewB = c => !!bLabel(c);
 /* circuiti: si cambiano uno alla volta, quindi l'etichetta va sul singolo circuito (solo per i clienti) */
 const cLabel = c => { if(EDIT || !c) return ''; const l = ageLabel(c.dateSet); return l === 'Nuovo' || l === 'Recente' ? l : ''; };
@@ -255,10 +255,24 @@ const inkOn = c => lum(c) > 0.6 ? '#111111' : '#ffffff';
 const isSec = w => !!w && w.kind === 'sector';
 const secOf = w => isSec(w) ? 'boulder' : 'circ';
 /* un muro dei circuiti con le prese ancora da preparare lo vede solo il gestore (né tracciatori né clienti) */
-const wallShown = w => !w.archived && (secOf(w) === 'boulder' || !!w.locked || (EDIT && isMgr()));
-const secWalls = () => S.walls.filter(w => secOf(w) === ui.section && wallShown(w));
+/* eventi temporanei: copie di un settore (stessa foto) con blocchi propri, che durano un giorno o pochi giorni.
+   Stanno a parte: non entrano nei settori normali, nelle statistiche e nei badge; si chiudono tutti insieme */
+const isEv = w => !!(w && w.ev);
+const evLive = w => isEv(w) && !w.archived && (w.ev.end || '') >= todayISO() && (EDIT || w.circuits.some(c => !isOff(c)));
+const evWalls = id => S.walls.filter(w => isEv(w) && w.ev.id === id && !w.archived);
+const evTick = t => isEv(S.walls.find(x => x.id === t.wall_id));
+function evGroups(){
+  const m = new Map();
+  S.walls.forEach(w => { if(!isEv(w) || w.archived || !(EDIT || evLive(w))) return;
+    if(!m.has(w.ev.id)) m.set(w.ev.id, Object.assign({}, w.ev, { walls: [] })); m.get(w.ev.id).walls.push(w); });
+  return [...m.values()];
+}
+const evNext = id => 1 + Math.max(0, ...evWalls(id).flatMap(w => w.circuits.filter(c => c.evn).map(c => +c.num || 0)));
+const evWhen = e => e.end < todayISO() ? 'scaduto il ' + fmtDate(e.end) : e.end === todayISO() ? 'fino a oggi' : 'fino al ' + fmtDate(e.end);
+const wallShown = w => !w.archived && !isEv(w) && (secOf(w) === 'boulder' || !!w.locked || (EDIT && isMgr()));
+const secWalls = () => ui.ev && ui.section === 'boulder' ? evWalls(ui.ev).filter(w => EDIT || evLive(w)) : S.walls.filter(w => secOf(w) === ui.section && wallShown(w));
 /* muri e settori archiviati: spariti per i clienti, il gestore li ripristina o li elimina da "Archiviati" */
-const archWalls = () => S.walls.filter(w => secOf(w) === ui.section && w.archived);
+const archWalls = () => S.walls.filter(w => secOf(w) === ui.section && w.archived && !isEv(w));
 const curWall = () => { const l = secWalls(); return l.find(w => w.id === S.active) || l[0] || null; };
 const BO = () => ui.section === 'boulder';
 /* boulder, per chi guarda: tre livelli. 1) griglia dei settori, 2) settore con tutte le linee, 3) blocco a schermo intero */
@@ -277,7 +291,7 @@ const isOff = c => !!(c && c.dateRemoved && c.dateRemoved <= todayISO());
 /* boulder: la scadenza è teorica (montaggio + 9 settimane, modificabile). Scaduto resta in parete;
    va tra gli smontati solo archiviando il settore (o con "Smonta ora") */
 const addDaysISO = (iso, n) => { const p = String(iso).split('-').map(Number), d = new Date(p[0], (p[1] || 1) - 1, p[2] || 1); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); };
-const expOf = c => (c && (c.expires || (c.dateSet ? addDaysISO(c.dateSet, AGE_EXPIRED) : ''))) || '';
+const expOf = c => c && c.ev ? '' : (c && (c.expires || (c.dateSet ? addDaysISO(c.dateSet, AGE_EXPIRED) : ''))) || '';
 const isExp = c => !!c && !isOff(c) && !!expOf(c) && expOf(c) < todayISO();
 const expText = c => isOff(c) ? 'smontato ' + fmtDate(c.dateRemoved) : !expOf(c) ? '' : isExp(c) ? 'scaduto il ' + fmtDate(expOf(c)) : 'scade il ' + fmtDate(expOf(c));
 const fmtDate = d => { if(!d) return ''; const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d); return m ? (+m[3]) + '/' + (+m[2]) + '/' + m[1].slice(2) : d; };
@@ -506,6 +520,7 @@ function newCircuit(w){
   /* il nome dato dal gestore nella lista Staff vale per tutti i telefoni; poi l'ultimo scelto su questo telefono */
   let setter = (ME && ME.name) || ''; if(!setter){ try{ setter = localStorage.getItem('boulder-setter') || ''; }catch(e){} }
   if(!setter && ME && ME.email) setter = ME.email.split('@')[0];
+  if(isSec(w) && isEv(w)) return { id: uid(), name: '', color: w.ev.colors ? NODIFF : '#ff7a1a', holds: [], dateSet: todayISO(), ev: w.ev.id, ...(w.ev.colors ? {} : { evn: 1, num: evNext(w.ev.id) }), ...(setter ? { setter } : {}) };
   if(isSec(w)) return { id: uid(), name: '', color: NODIFF, holds: [], dateSet: todayISO(), ...(setter ? { setter } : {}) };
   const used = w.circuits.map(c => c.color);
   const p = PALETTE.find(p => !used.includes(p[1])) || PALETTE[0];
@@ -2936,16 +2951,46 @@ function homeScreen(){
     return `<button class="htile" data-act="pickhome" data-v="${sec}">${img}<span class="hlab"><b>${bo ? 'Boulder' : 'Circuiti'}</b><small>${sub}</small>${mp ? progLine(mp, 'big') : ''}</span>${mp ? progBar(mp) : ''}</button>`;
   };
   let mine = '';
-  if(acctOn() && !EDIT){ const T = ACC() && ui.ticks ? [...ui.ticks.values()] : [], nd = T.filter(t => t.status === 'fatto').length, np = T.filter(t => t.status === 'progetto').length;
+  if(acctOn() && !EDIT){ const T = ACC() && ui.ticks ? [...ui.ticks.values()].filter(t => !evTick(t)) : [], nd = T.filter(t => t.status === 'fatto').length, np = T.filter(t => t.status === 'progetto').length;
     const nb = ACC() ? earnedBadges().size : 0;
     const sub = !ACC() ? 'segna i percorsi fatti e i progetti, guadagna i badge' : nd || np ? [nd ? nd + (nd === 1 ? ' fatto' : ' fatti') : '', np ? np + (np === 1 ? ' progetto' : ' progetti') : '', nb + ' badge di ' + BADGES.length].filter(Boolean).join(' · ') : 'apri un percorso e tocca ✓ Fatto';
     mine = `<button class="hmine" data-act="mine">${CUP_SVG}<span><b>Le mie salite</b><small>${sub}</small></span>${hasNewB() ? '<i class="mbd"></i>' : ''}<svg width="16" height="16" viewBox="0 0 14 14" aria-hidden="true"><path d="M5 3l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`; }
   return `<div class="home">${tile('boulder')}${tile('circ')}${mine}</div>`;
 }
+/* in cima ai settori: gli eventi in corso (per i clienti solo quelli non scaduti); dentro un evento, la sua intestazione */
+function evBar(){
+  if(ui.ev){
+    const l = evWalls(ui.ev); if(!l.length) return '';
+    const e = l[0].ev, n = l.reduce((t, w) => t + w.circuits.filter(c => !isOff(c)).length, 0);
+    return `<div class="evbar on"><button class="evback" data-act="evback" aria-label="Torna a tutti i settori">‹ Tutti i settori</button>`+
+      `<b>Evento · ${esc(e.name)}</b><small>${n} ${n === 1 ? 'blocco' : 'blocchi'} · ${evWhen(e)}${e.colors ? '' : ' · blocchi numerati'}${EDIT && e.end < todayISO() ? ' · i clienti non lo vedono più' : ''}</small>`+
+      (EDIT ? `<div class="row" style="margin:8px 0 0"><button class="btn" data-act="evadd">+ Settore</button><button class="btn" data-act="evext">Un giorno in più</button>`+
+        `<button class="btn danger" data-act="evclose">${ui.confirm === 'evclose' ? 'Tocca ancora: chiudo' : 'Chiudi evento'}</button></div>` : '')+`</div>`;
+  }
+  return evGroups().map(e => { const n = e.walls.reduce((t, w) => t + w.circuits.filter(c => !isOff(c)).length, 0);
+    return `<button class="evbar" data-act="evopen" data-id="${esc(e.id)}"><b>Evento in corso · ${esc(e.name)}</b><small>${n} ${n === 1 ? 'blocco' : 'blocchi'} · ${e.walls.length === 1 ? esc(e.walls[0].ev.srcName || '1 settore') : e.walls.length + ' settori'} · ${evWhen(e)}${EDIT && e.end < todayISO() ? ' · lo vedi solo tu' : ''}</small><em aria-hidden="true">›</em></button>`; }).join('');
+}
+/* creare un evento (o aggiungergli un settore): nome, durata, gradi a colori sì/no, settori su cui si traccia */
+function evSheet(){
+  const add = ui.evAdd && evWalls(ui.evAdd).length ? evWalls(ui.evAdd) : null;
+  const have = new Set(add ? add.map(w => w.ev.src) : []);
+  const secs = S.walls.filter(w => isSec(w) && !isEv(w) && !w.archived && !have.has(w.id));
+  const sel = ui.evSel || [], days = ui.evDays || 1;
+  return `<h2>${add ? 'Aggiungi un settore all\'evento' : 'Nuovo evento temporaneo'}</h2>`+
+    (add ? `<p class="hint" style="margin-top:0">${esc(add[0].ev.name)} · ${evWhen(add[0].ev)}</p>` :
+    `<p class="hint" style="margin-top:0">Blocchi di un giorno o pochi giorni, sulla foto dei settori che scegli. I clienti li trovano a parte, in cima ai settori; le salite non contano nelle statistiche e nei badge.</p>`+
+    `<label class="field">Nome<input id="evname" maxlength="40" value="${esc(ui.evName != null ? ui.evName : 'Evento del ' + fmtDate(todayISO()))}"></label>`+
+    `<p class="field" style="margin-bottom:4px">Durata</p><div class="seg" role="group" aria-label="Durata" style="margin:0 0 12px">${[[1,'Solo oggi'],[2,'2 giorni'],[3,'3 giorni']].map(([v, l]) => `<button data-act="evdays" data-v="${v}" aria-pressed="${days === v}">${l}</button>`).join('')}</div>`+
+    `<label class="tgl"><input type="checkbox" id="evcol" ${ui.evCol ? 'checked' : ''}><span><b>Usa i gradi a colori</b><small>Acceso: bianco, blu, verde… come nei settori. Spento: i blocchi sono numerati (Blocco 1, 2, 3…).</small></span></label>`)+
+    `<p class="field" style="margin:12px 0 4px">Su quali settori</p>`+
+    (secs.length ? `<div class="list" style="gap:0;margin:0">${secs.map(w => `<label class="wrow evsec"><input type="checkbox" data-evsec="${w.id}" ${sel.includes(w.id) ? 'checked' : ''}><img src="${esc(thumbSrc(w))}" alt=""><span>${esc(w.name)}</span></label>`).join('')}</div>` : `<p class="hint">Nessun altro settore disponibile.</p>`)+
+    `<div class="row"><button class="btn primary" data-act="evmake">${add ? 'Aggiungi' : 'Crea evento'}</button><button class="btn" data-act="close">Annulla</button></div>`;
+}
 function sectorGrid(){
   const bo = BO(), mgr = EDIT && isMgr(), arch = archWalls();
   const nC = bo ? 0 : secWalls().reduce((t, w) => t + w.circuits.length, 0);
   return (nC > 1 ? `<button class="sqbar" data-act="csearch"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><circle cx="7.5" cy="7.5" r="5.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 12l4.5 4.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>Cerca un circuito</span><small>${nC} in palestra</small></button>` : '') +
+    (bo ? evBar() : '')+
     `<div class="sgrid">` + gridWalls().map(w => {
     const on = w.circuits.filter(c => !isOff(c));
     let info, staff = '';
@@ -2953,7 +2998,7 @@ function sectorGrid(){
       const dots = DIFFS.map(d => { const n = on.filter(c => c.diff === d[0]).length; return n ? `<span class="sdot"><i style="background:${d[2]}"></i>${n}</span>` : ''; }).join('');
       const nn = on.filter(isNewB).length;
       const sl = secLabel(w);
-      info = (dots ? `<small class="stot">${on.length} boulder</small>` + dots : '<small>nessun boulder</small>') + (sl ? `<span class="snew ${sl === 'Recente' ? 'rec' : sl === 'Scaduto' ? 'exp' : ''}">${sl}</span>` : nn ? `<span class="snew">${nn} novità</span>` : '');
+      info = (on.length ? `<small class="stot">${on.length} boulder</small>` + dots : '<small>nessun boulder</small>') + (sl ? `<span class="snew ${sl === 'Recente' ? 'rec' : sl === 'Scaduto' ? 'exp' : ''}">${sl}</span>` : nn ? `<span class="snew">${nn} novità</span>` : '');
       if(EDIT){
         const last = on.map(c => c.dateSet || '').sort().pop();
         const t = todayISO(), lim = new Date(Date.now() + 7*864e5).toISOString().slice(0,10);
@@ -2968,9 +3013,10 @@ function sectorGrid(){
       if(EDIT && !w.locked) staff = `<span class="sinfo"><b>prese da preparare</b> · lo vedi solo tu</span>`;
     }
     return `<button class="scard" data-act="opensec" data-id="${w.id}"><span class="sph"><img src="${esc(thumbSrc(w))}" alt="" loading="lazy">${mgr ? `<span class="sedit" role="button" data-act="wman" data-id="${w.id}" aria-label="Gestisci ${bo ? 'il settore' : 'il muro'}">Modifica</span>` : ''}</span>`+
-      `<span class="sname">${esc(w.name)}</span><span class="sdots">${info}</span>${myOn() ? (() => { const p = myProg([w]); return progLine(p) + progBar(p); })() : ''}${staff}</button>`;
-  }).join('') + (mgr ? `<div class="scard sadd"><span class="sname">+ ${bo ? 'Nuovo settore' : 'Nuovo muro'}</span><span class="sinfo">Carica la foto ${bo ? 'del settore' : 'del muro'}</span><div class="sbtns">${PICK_BTNS}</div></div>` : '') + `</div>`+
-    (mgr && arch.length ? `<button class="archrow" data-act="archlist">Archiviati (${arch.length})</button>` : '');
+      `<span class="sname">${esc(isEv(w) && ui.ev ? w.ev.srcName || w.name : w.name)}</span><span class="sdots">${info}</span>${myOn() ? (() => { const p = myProg([w]); return progLine(p) + progBar(p); })() : ''}${staff}</button>`;
+  }).join('') + (mgr && !ui.ev ? `<div class="scard sadd"><span class="sname">+ ${bo ? 'Nuovo settore' : 'Nuovo muro'}</span><span class="sinfo">Carica la foto ${bo ? 'del settore' : 'del muro'}</span><div class="sbtns">${PICK_BTNS}</div></div>` : '') + `</div>`+
+    (mgr && arch.length && !ui.ev ? `<button class="archrow" data-act="archlist">Archiviati (${arch.length})</button>` : '')+
+    (bo && EDIT && !ui.ev ? `<button class="archrow" data-act="evnew">+ Nuovo evento temporaneo</button>` : '');
 }
 function overlay(w, o){
   if(o.wall){
@@ -3478,6 +3524,7 @@ window.addEventListener('popstate', () => {
   if(ui.full){ ui.full = false; ui.zoom = 1; render(); }
   else if(EDIT && BO() && ui.bLevel === 'sector' && !ui.secOver && st.sec && !st.ed){ ui.secOver = true; ui.sel = null; ui.zoom = 1; render(); }
   else if(ui.bLevel === 'sector' && !st.sec){ ui.bLevel = 'sectors'; ui.zoom = 1; render(); }
+  else if(ui.ev && ui.bLevel === 'sectors' && !st.ev){ ui.ev = null; render(); }
   else if(!ui.home && !st.grid && !st.sec){ ui.home = true; ui.zoom = 1; render(); }
 });
 
@@ -3647,7 +3694,7 @@ const B_FAM = { tent: ['Tentativi', '#a3e635'], vel: ['Primi e veloci', '#ff8a5c
 /* inizio del giorno N giorni dopo una data "AAAA-MM-GG" (ora locale) */
 const dayAfter = (iso, n) => { const p = String(iso).split('-').map(Number), d = new Date(p[0], (p[1] || 1) - 1, p[2] || 1); d.setDate(d.getDate() + n); return d; };
 function badgeStats(){
-  const T = ui.ticks ? [...ui.ticks.values()] : [], done = T.filter(t => t.status === 'fatto');
+  const T = ui.ticks ? [...ui.ticks.values()].filter(t => !evTick(t)) : [], done = T.filter(t => t.status === 'fatto');
   const find = t => { const w = S.walls.find(x => x.id === t.wall_id), c = w && w.circuits.find(x => x.id === t.item_id); return { w, c }; };
   const D = done.map(t => { const { w, c } = find(t); const g = t.grade || (c ? (w && isSec(w) ? c.diff : c.grade) : null);
     const isB = w ? isSec(w) : DIFFS.some(d => d[0] === g);
@@ -3658,7 +3705,7 @@ function badgeStats(){
   const weekKey = d => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return Math.round(x.getTime() / 6048e5); };
   const weeks = [...new Set(D.filter(x => x.at).map(x => weekKey(x.at)))].sort((a, b) => a - b);
   let run = 0, best = 0, prev = null; weeks.forEach(w => { run = prev !== null && w === prev + 1 ? run + 1 : 1; best = Math.max(best, run); prev = w; });
-  const secs = S.walls.filter(w => isSec(w) && !w.archived);
+  const secs = S.walls.filter(w => isSec(w) && !w.archived && !isEv(w));
   const secDone = new Set(D.filter(x => x.isB && x.w).map(x => x.w.id));
   const cleanSec = secs.filter(w => { const on = w.circuits.filter(c => c.diff && !isOff(c)); return on.length >= 3 && on.every(c => { const t = ui.ticks && ui.ticks.get(c.id); return t && t.status === 'fatto'; }); }).length;
   const bestSec = secs.reduce((m, w) => { const on = w.circuits.filter(c => c.diff && !isOff(c)); if(on.length < 3) return m; const k = on.filter(c => { const t = ui.ticks && ui.ticks.get(c.id); return t && t.status === 'fatto'; }).length; return Math.max(m, on.length - k === 0 ? 0 : -(on.length - k)) ; }, -999);
@@ -3896,14 +3943,14 @@ function mineHtml(){
   /* due sezioni, come nell'app: Boulder e Circuiti */
   const tab = ui.mineTab === 'boulder' || ui.mineTab === 'circ' ? ui.mineTab : (ui.section === 'boulder' ? 'boulder' : 'circ'), bo = tab === 'boulder';
   const tabs = (nB0, nC0) => `<div class="seg" role="group" aria-label="Sezione" style="margin:0 0 12px"><button data-act="minetab" data-v="boulder" aria-pressed="${tab === 'boulder'}">Boulder${nB0 ? ' · ' + nB0 : ''}</button><button data-act="minetab" data-v="circ" aria-pressed="${tab === 'circ'}">Circuiti${nC0 ? ' · ' + nC0 : ''}</button></div>`;
-  const all = mineItems(), items = all.filter(x => isSec(x.w) === bo);
+  const evAll = mineItems().filter(x => isEv(x.w)), all = mineItems().filter(x => !isEv(x.w)), items = all.filter(x => isSec(x.w) === bo);
   const done = items.filter(x => x.t.status === 'fatto'), proj = items.filter(x => x.t.status === 'progetto' && !x.gone);
   const nB = all.filter(x => isSec(x.w) && x.t.status === 'fatto').length, nC = all.filter(x => !isSec(x.w) && x.t.status === 'fatto').length;
   const row = x => `<button class="lrow" data-act="minego" data-w="${x.w.id}" data-id="${x.c.id}"><i class="dot" style="background:${colOf(x.c)}"></i><span class="ctext" style="flex:1"><b>${esc(blockTitle(x.w, x.c))}</b><small>${esc([x.w.name, x.gone ? (isSec(x.w) ? 'smontato' : 'muro archiviato') : '', x.t.rating ? 'voto ' + x.t.rating + '/10' : '', x.t.vote ? 'per te ' + x.t.vote : '', triesText(x.t.tries), fmtDate((x.t.updated_at || '').slice(0, 10))].filter(Boolean).join(' · '))}</small></span>${isSec(x.w) ? '' : gradeBadge(x.c.grade)}</button>`;
   const recent = done.slice().sort((x, y) => String(y.t.updated_at).localeCompare(String(x.t.updated_at))).slice(0, 15);
   let prog = '';
   if(bo){
-    const onB = S.walls.filter(w => isSec(w) && !w.archived).flatMap(w => w.circuits.filter(c => c.diff && !isOff(c))), ids = new Set(done.map(x => x.c.id));
+    const onB = S.walls.filter(w => isSec(w) && !w.archived && !isEv(w)).flatMap(w => w.circuits.filter(c => c.diff && !isOff(c))), ids = new Set(done.map(x => x.c.id));
     prog = DIFFS.map(d => { const tot = onB.filter(c => c.diff === d[0]).length; if(!tot) return ''; const k = onB.filter(c => c.diff === d[0] && ids.has(c.id)).length;
       return `<div class="pbar"><i class="dot" style="background:${d[2]}"></i><span class="pname">${d[1]}</span><span class="ptrack"><span style="width:${Math.round(k / tot * 100)}%;background:${d[2]}"></span></span><b>${k}/${tot}</b></div>`; }).join('');
     if(prog) prog = `<p class="dlab">In parete adesso: fatti per colore</p>` + prog;
@@ -3914,7 +3961,7 @@ function mineHtml(){
   const what = bo ? 'un boulder' : 'un circuito';
   /* da sempre: tutte le salite segnate, anche di blocchi smontati o muri archiviati (il grado è salvato con la salita) */
   const isB = g => DIFFS.some(d => d[0] === g);
-  const allDone = [...ui.ticks.values()].filter(t => t.status === 'fatto').map(t => {
+  const allDone = [...ui.ticks.values()].filter(t => t.status === 'fatto' && !evTick(t)).map(t => {
     const x = all.find(q => q.t === t); const g = t.grade || (x ? (isSec(x.w) ? x.c.diff : x.c.grade) : null);
     const kindB = x ? isSec(x.w) : isB(g); return { g, kindB, at: t.done_at || t.updated_at || '' };
   }).filter(d => d.kindB === bo && d.g);
@@ -3943,6 +3990,7 @@ function mineHtml(){
     `<p class="dlab">Progetti</p>` + (proj.length ? `<div class="list" style="gap:0">${proj.map(x => { const M = !isSec(x.w) ? movesOf(x.c) : 0, h = x.t.high || 0;
       return M && h ? row(x).replace('</small></span>', `</small><span class="hiline"><span class="mybar hib"><i style="width:${Math.round(100 * h / M)}%"></i></span><b>${h}/${M}</b></span></span>`) : row(x); }).join('')}</div>` : `<p class="hint">Apri ${what} e tocca ☆ Progetto per ritrovarlo qui.</p>`)+
     `<p class="dlab">Fatti di recente</p>` + (recent.length ? `<div class="list" style="gap:0">${recent.map(row).join('')}</div>` : `<p class="hint">Apri ${what} e tocca ✓ Fatto quando lo chiudi.</p>`)+
+    (bo && evAll.length ? `<p class="dlab">Eventi temporanei</p><p class="note" style="margin:-4px 0 8px">Restano a parte: non contano nelle statistiche e nei badge.</p><div class="list" style="gap:0">${evAll.slice().sort((x, y) => String(y.t.updated_at).localeCompare(String(x.t.updated_at))).map(x => row(Object.assign({}, x, { gone: x.gone || !evLive(x.w) }))).join('')}</div>` : '')+
     `<div class="row"><button class="btn" data-act="close">Chiudi</button></div>`;
 }
 function acctHtml(){
@@ -4021,7 +4069,7 @@ function qrSvg(text, px){
   return `<svg class="qrsvg" viewBox="0 0 ${sz} ${sz}" width="${px}" height="${px}" shape-rendering="crispEdges" aria-hidden="true"><rect width="${sz}" height="${sz}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
 }
 const qrItems = () => [{ id: '', name: 'Pagina iniziale', sub: 'tutta l\'app: boulder e circuiti' }]
-  .concat(S.walls.filter(w => isSec(w) && !w.archived).map(w => ({ id: w.id, name: w.name, sub: 'boulder di questo settore', w })))
+  .concat(S.walls.filter(w => isSec(w) && !w.archived && !isEv(w)).map(w => ({ id: w.id, name: w.name, sub: 'boulder di questo settore', w })))
   .concat(S.walls.filter(w => !isSec(w) && !w.archived).map(w => ({ id: w.id, name: w.name, sub: 'circuiti di questo muro', w })));
 function qrHtml(){
   if(!window.qrcode){ loadQR().then(() => { if(ui.sheet === 'qr') renderSheet(); }, () => toast('Non riesco a caricare il generatore di QR: controlla la connessione.')); return `<h2>QR code e link</h2>` + testerBox() + `<p>Carico i QR…</p>`; }
@@ -4073,7 +4121,7 @@ window.addEventListener('hashchange', () => { if(ui.ready && /[#&]m=/.test(locat
 /* ---------- pannello settori (gestore): età, gradi, chi traccia ---------- */
 
 function dashHtml(){
-  const secs = S.walls.filter(w => isSec(w) && !w.archived);
+  const secs = S.walls.filter(w => isSec(w) && !w.archived && !isEv(w));
   const t = todayISO(), lim = new Date(Date.now() + 7*864e5).toISOString().slice(0,10);
   const all = [], rows = secs.map(w => {
     const on = w.circuits.filter(c => !isOff(c)); on.forEach(c => all.push(c));
@@ -4144,32 +4192,35 @@ function renderSheet(){
   if(ui.sheet === 'csearch') h = sqSheet();
   else if(ui.sheet === 'cfilt') h = sqSheet('wall');
   else if(ui.sheet === 'pubchk') h = pubChkSheet();
+  else if(ui.sheet === 'evnew') h = evSheet();
   else if(ui.sheet === 'circ' && c && EDIT && isSec(w)){
     const gradeOpt = v => `<option value="${v}" ${(c.grade || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
     const styleOpt = v => `<option value="${v}" ${(c.style || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
     const tags = bTags(c);
+    const evNo = isEv(w) && !w.ev.colors;
     h = `<h2>${esc(bTitle(c))}</h2>`+
-      `<p class="field" style="margin-bottom:4px">Difficoltà</p>`+
+      (evNo ? `<p class="note" style="margin:0 0 12px">Evento senza gradi: i blocchi sono numerati in ordine di tracciatura.</p>` : `<p class="field" style="margin-bottom:4px">Difficoltà</p>`+
       `<div class="sw" role="group" aria-label="Difficoltà">` +
       DIFFS.map(d => `<button data-act="bdiff" data-v="${d[0]}" aria-label="${d[1]}" aria-pressed="${c.diff === d[0]}" class="${c.diff === d[0] ? 'sel' : ''}" style="background:${d[2]}"></button>`).join('') +
       `</div>`+
-      (diffOf(c) ? numField(w, c) : `<p class="note" style="margin:-8px 0 12px">Scegli la difficoltà: il nome (es. "Giallo 2") si assegna da solo.</p>`)+
-      `<p class="field" style="margin-bottom:4px">Colore delle prese</p>`+
+      (diffOf(c) ? numField(w, c) : `<p class="note" style="margin:-8px 0 12px">Scegli la difficoltà: il nome (es. "Giallo 2") si assegna da solo.</p>`))+
+      `<p class="field" style="margin-bottom:4px">Colore delle prese${isEv(w) ? ' <small style="color:var(--muted)">· lascialo vuoto se sono di colori diversi</small>' : ''}</p>`+
       `<div class="sw" role="group" aria-label="Colore delle prese">` +
       PALETTE.map(p => `<button data-act="hcolor" data-c="${p[1]}" aria-label="${p[0]}" class="${p[1] === c.holdColor ? 'sel' : ''}" style="background:${p[1]}"></button>`).join('') +
       `</div>`+
       `<div class="f2"><label class="field">Soprannome (facoltativo)<span style="display:flex;gap:6px;margin-top:4px"><input id="cname" value="${esc(c.name || '')}" maxlength="40" style="margin-top:0;flex:1;min-width:0"><button type="button" class="btn" data-act="cgen" aria-label="Proponi un soprannome" title="Proponi un soprannome" style="flex:none;font-size:18px;padding:6px 10px">🎲</button></span></label>`+
       `</div>`+
       setterField(c)+
+      (isEv(w) ? `<label class="field">Tracciato il<input id="bdset" type="date" value="${esc(c.dateSet || '')}"></label>` :
       `<div class="f2"><label class="field">Tracciato il<input id="bdset" type="date" value="${esc(c.dateSet || '')}"></label>`+
-      `<label class="field">Scadenza<input id="bdexp" type="date" value="${esc(expOf(c))}"></label></div>`+
+      `<label class="field">Scadenza<input id="bdexp" type="date" value="${esc(expOf(c))}"></label></div>`)+
       `<p class="field" style="margin-bottom:0">Caratteristiche</p>`+
       tagGroupsHtml(w, c)+
       `<label class="field">Note<textarea id="bnotes" maxlength="600" placeholder="Es. partenza con mani sulla tacca bassa, spigolo escluso…">${esc(c.notes || '')}</textarea></label>`+
       `<div class="row"><button class="btn danger" data-act="delc">${ui.confirm === 'delc' ? 'Tocca ancora per eliminare' : 'Elimina boulder'}</button>`+
       `<button class="btn primary" data-act="close">Fatto</button></div>`+
       (isOff(c) ? `<div class="row"><button class="btn" data-act="bunoff">Rimetti in parete</button></div><p class="note">Smontato il ${esc(fmtDate(c.dateRemoved))}.</p>`
-        : `<div class="row"><button class="btn" data-act="boff">${ui.confirm === 'boff' ? 'Tocca ancora: lo smonto oggi' : 'Smonta ora'}</button></div><p class="note">La scadenza è teorica (di base 9 settimane dalla tracciatura): dopo resta in parete come "scaduto". Va tra gli smontati quando archivi il settore; "Smonta ora" solo per un boulder tolto prima (presa rotta, cambiato…).</p>`);
+        : `<div class="row"><button class="btn" data-act="boff">${ui.confirm === 'boff' ? 'Tocca ancora: lo smonto oggi' : 'Smonta ora'}</button></div><p class="note">${isEv(w) ? 'Si smonta da solo quando chiudi l\'evento; "Smonta ora" solo per un blocco tolto prima.' : ''}</p><p class="note" ${isEv(w) ? 'hidden' : ''}>La scadenza è teorica (di base 9 settimane dalla tracciatura): dopo resta in parete come "scaduto". Va tra gli smontati quando archivi il settore; "Smonta ora" solo per un boulder tolto prima (presa rotta, cambiato…).</p>`);
   } else if(ui.sheet === 'clist' && w && isSec(w)){
     h = `<h2>Boulder · ${esc(w.name)}</h2>` + bFilters(w) + bRows(w, 'crow') +
       `<div class="row" style="margin-top:14px">${EDIT ? `<button class="btn primary" data-act="addc">+ Nuovo boulder</button>` : ''}<button class="btn" data-act="close">Chiudi</button></div>`;
@@ -4488,7 +4539,7 @@ async function loadFb(){
 }
 /* ---------- versioni precedenti (storico delle pubblicazioni, solo gestore) ---------- */
 function histSum(walls){
-  const ws = (walls || []).filter(w => !w.archived), sec = ws.filter(isSec), circ = ws.filter(w => !isSec(w));
+  const ws = (walls || []).filter(w => !w.archived && !w.ev), sec = ws.filter(isSec), circ = ws.filter(w => !isSec(w));
   return { walls: circ.length, circ: circ.reduce((t, w) => t + (w.circuits || []).length, 0), sectors: sec.length, boulders: sec.reduce((t, w) => t + (w.circuits || []).filter(c => !isOff(c)).length, 0) };
 }
 async function loadHist(){
@@ -4634,10 +4685,12 @@ async function publishRemote(){
   const snap = JSON.parse(JSON.stringify(snapshot()));
   if(!isMgr() && BASE){
     /* il tracciatore porta solo i circuiti: muri, foto e prese restano quelli della versione di partenza */
+    /* eccezione: gli eventi temporanei li crea, proroga e chiude anche il tracciatore, quindi passano interi */
     snap.walls = BASE.map(bw => {
       const lw = snap.walls.find(x => x.id === bw.id);
+      if(lw && isEv(lw) && isEv(bw)) return lw;
       return lw ? Object.assign(JSON.parse(JSON.stringify(bw)), { circuits: lw.circuits, activeCircuit: lw.activeCircuit }) : JSON.parse(JSON.stringify(bw));
-    });
+    }).concat(snap.walls.filter(w => isEv(w) && !BASE.some(bw => bw.id === w.id)));
   }
   const { data: row, error: rerr } = await SB.from('app_state').select('data,rev').eq('id', 1).maybeSingle();
   if(rerr) throw rerr;
@@ -4828,7 +4881,7 @@ $('#stage').addEventListener('click', async e => {
 });
 
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
-const PUBLIC_ACTS = ['acctage','badges','hi','tries','dimtg','prevtoday','fgo','bcolorall','rate','minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
+const PUBLIC_ACTS = ['evopen','evback','acctage','badges','hi','tries','dimtg','prevtoday','fgo','bcolorall','rate','minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
 const MGR_ACTS = ['qr','qrprint','qrcopy','tcopy','tsend','dash','dashsec','fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
@@ -4940,8 +4993,8 @@ document.addEventListener('click', e => {
     case 'wskip': try{ localStorage.setItem('mr-welcome', '1'); }catch(e){} ui.sheet = null; renderSheet(); break;
     case 'minego': {
       const w2 = S.walls.find(x => x.id === b.dataset.w), c2 = w2 && w2.circuits.find(x => x.id === b.dataset.id); if(!w2 || !c2) break;
-      if(w2.archived){ toast('Questo muro è stato archiviato.'); break; }
-      ui.sheet = null; renderSheet();
+      if(w2.archived || (isEv(w2) && !EDIT && !evLive(w2))){ toast(isEv(w2) ? 'Questo evento è chiuso.' : 'Questo muro è stato archiviato.'); break; }
+      ui.sheet = null; renderSheet(); ui.ev = isEv(w2) ? w2.ev.id : null;
       ui.section = secOf(w2); ui.home = false; S.active = w2.id; ui.lastSec[ui.section] = w2.id; saveBUI();
       ui.bLevel = 'sector'; ui.secOver = true; ui.zoom = 1; w2.activeCircuit = c2.id;
       if(isSec(w2) && isOff(c2)){ ui.bShow = 'all'; }
@@ -5075,12 +5128,13 @@ document.addEventListener('click', e => {
       if(ui.full){ try{ history.back(); }catch(e){} ui.full = false; ui.zoom = 1; render(); break; }
       if(EDIT && BO() && ui.bLevel === 'sector' && !bGrid() && curWall() && !ui.secOver && S.mode !== 'view'){ if(history.state && history.state.ed){ try{ history.back(); }catch(e){} } ui.secOver = true; ui.sel = null; ui.zoom = 1; }
       else if(ui.bLevel === 'sector' && !bGrid() && curWall()){ if(history.state && history.state.sec){ try{ history.back(); }catch(e){} } ui.bLevel = 'sectors'; }
+      else if(ui.ev){ if(history.state && history.state.ev){ try{ history.back(); }catch(e){} } ui.ev = null; }
       else { if(history.state && history.state.grid){ try{ history.back(); }catch(e){} } ui.home = true; ui.bLevel = 'sectors'; }
       ui.zoom = 1; render(); break;
     case 'pickhome': {
       const v = b.dataset.v === 'boulder' ? 'boulder' : 'circ';
       const prev = curWall(); if(prev && !ui.home) ui.lastSec[ui.section] = prev.id;
-      ui.section = v; ui.home = false; ui.bLevel = 'sectors'; ui.full = false; ui.sel = null; ui.zoom = 1;
+      ui.section = v; ui.home = false; ui.bLevel = 'sectors'; ui.full = false; ui.sel = null; ui.zoom = 1; ui.ev = null;
       const l = secWalls(), keep = l.find(x => x.id === ui.lastSec[v]) || l[0]; if(keep) S.active = keep.id;
       if(EDIT) S.mode = 'edit';
       saveBUI(); try{ history.pushState({ grid: 1 }, ''); }catch(e){} render(); break;
@@ -5094,12 +5148,38 @@ document.addEventListener('click', e => {
     case 'printone': printBlocks(false); break;
     case 'printall': printBlocks(true); break;
     case 'publish': publish(); break;
+    case 'evopen': ui.ev = b.dataset.id; ui.bLevel = 'sectors'; ui.confirm = null; try{ history.pushState({ grid: 1, ev: 1 }, ''); }catch(e){} { const l = evWalls(ui.ev); if(l[0]) S.active = l[0].id; } render(); break;
+    case 'evback': if(history.state && history.state.ev){ try{ history.back(); }catch(e){} } ui.ev = null; ui.confirm = null; { const l = secWalls(); const k = l.find(x => x.id === ui.lastSec.boulder) || l[0]; if(k) S.active = k.id; } render(); break;
+    case 'evnew': ui.evAdd = null; ui.evSel = []; ui.evDays = 1; ui.evCol = false; ui.evName = null; openSheet('evnew'); break;
+    case 'evadd': ui.evAdd = ui.ev; ui.evSel = []; openSheet('evnew'); break;
+    case 'evdays': { const n = $('#evname'); if(n) ui.evName = n.value; const k = $('#evcol'); if(k) ui.evCol = k.checked; ui.evSel = [...document.querySelectorAll('#card input[data-evsec]')].filter(i => i.checked).map(i => i.dataset.evsec); ui.evDays = +b.dataset.v; renderSheet(); break; }
+    case 'evmake': {
+      const sel = [...document.querySelectorAll('#card input[data-evsec]')].filter(i => i.checked).map(i => i.dataset.evsec);
+      if(!sel.length){ toast('Scegli almeno un settore.'); break; }
+      const add = ui.evAdd && evWalls(ui.evAdd).length ? evWalls(ui.evAdd)[0].ev : null;
+      const nm = add ? add.name : (($('#evname') || {}).value || '').trim() || 'Evento del ' + fmtDate(todayISO());
+      const ev = add ? { id: add.id, name: add.name, end: add.end, colors: add.colors } : { id: uid(), name: nm, end: addDaysISO(todayISO(), (ui.evDays || 1) - 1), colors: !!($('#evcol') || {}).checked };
+      let first = null;
+      sel.forEach(id => { const src = S.walls.find(x => x.id === id); if(!src) return;
+        const nw = JSON.parse(JSON.stringify(src)); nw.id = uid(); nw.name = src.name + ' · ' + ev.name; nw.circuits = []; nw.activeCircuit = null; delete nw.archived;
+        nw.ev = Object.assign({}, ev, { src: src.id, srcName: src.name }); S.walls.push(nw); if(!first) first = nw; });
+      ui.sheet = null; renderSheet(); ui.ev = ev.id; ui.bLevel = 'sectors'; if(first) S.active = first.id;
+      if(!add){ try{ history.pushState({ grid: 1, ev: 1 }, ''); }catch(e){} }
+      touch(); render(); toast(add ? 'Settore aggiunto all\'evento.' : 'Evento creato: apri un settore e traccia i blocchi. Poi premi Pubblica.'); break;
+    }
+    case 'evext': { const l = evWalls(ui.ev); if(!l.length) break; const end = addDaysISO(l[0].ev.end < todayISO() ? todayISO() : l[0].ev.end, 1); l.forEach(x => { x.ev.end = end; }); touch(); render(); toast('L\'evento dura fino al ' + fmtDate(end) + '.'); break; }
+    case 'evclose': {
+      const l = evWalls(ui.ev); if(!l.length) break;
+      if(ui.confirm !== 'evclose'){ ui.confirm = 'evclose'; render(); setTimeout(() => { if(ui.confirm === 'evclose'){ ui.confirm = null; render(); } }, 4000); break; }
+      const d = todayISO(); l.forEach(x => { x.archived = true; x.circuits.forEach(c => { if(!c.dateRemoved){ c.dateRemoved = d; c.offByArch = 1; } }); });
+      ui.confirm = null; ui.ev = null; { const k = secWalls()[0]; if(k) S.active = k.id; } touch(); render(); toast('Evento chiuso: i clienti non lo vedono più. Ricorda di premere Pubblica.'); break;
+    }
     case 'pubgo': ui.sheet = null; renderSheet(); ui.pubOk = true; publish(); break;
     case 'cunlock': if(c){ (ui.unl = ui.unl || {})[c.id] = 1; render(); } break;
     case 'pubrev': { const pw = S.walls.find(x => x.id === b.dataset.w), pc = pw && pw.circuits.find(x => x.id === b.dataset.id), bc = pw && baseC(pw.id, b.dataset.id);
       if(pc && bc){ pc.holds = JSON.parse(JSON.stringify(bc.holds)); if(ui.unl) delete ui.unl[pc.id]; ui.sel = null; ui.move = false; touch(); toast('Prese di ' + (isSec(pw) ? bTitle(pc) : pc.name) + ' tornate come nella versione pubblicata.'); }
       if(!pubChanges().length){ ui.sheet = null; renderSheet(); render(); } else { renderSheet(); render(); } break; }
-    case 'pubsee': { const pw = S.walls.find(x => x.id === b.dataset.w); if(pw){ ui.sheet = null; renderSheet(); ui.section = secOf(pw); ui.home = false; ui.full = false; if(isSec(pw)) ui.bLevel = 'sector'; S.active = pw.id; pw.activeCircuit = b.dataset.id; ui.sel = null; save(); render(); } break; }
+    case 'pubsee': { const pw = S.walls.find(x => x.id === b.dataset.w); if(pw){ ui.sheet = null; renderSheet(); ui.ev = isEv(pw) ? pw.ev.id : null; ui.section = secOf(pw); ui.home = false; ui.full = false; if(isSec(pw)) ui.bLevel = 'sector'; S.active = pw.id; pw.activeCircuit = b.dataset.id; ui.sel = null; save(); render(); } break; }
     case 'pref': S.prefs[b.dataset.k] = !S.prefs[b.dataset.k]; saveViewPrefs(); render(); break;
     case 'dimtg': { const k = w && isSec(w) ? 'dimB' : 'dimC'; S.prefs[k] = S.prefs[k] === false; saveViewPrefs(); render(); break; }
     case 'zoom': { const bx = $('#box').getBoundingClientRect(); applyZoom(ui.zoom * Math.pow(1.4, +b.dataset.d), bx.left + bx.width/2, bx.top + bx.height/2); break; }
