@@ -2270,11 +2270,14 @@ function bubbleCost(x, y, br, gap, env){
   }
   for(const sg of env.segs){ const d = segDist(x, y, sg[0], sg[1], sg[2], sg[3]); if(d < lim) cost += 2.5*(1 - d/lim); }
   /* due numeri che si toccano si leggono male: costo alto finché non c'è aria tra le due bolle */
-  for(const b of env.badges){ const d = Math.hypot(x - b[0], y - b[1]); if(d < br*2.9) cost += 9*(1 - d/(br*2.9)) + (d < br*2.25 ? 8 : 0); else if(d < br*5) cost += 0.8*(1 - (d - br*2.9)/(br*2.1)); }
+  for(const b of env.badges){ const d = Math.hypot(x - b[0], y - b[1]);
+    /* numeri della stessa presa (passaggi lontani, es. 10 e 24): possono stare accanto, basta che non si sovrappongano */
+    if(b[2]){ if(d < br*2.15) cost += 9*(1 - d/(br*2.15)) + (d < br*1.95 ? 8 : 0); continue; }
+    if(d < br*2.9) cost += 9*(1 - d/(br*2.9)) + (d < br*2.25 ? 8 : 0); else if(d < br*5) cost += 0.8*(1 - (d - br*2.9)/(br*2.1)); }
   /* prese della foto non mappate: è il caso più comune sui muri dei circuiti, quindi pesa come un contorno mappato */
   return cost + 7*busyAt(env.busy, x, y, br, env.own);
 }
-function placeBubbles(h, W, br, gap, env, n, tw){
+function placeBubbles(h, W, br, gap, env, n, tw, glue){
   const own = holdPts(h, W), bb = holdBox(h, W), cx = (bb.x0+bb.x1)/2, cy = (bb.y0+bb.y1)/2, N = 72;
   env.own = own;
   /* lato da cui si arriva: a parità di spazio libero, il numero va verso la presa precedente */
@@ -2292,7 +2295,8 @@ function placeBubbles(h, W, br, gap, env, n, tw){
     t -= br*0.32 + gap; x = cx + dx*t; y = cy + dy*t;
     T.push({ x, y, k, c: bubbleCost(x, y, br, gap, env) + (t - t0)/br*0.15 + (hasDir ? 0 : Math.min(k, N-k)*0.007) });
     /* se lì intorno è affollato, la bolla può staccarsi un po' dalla presa (costa qualcosa, ma resta leggibile) */
-    if(n <= 1) for(const ex of [0.9, 1.8, 2.7]){ const t2 = t + br*ex, x2 = cx + dx*t2, y2 = cy + dy*t2;
+    /* glue: la presa ha altri numeri suoi, quindi questo resta attaccato al contorno come gli altri */
+    if(n <= 1 && !glue) for(const ex of [0.9, 1.8, 2.7]){ const t2 = t + br*ex, x2 = cx + dx*t2, y2 = cy + dy*t2;
       T.push({ x: x2, y: y2, k, far: ex, c: bubbleCost(x2, y2, br, gap, env) + (t2 - t0)/br*0.15 + ex*1.2 + (hasDir ? 0 : Math.min(k, N-k)*0.007) }); }
   }
   if(n <= 1){ let best = T[0], bc = Infinity; for(const p of T){ const cc = p.c + dirCost(p, 0); if(cc < bc){ bc = cc; best = p; } } return [best]; }
@@ -2474,15 +2478,16 @@ function circuitSVG(c, W, alpha, o){
     const env = { W, H: o.H || 1e9, segs, badges: [], shapes: [], busy: null };
     /* posizioni: un primo giro in ordine, poi due giri di ritocco in cui ogni numero vede anche quelli venuti dopo */
     /* le posizioni costano (tre giri di ricerca): si ricordano finché il circuito e la vista non cambiano */
-    const ckey = [c.id, W, br, o.lines ? 1 : 0, o.boulder ? 1 : 0, 'v2', labels.map(L => L.label + '@' + Math.round(L.h.x) + ',' + Math.round(L.h.y)).join('|'),
+    const ckey = [c.id, W, br, o.lines ? 1 : 0, o.boulder ? 1 : 0, 'v3', labels.map(L => L.label + '@' + Math.round(L.h.x) + ',' + Math.round(L.h.y)).join('|'),
       c.holds.map(h => (h.cid || '') + Math.round(h.x) + ',' + Math.round(h.y) + h.role + (h.hand || '') + (h.poly ? h.poly.length : 0)).join('|')].join('#');
     const cached = LBL_CACHE.get(ckey);
     const P = cached ? cached.map(ps => ps.map(p => ({ x: p.x, y: p.y }))) : [];
     const place = li => { const L = labels[li];
       env.shapes = shapes.filter(q => q.h !== L.h && !(q.cid != null && q.cid === L.h.cid));
-      env.badges = []; P.forEach((ps, j) => { if(j !== li && ps) ps.forEach(p => env.badges.push([p.x, p.y])); });
+      env.badges = []; P.forEach((ps, j) => { if(j !== li && ps) ps.forEach(p => env.badges.push([p.x, p.y, labels[j].h === L.h])); });
+      const glue = labels.some((M, j) => j !== li && M.h === L.h);
       /* più passaggi: bolle fuse, una per passaggio, ognuna nel colore della sua mano e tangente alla presa */
-      P[li] = placeBubbles(L.h, W, br, gap, env, L.segs ? L.segs.length : 1, L.tw); };
+      P[li] = placeBubbles(L.h, W, br, gap, env, L.segs ? L.segs.length : 1, L.tw, glue); };
     if(!cached){
       labels.forEach((L, li) => place(li));
       for(let r = 0; r < 2; r++) labels.forEach((L, li) => place(li));
