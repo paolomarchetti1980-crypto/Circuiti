@@ -138,7 +138,7 @@ const BTAG_GROUPS = [
   ['Inclinazione', ['Appoggiato','Verticale','Strapiombo','Tetto'], 'una'],
   ['Conformazione', ['Spigolo','Diedro','Traverso','Rimonto','Variegato']],
   ['Prese', ['Maniglie','Tacche','Svasi','Pinze','Buchi','Rovesci','Laterali','Piatte','Volumi']],
-  ['Movimento', ['Statico','Dinamico','Coordinazione','Bloccaggi','Compressione','Opposizione','Equilibrio','Body tension']],
+  ['Movimento', ['Statico','Dinamico','Bloccaggi','Compressione','Opposizione','Equilibrio','Body tension']],   /* Coordinazione tolta (9/11): c'è già Coordinativo in Stile */
   ['Piedi', ['Aderenza','Tallone','Punta','Incastro','Lolotte','Bicicletta','Microappoggi']],
   ['Stile', ['Fisico','Tecnico','Coordinativo','Delicato'], 'una'],
   ['Da sapere', ['Morfologico','Partenza sit','Partenza saltata','Pareti adiacenti','Spigoli vicini']]];
@@ -3717,7 +3717,8 @@ function badgeStats(){
     colorN: D.filter(x => x.isB).reduce((m, x) => { m[x.g] = (m[x.g] || 0) + 1; return m; }, {}),
     nFlash: D.filter(x => firstGo(x.t.tries)).length, nVista: D.filter(x => x.t.tries === 'vista').length, nGrit: D.filter(x => x.t.tries === 'lavorato').length,
     /* giornate da ricordare: nello stesso giorno, boulder duri al primo tentativo o percorsi lavorati chiusi */
-    dayHardFlash: (() => { const m = {}; D.filter(x => x.isB && x.at && firstGo(x.t.tries) && ['giallo','rosso','nero'].includes(x.g)).forEach(x => { const k = dayKey(x.at); m[k] = (m[k] || 0) + 1; }); return Math.max(0, ...Object.values(m)); })(),
+    /* record di boulder al primo tentativo in un giorno, di quel grado o più duri (per i livelli di "Giornata di grazia") */
+    dayFl: (() => { const G = ['verde','giallo','rosso','nero'], o = {}; G.forEach((g, i) => { const m = {}; D.filter(x => x.isB && x.at && firstGo(x.t.tries) && G.slice(i).includes(x.g)).forEach(x => { const k = dayKey(x.at); m[k] = (m[k] || 0) + 1; }); o[g] = Math.max(0, ...Object.values(m)); }); return o; })(),
     dayWorked: (() => { const m = {}; D.filter(x => x.at && (x.t.tries === 'lavorato' || x.t.tries === 'super')).forEach(x => { const k = dayKey(x.at); m[k] = (m[k] || 0) + 1; }); return Math.max(0, ...Object.values(m)); })(), nSuper: D.filter(x => x.t.tries === 'super').length, nTries: D.filter(x => x.t.tries).length,
     flashG: D.some(x => x.isB && firstGo(x.t.tries) && ['giallo','rosso','nero'].includes(x.g)), flashR: D.some(x => x.isB && firstGo(x.t.tries) && ['rosso','nero'].includes(x.g)),
     /* primi e veloci: date di montaggio e smontaggio del percorso, dalla foto della palestra */
@@ -3750,7 +3751,9 @@ const BADGES = [
   { id: 'flg', f: 'tent', name: 'Flash di peso', desc: 'Un boulder giallo, rosso o nero al primo tentativo', ok: s => s.flashG, left: s => 'un giallo o più duro al primo tentativo' },
   { id: 'flr', f: 'tent', name: 'Fulmine a ciel sereno', desc: 'Un boulder rosso o nero al primo tentativo', ok: s => s.flashR, left: s => 'un rosso o un nero al primo tentativo' },
   ...[[1, 'Non mollo'], [10, 'Testa dura'], [25, 'Irriducibile']].map(([k, n]) => ({ id: 'gr' + k, f: 'tent', name: n, desc: k === 1 ? 'Un percorso lavorato, chiuso in più sessioni' : k + ' percorsi lavorati, chiusi in più sessioni', ok: s => s.nGrit >= k, left: s => k === 1 ? 'chiudi un percorso lavorato' : s.nGrit + ' di ' + k, big: k > 1 ? String(k) : null })),
-  { id: 'gdf', f: 'tent', name: 'Giornata di grazia', desc: '3 boulder gialli o più duri al primo tentativo nello stesso giorno', ok: s => s.dayHardFlash >= 3, left: s => 'record: ' + s.dayHardFlash + ' in un giorno' },
+  /* "Giornata di grazia" su più livelli, secondo il grado dei boulder chiusi al primo tentativo nello stesso giorno */
+  ...[['gdv', 'Mano calda', 'verde', 'verdi', 3], ['gdf', 'Giornata di grazia', 'giallo', 'gialli', 3], ['gdr', 'Stato di grazia', 'rosso', 'rossi', 3], ['gdn', 'Giornata leggendaria', 'nero', 'neri', 2]].map(([id, n, g, gp, k]) => ({ id, f: 'tent', name: n,
+    desc: k + ' boulder ' + gp + (g === 'nero' ? '' : ' o più duri') + ' al primo tentativo nello stesso giorno', ok: s => s.dayFl[g] >= k, left: s => 'il tuo record in un giorno: ' + s.dayFl[g] })),
   { id: 'gdw', f: 'tent', name: 'Giornata da ricordare', desc: '3 percorsi lavorati (o superlavorati) chiusi nello stesso giorno', ok: s => s.dayWorked >= 3, left: s => 'record: ' + s.dayWorked + ' in un giorno' },
   ...[[1, 'Prima salita'], [5, 'Apriporta'], [20, 'Pioniere']].map(([k, n]) => ({ id: 'fa' + k, f: 'vel', name: n, desc: k === 1 ? 'Il primo cliente a chiudere un percorso nuovo' : 'Prima salita su ' + k + ' percorsi diversi', ok: s => s.nFirst >= k, left: s => k === 1 ? 'chiudi per primo un percorso appena tracciato' : s.nFirst + ' di ' + k, big: k > 1 ? String(k) : null })),
   { id: 'ffl', f: 'vel', name: 'Primo flash', desc: 'Il primo cliente a chiudere un percorso a vista o flash', ok: s => s.firstFlash, left: s => 'chiudi per primo un percorso al primo tentativo' },
@@ -3870,7 +3873,7 @@ const B_LOOK = (() => {
   ser(['fr1', 'fr10', 'fr25'], 'sprout', (st, id) => st.nFresh / num(id), true);
   L.trail = { t: 'g', i: 'trail', pr: null }; L.last = { t: 's', i: 'hourglass', pr: null }; L.cesa = { t: 'g', i: 'whistle', pr: null };
   ser(['bt5', 'bt20', 'bt50'], 'flask', (st, id) => st.nBeta / num(id), true);
-  L.gdf = { t: 'g', i: 'calbolt', pr: st => st.dayHardFlash / 3 }; L.gdw = { t: 'g', i: 'calstar', pr: st => st.dayWorked / 3 };
+  L.gdv = { t: 'b', i: 'calbolt', pr: st => st.dayFl.verde / 3 }; L.gdf = { t: 's', i: 'calbolt', pr: st => st.dayFl.giallo / 3 }; L.gdr = { t: 'g', i: 'calbolt', pr: st => st.dayFl.rosso / 3 }; L.gdn = { t: 'g', i: 'calbolt', pr: st => st.dayFl.nero / 2, sc: 1.15 }; L.gdw = { t: 'g', i: 'calstar', pr: st => st.dayWorked / 3 };
   ser(['tr10', 'tr50'], 'book', (st, id) => st.nTries / num(id)); L.tr10.t = 's';
   ser(['hi5', 'hi20'], 'up', (st, id) => st.hiUps / num(id)); L.hi5.t = 's';
   ser(['g1', 'g10', 'g50', 'g100'], ['heart', 'heart', 'heart', 'hearts'], (st, id) => st.nRate / num(id), true); L.g100.sc = 1.15;
