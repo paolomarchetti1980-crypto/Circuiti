@@ -3767,7 +3767,7 @@ const BADGES = [
   ...[[1, 'Mi piace!'], [10, 'Occhio critico'], [50, 'Critico di fiducia'], [100, 'Voce della palestra']].map(([k, n]) => ({ id: 'g' + k, f: 'gym', name: n, desc: k === 1 ? 'Il primo voto di gradimento a un percorso' : k + ' percorsi votati da 1 a 10', ok: s => s.nRate >= k, left: s => k === 1 ? 'dai un voto da 1 a 10 a un percorso fatto' : s.nRate + ' di ' + k, big: k > 1 ? String(k) : null })),
   ...[[1, 'Primo parere'], [10, 'Metro alla mano'], [50, 'Giudice di parete'], [100, 'Bilancia d\'oro']].map(([k, n]) => ({ id: 'p' + k, f: 'gym', name: n, desc: k === 1 ? 'Il primo parere sul grado (facile, giusto, duro)' : k + ' pareri sul grado dei percorsi', ok: s => s.nVote >= k, left: s => k === 1 ? 'di\' se il grado ti è sembrato facile, giusto o duro' : s.nVote + ' di ' + k, big: k > 1 ? String(k) : null })),
   ...[[5, 'Beta tester'], [20, 'Collaudatore'], [50, 'Banco di prova']].map(([k, n]) => ({ id: 'bt' + k, f: 'gym', name: n, desc: k + ' percorsi nuovi (tracciati da meno di una settimana) con gradimento e parere sul grado', ok: s => s.nBeta >= k, left: s => s.nBeta + ' di ' + k, big: String(k) })),
-  ...[[10, 'Diario di bordo'], [50, 'Cronista']].map(([k, n]) => ({ id: 'tr' + k, f: 'gym', name: n, desc: k + ' percorsi fatti con i tentativi segnati', ok: s => s.nTries >= k, left: s => s.nTries + ' di ' + k, big: String(k) })),
+  ...[[5, 'Appunti di viaggio'], [25, 'Diario di bordo'], [50, 'Cronista']].map(([k, n]) => ({ id: 'tr' + k, f: 'gym', name: n, desc: k + ' percorsi fatti con i tentativi segnati', ok: s => s.nTries >= k, left: s => s.nTries + ' di ' + k, big: String(k) })),
   ...[100, 250, 500, 1000, 2500, 5000].map(k => ({ id: 'm' + k, f: 'km', name: k.toLocaleString('it-IT') + ' movimenti', desc: k.toLocaleString('it-IT') + ' movimenti sui circuiti fatti', ok: s => s.moves >= k, left: s => s.moves.toLocaleString('it-IT') + ' di ' + k.toLocaleString('it-IT'), big: k >= 1000 ? String(k / 1000).replace('.', ',') + 'k' : String(k) })),
   /* circuiti con piedi obbligati chiusi */
   ...[[1, 'Piede fino'], [10, 'Piedi di velluto'], [25, 'Ballerino'], [50, 'Piede di scimmia']].map(([k, n]) => ({ id: 'ft' + k, f: 'tec', name: n, desc: k === 1 ? 'Il primo circuito con piedi obbligati' : k + ' circuiti con piedi obbligati', ok: s => s.nFeet >= k, left: s => k === 1 ? 'chiudi un circuito con piedi obbligati' : s.nFeet + ' di ' + k, big: k > 1 ? String(k) : null })),
@@ -3874,7 +3874,7 @@ const B_LOOK = (() => {
   L.trail = { t: 'g', i: 'trail', pr: null }; L.last = { t: 's', i: 'hourglass', pr: null }; L.cesa = { t: 'g', i: 'whistle', pr: null };
   ser(['bt5', 'bt20', 'bt50'], 'flask', (st, id) => st.nBeta / num(id), true);
   L.gdv = { t: 'b', i: 'calbolt', pr: st => st.dayFl.verde / 3 }; L.gdf = { t: 's', i: 'calbolt', pr: st => st.dayFl.giallo / 3 }; L.gdr = { t: 'g', i: 'calbolt', pr: st => st.dayFl.rosso / 3 }; L.gdn = { t: 'g', i: 'calbolt', pr: st => st.dayFl.nero / 2, sc: 1.15 }; L.gdw = { t: 'g', i: 'calstar', pr: st => st.dayWorked / 3 };
-  ser(['tr10', 'tr50'], 'book', (st, id) => st.nTries / num(id)); L.tr10.t = 's';
+  ser(['tr5', 'tr25', 'tr50'], 'book', (st, id) => st.nTries / num(id), true);
   ser(['hi5', 'hi20'], 'up', (st, id) => st.hiUps / num(id)); L.hi5.t = 's';
   ser(['g1', 'g10', 'g50', 'g100'], ['heart', 'heart', 'heart', 'hearts'], (st, id) => st.nRate / num(id), true); L.g100.sc = 1.15;
   ser(['p1', 'p10', 'p50', 'p100'], ['scale', 'scale', 'scale', 'wig'], (st, id) => st.nVote / num(id), true); L.p100.sc = 1.1;
