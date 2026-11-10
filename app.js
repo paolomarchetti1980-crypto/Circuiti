@@ -148,7 +148,7 @@ const BTAGS = BTAG_GROUPS.flatMap(g => g[1]);
 /* caratteristiche dei circuiti (2/11, versione di Paolo). Piedi liberi/obbligati restano a parte */
 const CTAG_GROUPS = [
   ['Prese predominanti', ['Maniglie','Tacche','Svasi','Pinze','Buchi','Rovesci','Laterali','Piatte','Volumi']],
-  ['Movimenti crux', ['Statico','Dinamico','Coordinazione','Bloccaggi','Compressione','Opposizione','Equilibrio','Body tension']],
+  ['Movimenti crux', ['Statico','Dinamico','Coordinazione','Incrocio','Bloccaggi','Compressione','Opposizione','Equilibrio','Body tension']],
   ['Stile', ['Continuo','Fisico','Di singolo','Discontinuo'], 'una'],
   ['Da sapere', ['Loop','Con riposi','Partenza sit','Con rilanci']]];
 const CTAGS = CTAG_GROUPS.flatMap(g => g[1]);
@@ -2456,8 +2456,8 @@ function circuitSVG(c, W, alpha, o){
       const clusters = [];
       g.forEach(j => { const last = clusters[clusters.length-1]; if(last && j === last[last.length-1] + 1) last.push(j); else clusters.push([j]); });
       clusters.forEach(cl => {
-        if(cl.length > 1) labels.push({ h: c.holds[g[0]], label: cl.map(j => seqOf[j]).join(','), col: base, ha: haloOf(base), segs: cl.map(j => ({ n: seqOf[j], col: handCol(c.holds[j]) })), tw: cl.map(prevOf) });
-        else { const hc = handCol(c.holds[cl[0]]); labels.push({ h: c.holds[g[0]], label: String(seqOf[cl[0]]), col: hc, ha: haloOf(hc), segs: null, tw: [prevOf(cl[0])] }); }
+        if(cl.length > 1) labels.push({ key, h: c.holds[g[0]], label: cl.map(j => seqOf[j]).join(','), col: base, ha: haloOf(base), segs: cl.map(j => ({ n: seqOf[j], col: handCol(c.holds[j]) })), tw: cl.map(prevOf) });
+        else { const hc = handCol(c.holds[cl[0]]); labels.push({ key, h: c.holds[g[0]], label: String(seqOf[cl[0]]), col: hc, ha: haloOf(hc), segs: null, tw: [prevOf(cl[0])] }); }
       });
       return;
     }
@@ -2465,7 +2465,7 @@ function circuitSVG(c, W, alpha, o){
       if(lv && lv.lastSplit){ col = base; ha = haloOf(base); }
       /* presa con più passaggi: etichetta a capsula, un numero per passaggio nel colore della sua mano */
       const segs = g && g.length > 1 && o.numbers && h.role === 'hold' ? g.map(j => ({ n: seqOf[j], col: handCol(c.holds[j]) })) : null;
-      labels.push({ h: lv ? c.holds[g[0]] : h, label, col, ha, segs, tw: segs ? g.map(prevOf) : [h.role === 'start' ? null : prevOf(i)] });
+      labels.push({ key, h: lv ? c.holds[g[0]] : h, label, col, ha, segs, tw: segs ? g.map(prevOf) : [h.role === 'start' ? null : prevOf(i)] });
     }
   });
   if(labels.length){
@@ -2478,14 +2478,14 @@ function circuitSVG(c, W, alpha, o){
     const env = { W, H: o.H || 1e9, segs, badges: [], shapes: [], busy: null };
     /* posizioni: un primo giro in ordine, poi due giri di ritocco in cui ogni numero vede anche quelli venuti dopo */
     /* le posizioni costano (tre giri di ricerca): si ricordano finché il circuito e la vista non cambiano */
-    const ckey = [c.id, W, br, o.lines ? 1 : 0, o.boulder ? 1 : 0, 'v3', labels.map(L => L.label + '@' + Math.round(L.h.x) + ',' + Math.round(L.h.y)).join('|'),
+    const ckey = [c.id, W, br, o.lines ? 1 : 0, o.boulder ? 1 : 0, 'v4', labels.map(L => L.label + '@' + Math.round(L.h.x) + ',' + Math.round(L.h.y)).join('|'),
       c.holds.map(h => (h.cid || '') + Math.round(h.x) + ',' + Math.round(h.y) + h.role + (h.hand || '') + (h.poly ? h.poly.length : 0)).join('|')].join('#');
     const cached = LBL_CACHE.get(ckey);
     const P = cached ? cached.map(ps => ps.map(p => ({ x: p.x, y: p.y }))) : [];
     const place = li => { const L = labels[li];
       env.shapes = shapes.filter(q => q.h !== L.h && !(q.cid != null && q.cid === L.h.cid));
-      env.badges = []; P.forEach((ps, j) => { if(j !== li && ps) ps.forEach(p => env.badges.push([p.x, p.y, labels[j].h === L.h])); });
-      const glue = labels.some((M, j) => j !== li && M.h === L.h);
+      env.badges = []; P.forEach((ps, j) => { if(j !== li && ps) ps.forEach(p => env.badges.push([p.x, p.y, labels[j].key === L.key])); });
+      const glue = labels.some((M, j) => j !== li && M.key === L.key);
       /* più passaggi: bolle fuse, una per passaggio, ognuna nel colore della sua mano e tangente alla presa */
       P[li] = placeBubbles(L.h, W, br, gap, env, L.segs ? L.segs.length : 1, L.tw, glue); };
     if(!cached){
