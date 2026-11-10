@@ -3388,10 +3388,10 @@ function renderTools(){
   const dimBtn = `<button class="btn ${ui.editDim ? 'on' : ''}" data-act="editdim" aria-pressed="${!!ui.editDim}">Oscura</button>`;
   if(h){
     /* presa selezionata: tutto ciò che la riguarda, e "Fatto" per tornare a segnare */
-    el.innerHTML = `<p class="hint">${ui.move ? 'Tocca il punto dove spostarla.' : isHid(h) ? 'Presa nascosta: sulla foto resta un cerchio tratteggiato con la freccia curva. Gira la freccia finché non sta perpendicolare al bordo del volume; regola misura e posizione se serve.' : 'Presa selezionata: cambia tipo' + (sec ? '' : ' o mano') + ', contorno o posizione.'}</p>`+
+    el.innerHTML = `<p class="hint">${ui.move ? (sec ? 'Tocca il punto dove spostarla.' : 'Tocca la nuova presa: prende il posto di questa, con lo stesso numero, tipo e mano.') : isHid(h) ? 'Presa nascosta: sulla foto resta un cerchio tratteggiato con la freccia curva. Gira la freccia finché non sta perpendicolare al bordo del volume; regola misura e posizione se serve.' : 'Presa selezionata: cambia tipo' + (sec ? '' : ' o mano') + ', contorno o posizione.'}</p>`+
       `<div class="trow">${roles}${hands}</div>`+
       `<div class="trow"><div class="seg"><button data-act="size" data-d="-1" aria-label="${lbl} più piccolo">${lbl} &minus;</button><button data-act="size" data-d="1" aria-label="${lbl} più grande">${lbl} +</button></div>`+
-      `<button class="btn ${ui.move ? 'on' : ''}" data-act="move">Sposta</button>`+
+      `<button class="btn ${ui.move ? 'on' : ''}" data-act="move">${sec ? 'Sposta' : 'Cambia presa'}</button>`+
       (sec ? `<button class="btn" data-act="bdraw">Ridisegna</button>` : `<button class="btn" data-act="dup" title="${dupLabel(c, ui.sel) === 'Accoppia' ? 'Aggiunge un passaggio sulla stessa presa con l\'altra mano' : 'Aggiunge un nuovo passaggio su questa presa, come prossimo movimento'}">${dupLabel(c, ui.sel)}</button>`)+
       (sec ? `<button class="btn ${isHid(h) ? 'on' : ''}" data-act="hidtog" aria-pressed="${isHid(h)}">Nascosta</button>` : '')+
       (sec && isHid(h) && !h.poly ? `<div class="seg"><button data-act="hrot" data-d="-1" aria-label="Gira la freccia a sinistra">Freccia ↺</button><button data-act="hrot" data-d="1" aria-label="Gira la freccia a destra">↻</button></div>` : '')+
@@ -4877,6 +4877,14 @@ $('#stage').addEventListener('click', async e => {
   }
   if(ui.move && ui.sel != null && isHid(c.holds[ui.sel]) && !c.holds[ui.sel].poly){
     const h = c.holds[ui.sel]; h.x = h.sx = x; h.y = h.sy = y;
+    ui.move = false; touch(); render(); return;
+  }
+  /* circuiti: "Cambia presa" sostituisce la presa con un'altra del muro, tenendo il suo posto nella sequenza (numero, tipo, mano) */
+  if(ui.move && ui.sel != null && c.holds[ui.sel] && !isSec(w) && (w.holds || []).length){
+    const ci = catHit(w, x, y, ctol);
+    if(ci < 0){ toast('Qui non c\'è una presa del muro: tocca una presa riconosciuta.'); return; }
+    const h = c.holds[ui.sel], ch = w.holds[ci];
+    Object.assign(h, { x: ch.x, y: ch.y, sx: ch.sx || ch.x, sy: ch.sy || ch.y, poly: ch.poly.slice(), cid: ch.id, ts: 1 });
     ui.move = false; touch(); render(); return;
   }
   if(ui.move && ui.sel != null && c.holds[ui.sel]){
