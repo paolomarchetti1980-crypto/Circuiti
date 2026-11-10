@@ -4461,6 +4461,19 @@ function renderSheet(){
   });
   const cb1 = $('#cropbox');
   if(cb1 && keep){ cb1.scrollLeft = keep[0]; cb1.scrollTop = keep[1]; }
+  /* ritaglio: si ingrandisce anche con due dita (oltre ai tasti + e −), restando sul punto tra le dita */
+  if(cb1 && ui.crop){
+    const cr = ui.crop, inner = cb1.firstElementChild; let P = null;
+    const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    cb1.addEventListener('touchstart', e => { if(e.touches.length !== 2) return;
+      const r = cb1.getBoundingClientRect(), mx = (e.touches[0].clientX + e.touches[1].clientX)/2 - r.left, my = (e.touches[0].clientY + e.touches[1].clientY)/2 - r.top;
+      P = { d0: dist(e.touches), z0: cr.z || 1, z: cr.z || 1, fx: (cb1.scrollLeft + mx) / cb1.scrollWidth, fy: (cb1.scrollTop + my) / cb1.scrollHeight, mx, my }; }, { passive: true });
+    cb1.addEventListener('touchmove', e => { if(!P || e.touches.length !== 2) return; e.preventDefault();
+      P.z = clamp(P.z0 * dist(e.touches) / P.d0, 1, 6); inner.style.width = (100 * P.z) + '%';
+      cb1.scrollLeft = P.fx * cb1.scrollWidth - P.mx; cb1.scrollTop = P.fy * cb1.scrollHeight - P.my; }, { passive: false });
+    cb1.addEventListener('touchend', e => { if(!P || e.touches.length) return; const z = P.z; P = null; cr.pinchAt = Date.now();
+      if(Math.abs(z - (cr.z || 1)) > 0.01){ cr.z = z; renderSheet(); } });
+  }
   el.hidden = false;
 }
 /* foto del muro/settore con disegnato un blocco (per condividere e stampare) */
@@ -4963,7 +4976,7 @@ document.addEventListener('click', e => {
     case 'panelReset': if(w){ delete w.panelSamples; delete segCache[w.id]; touch(); render(); } break;
     case 'panelDone': ui.tool = 'detect'; render(); break;
     case 'cropTap': {
-      const cr = ui.crop; if(!cr || cr.closed) break;
+      const cr = ui.crop; if(!cr || cr.closed || Date.now() - (cr.pinchAt || 0) < 400) break;
       const r = b.getBoundingClientRect();
       const pt = { x: clamp((e.clientX - r.left) / r.width, 0, 1), y: clamp((e.clientY - r.top) / r.height, 0, 1) };
       cr.pts.push(pt);
