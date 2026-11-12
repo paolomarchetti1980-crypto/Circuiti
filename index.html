@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Monkey Roads</title><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#121315"><link rel="icon" href="icon-192-g3.png"><link rel="apple-touch-icon" href="apple-touch-icon-g3.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Monkey Roads"><meta name="application-name" content="Monkey Roads"><style id="css">
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"><title>Monkey Roads</title><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#121315"><link rel="icon" href="icon-192-g3.png"><link rel="apple-touch-icon" href="apple-touch-icon-g3.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Monkey Roads"><meta name="application-name" content="Monkey Roads"><style id="css">
 /* caratteri ospitati sul sito dell'app (niente Google Fonts) */
 @font-face{font-family:'Barlow';font-style:normal;font-weight:400;font-display:swap;src:url(fonts/barlow-latin-400-normal.woff2) format('woff2')}
 @font-face{font-family:'Barlow';font-style:normal;font-weight:500;font-display:swap;src:url(fonts/barlow-latin-500-normal.woff2) format('woff2')}
@@ -42,6 +42,8 @@ button,label.btn{cursor:pointer}
 .pubbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 10px;background:var(--panel);border-bottom:1px solid var(--line);color:var(--muted);font-size:14px}
 
 .stagewrap{position:relative;flex:1;min-height:0;background:var(--stage)}
+/* la pagina non si ingrandisce (si ingrandiscono solo le foto, coi loro gesti): niente pizzico né doppio tocco sulla pagina */
+html,body{touch-action:pan-x pan-y}
 #box{position:absolute;inset:0;overflow:auto;display:flex;touch-action:pan-x pan-y;overscroll-behavior:contain}
 #stage{position:relative;margin:auto;flex:none;user-select:none;-webkit-user-select:none}
 #stage.edit{cursor:crosshair}
@@ -364,5 +366,5 @@ button,label.btn{cursor:pointer}
 </style></head><body><div id="root"></div>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="namegen.js?v=216"></script><script id="app-js" src="app.js?v=216"></script>
+<script src="namegen.js?v=217"></script><script id="app-js" src="app.js?v=217"></script>
 </body></html>

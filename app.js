@@ -5477,6 +5477,9 @@ function applyZoom(nz, fx, fy){
     if(e.ctrlKey){ e.preventDefault(); applyZoom(ui.zoom * Math.exp(-e.deltaY*0.01), e.clientX, e.clientY); }
   }, { passive: false });
   document.addEventListener('gesturestart', e => e.preventDefault());
+  document.addEventListener('gesturechange', e => e.preventDefault());
+  /* iPhone: Safari ignora "user-scalable=no"; si blocca a mano il pizzico a due dita fuori dalle foto (le foto hanno il loro zoom) */
+  document.addEventListener('touchmove', e => { if(e.touches.length > 1 && !e.target.closest('#box, #cropbox')) e.preventDefault(); }, { passive: false });
 })();
 /* disegno della linea del boulder: si segue il dito sulla foto */
 (function(){
