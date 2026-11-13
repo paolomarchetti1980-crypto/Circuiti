@@ -3401,7 +3401,7 @@ function renderTools(){
     return;
   }
   if(c && cLocked(w, c)){
-    el.innerHTML = `<p class="hint">${sec ? 'Boulder' : 'Circuito'} già pubblicato: è bloccato, così un tocco per sbaglio non aggiunge prese. Tocca una presa per modificarla; per aggiungerne premi Modifica prese.</p>`+
+    el.innerHTML = `<p class="hint hint1 ${ui.hintOpen ? 'open' : ''}" data-act="hintx">${sec ? 'Boulder' : 'Circuito'} già pubblicato: è bloccato, così un tocco per sbaglio non aggiunge prese. Tocca una presa per modificarla; per aggiungerne premi Modifica prese.</p>`+
       `<div class="trow"><button class="btn primary" data-act="cunlock">Modifica prese</button>`+
       (sec ? `<button class="btn" data-act="bline">${c.line ? 'Linea (tua)' : 'Linea'}</button>` : '')+
       dimBtn+(sec ? '' : `<button class="btn ${S.prefs.others ? 'on' : ''}" data-act="pref" data-k="others" aria-pressed="${!!S.prefs.others}">Altri circuiti</button>`)+`</div>`;
@@ -3418,16 +3418,24 @@ function renderTools(){
   if(sec && ui.hnext) hint = 'Presa nascosta (per esempio dietro un volume): tocca il punto della foto dove sparisce. Ci metto un cerchio tratteggiato con la freccia curva.';
   if(candOn) hint = `${ui.cand.list.length} prese proposte (tratteggiate): tocca quelle del blocco per aggiungerle, oppure aggiungile tutte e togli poi quelle che non c'entrano.`;
   if(sec && !candOn) hint += ` <span style="opacity:.75">${samStatus(w)}</span>`;
-  el.innerHTML = `<p class="hint">${hint}</p>`+
+  /* scheda compatta: la spiegazione sta su una riga (si apre toccandola), restano visibili tipo di presa e Annulla;
+     il resto sta in "Altro", tranne i tasti accesi o da usare adesso (es. Linea quando c'è l'arrivo) */
+  const ex = [];
+  if(sec && c && c.holds.some(h => isStart(h) && h.poly) && !candOn) ex.push([`<button class="btn" data-act="candfind">Trova prese di questo colore</button>`, false]);
+  if(sec) ex.push([`<button class="btn" data-act="bdraw" ${c ? '' : 'disabled'}>Disegna a mano</button>`, false]);
+  if(sec) ex.push([`<button class="btn ${ui.hnext ? 'on' : ''}" data-act="hnext" aria-pressed="${!!ui.hnext}" ${c ? '' : 'disabled'}>Presa nascosta</button>`, !!ui.hnext]);
+  if(sec){ const want = !!(c && !c.line && c.holds.some(h => h.role === 'top')); ex.push([`<button class="btn ${want ? 'primary' : ''}" data-act="bline" ${c ? '' : 'disabled'}>${c && c.line ? 'Linea (tua)' : 'Linea'}</button>`, want]); }
+  ex.push([dimBtn, !!ui.editDim]);
+  if(!sec) ex.push([`<button class="btn ${S.prefs.others ? 'on' : ''}" data-act="pref" data-k="others" aria-pressed="${!!S.prefs.others}">Altri circuiti</button>`, !!S.prefs.others]);
+  const shown = ex.filter(x => x[1]), rest = ex.filter(x => !x[1]);
+  el.innerHTML = `<p class="hint hint1 ${ui.hintOpen ? 'open' : ''}" data-act="hintx" title="Tocca per leggere tutto">${hint}</p>`+
     `<div class="trow">${roles}${hands}</div>`+
     `<div class="trow">`+
-    (candOn ? `<button class="btn primary" data-act="candall">Aggiungi tutte (${ui.cand.list.length})</button><button class="btn" data-act="candno">Chiudi proposte</button>` :
-      sec && c && c.holds.some(h => isStart(h) && h.poly) ? `<button class="btn" data-act="candfind">Trova prese di questo colore</button>` : '')+
-    (sec ? `<button class="btn" data-act="bdraw" ${c ? '' : 'disabled'}>Disegna a mano</button>` : '')+
-    (sec ? `<button class="btn ${ui.hnext ? 'on' : ''}" data-act="hnext" aria-pressed="${!!ui.hnext}" ${c ? '' : 'disabled'}>Presa nascosta</button>` : '')+
-    (sec ? `<button class="btn ${c && !c.line && c.holds.some(h => h.role === 'top') ? 'primary' : ''}" data-act="bline" ${c ? '' : 'disabled'}>${c && c.line ? 'Linea (tua)' : 'Linea'}</button>` : '')+
+    (candOn ? `<button class="btn primary" data-act="candall">Aggiungi tutte (${ui.cand.list.length})</button><button class="btn" data-act="candno">Chiudi proposte</button>` : '')+
     (first ? '' : `<button class="btn" data-act="undo">Annulla ultima</button>`)+
-    dimBtn+(sec ? '' : `<button class="btn ${S.prefs.others ? 'on' : ''}" data-act="pref" data-k="others" aria-pressed="${!!S.prefs.others}">Altri circuiti</button>`)+`</div>`;
+    shown.map(x => x[0]).join('')+
+    (rest.length ? `<button class="btn ${ui.moreT ? 'on' : ''}" data-act="moret" aria-expanded="${!!ui.moreT}">${ui.moreT ? 'Meno' : 'Altro ⋯'}</button>` : '')+`</div>`+
+    (ui.moreT && rest.length ? `<div class="trow">${rest.map(x => x[0]).join('')}</div>` : '');
 }
 /* regole delle modalità (Muro = preparazione delle prese, Traccia, Guarda):
    - i settori boulder non hanno la fase Muro;
@@ -5201,6 +5209,8 @@ document.addEventListener('click', e => {
     case 'printone': printBlocks(false); break;
     case 'printall': printBlocks(true); break;
     case 'publish': publish(); break;
+    case 'hintx': ui.hintOpen = !ui.hintOpen; b.classList.toggle('open', ui.hintOpen); break;
+    case 'moret': ui.moreT = !ui.moreT; render(); break;
     case 'evopen': ui.ev = b.dataset.id; ui.bLevel = 'sectors'; ui.confirm = null; try{ history.pushState({ grid: 1, ev: 1 }, ''); }catch(e){} { const l = evWalls(ui.ev); if(l[0]) S.active = l[0].id; } render(); break;
     case 'evback': if(history.state && history.state.ev){ try{ history.back(); }catch(e){} } ui.ev = null; ui.confirm = null; { const l = secWalls(); const k = l.find(x => x.id === ui.lastSec.boulder) || l[0]; if(k) S.active = k.id; } render(); break;
     case 'evnew': ui.evAdd = null; ui.evSel = []; ui.evDays = 1; ui.evCol = false; ui.evName = null; openSheet('evnew'); break;

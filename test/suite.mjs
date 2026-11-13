@@ -50,6 +50,8 @@ const txt = async (pg, sel) => (await pg.locator(sel).allTextContents()).map(s =
 const P = async (pg, fx, fy) => { const bb = await pg.locator('#stage').boundingBox(); await pg.mouse.click(bb.x+bb.width*fx, bb.y+bb.height*fy); await pg.waitForTimeout(400); };
 const draft = (pg) => pg.evaluate(async()=>{ await new Promise(r=>setTimeout(r,500)); const db=await new Promise(r=>{const q=indexedDB.open('circuiti-muro',1);q.onsuccess=()=>r(q.result);q.onupgradeneeded=()=>q.result.createObjectStore('kv');}); return await new Promise(r=>{try{const q=db.transaction('kv').objectStore('kv').get('draft'); q.onsuccess=()=>r(q.result||null);}catch(e){r(null);}}); });
 
+/* tasti di tracciatura meno usati: stanno sotto "Altro" */
+const more = async pg => { if(await pg.locator('[data-act="moret"]:not(.on)').count()){ await pg.tap('[data-act="moret"]'); await pg.waitForTimeout(150); } };
 // ---------- A: cliente ----------
 await session(null, async (pg) => {
   log('A.title', await pg.title());
@@ -120,7 +122,7 @@ if(!(await pg.locator('.scard[data-act=opensec]:visible').count()) && !(await pg
   if(!(await pg.locator('.scard[data-act=opensec]:visible').count()) && !(await pg.locator('#backBtn').isHidden())){ await pg.tap('#backBtn'); await pg.waitForTimeout(300); } await pg.tap('.sedit >> nth=1', {timeout:5000}); await pg.waitForTimeout(200); await pg.tap('#card [data-act="wallmode"]', {timeout:5000}); await pg.waitForTimeout(300);
   log('B.wallTools', (await txt(pg, '#tools button')).slice(0, 4));
   await pg.tap('[data-act="tracing"]').catch(()=>{}); await (async()=>{ if(await pg.locator('#prevBtn.on').count()) await pg.tap('#prevBtn.on'); })(); await pg.waitForTimeout(200);
-  log('B.editDimBtn', await pg.locator('[data-act="editdim"]').count());
+  await more(pg); log('B.editDimBtn', await pg.locator('[data-act="editdim"]').count());
   // boulder: nuovo settore
   await pg.tap('[data-act="sec"][data-v="boulder"]', {timeout:5000}); await pg.waitForTimeout(300);
   await pg.setInputFiles('#empty input[data-pick]:not([capture])', '/home/claude/circuiti/img/muro1.jpg'); await pg.waitForTimeout(800);
@@ -133,7 +135,7 @@ if(!(await pg.locator('.scard[data-act=opensec]:visible').count()) && !(await pg
   log('B.bTitle', await pg.textContent('#card h2'));
   await pg.tap('[data-act="close"]', {timeout:5000}); await pg.waitForTimeout(200);
   await P(pg, 0.4, 0.8); await pg.waitForTimeout(2500); await P(pg, 0.5, 0.5); await pg.waitForTimeout(2500);
-  await pg.tap('[data-act="bdraw"]', {timeout:5000}); for(const [x,y] of [[0.6,0.3],[0.66,0.3],[0.66,0.36]]) await P(pg, x, y);
+  await more(pg); await pg.tap('[data-act="bdraw"]', {timeout:5000}); for(const [x,y] of [[0.6,0.3],[0.66,0.3],[0.66,0.36]]) await P(pg, x, y);
   await pg.tap('[data-act="bclose"]', {timeout:5000}); await pg.waitForTimeout(300);
   d = await draft(pg); const sec = d.walls.find(w => w.kind === 'sector');
   log('B.boulder', sec ? sec.circuits.map(c => ({ diff: c.diff, num: c.num, color: c.color, hc: c.holdColor, tags: c.tags, setter: c.setter, n: c.holds.length, drawn: c.holds.filter(h=>h.drawn).length })) : null);
@@ -178,7 +180,7 @@ if(!(await pg.locator('.scard[data-act=opensec]:visible').count()) && !(await pg
   log('D.clistFilters', await txt(pg, '#card .fchip, #card select option'));
   await pg.tap('#card .crow >> nth=0', {timeout:5000}); await pg.waitForTimeout(200);
   log('D.active', (await pg.textContent('.curbar .cinfo')).replace(/\s+/g,' ').trim());
-  await pg.tap('[data-act="editdim"]', {timeout:5000}); await pg.waitForTimeout(200);
+  await more(pg); await pg.tap('[data-act="editdim"]', {timeout:5000}); await pg.waitForTimeout(200);
   log('D.dimOn', await pg.locator('#ov rect[mask]').count());
   await pg.tap('[data-act="cedit"]', {timeout:5000}); await pg.waitForTimeout(200);
   await pg.tap('[data-act="cgen"]', {timeout:5000}); log('D.genChanged', (await pg.inputValue('#cname')) !== 'Test Circuito');
