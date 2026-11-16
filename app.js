@@ -2469,7 +2469,10 @@ function circuitSVG(c, W, alpha, o){
     }
   });
   if(labels.length){
-    const br = Math.max(W*0.018, 12), gap = Math.max(1.5, br*0.12);
+    /* i numeri crescono con lo zoom fino a 2 volte, poi restano della stessa misura sullo schermo: ingrandendo, le prese piccole si liberano */
+    /* ...ma mai sotto 11 pixel di raggio sullo schermo, perché restino leggibili */
+    const br0 = Math.max(W*0.018, 12), zf = o.zoom > 2 ? 2 / o.zoom : 1;
+    const br = o.px ? Math.min(br0, Math.max(br0 * zf, 11 / o.px)) : br0, gap = Math.max(1.5*zf, br*0.12);
     const shapes = [];
     const seen = new Set();
     c.holds.forEach(h => { const k = h.cid != null ? 'c'+h.cid : h.x+'_'+h.y; if(seen.has(k)) return; seen.add(k); const p = holdPts(h, W); shapes.push({ p, bb: holdBox(h, W), cid: h.cid, h }); });
@@ -3191,7 +3194,8 @@ function renderStage(){
   const sv = $('#ov');
   sv.setAttribute('viewBox', `0 0 ${w.w} ${w.h}`);
   const editing = EDIT && S.mode === 'edit';
-  sv.innerHTML = overlay(w, { over: bOver(), numbers: editing || S.prefs.numbers, lines: S.prefs.lines, others: EDIT && editing ? S.prefs.others : false, edit: editing, dim: dimOn(editing), wall: EDIT && S.mode === 'wall' });
+  const stw = ($('#stage') || {}).clientWidth || 0;
+  sv.innerHTML = overlay(w, { zoom: ui.zoom, px: stw && w.w ? stw / w.w : 0, over: bOver(), numbers: editing || S.prefs.numbers, lines: S.prefs.lines, others: EDIT && editing ? S.prefs.others : false, edit: editing, dim: dimOn(editing), wall: EDIT && S.mode === 'wall' });
   fit();
 }
 /* il cliente vede solo i boulder in parete: gli smontati servono allo staff */
@@ -5455,6 +5459,8 @@ function applyZoom(nz, fx, fy){
   box.scrollLeft = u*st.clientWidth + st.offsetLeft - px;
   box.scrollTop = v*st.clientHeight + st.offsetTop - py;
   const wallMode = EDIT && S.mode === 'wall';
+  /* oltre 2 volte i numeri si ridisegnano più piccoli: si aspetta che lo zoom si fermi */
+  clearTimeout(ui.zoomT); if(!wallMode && (nz > 2 || ui.zoomDrawn > 2)) ui.zoomT = setTimeout(() => { ui.zoomDrawn = ui.zoom; renderStage(); }, 180);
   if((ui.draft.length || wallMode) && !ui.draftRaf) ui.draftRaf = requestAnimationFrame(() => { ui.draftRaf = 0;
     if(EDIT && S.mode === 'wall') renderStage(); else { const g = document.getElementById('draftg'); if(g) g.innerHTML = draftInner(w); } });
 }
