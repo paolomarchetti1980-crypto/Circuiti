@@ -45,7 +45,7 @@ const BODY = `
   <!-- barra delle sezioni in basso, dove i clienti la cercano (come nelle app di tutti i giorni) -->
   <nav class="secbar" id="secbar" aria-label="Sezione">
     <button data-act="sec" data-v="circ"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19l5-6 4 3 5-9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5" cy="19" r="2.2" fill="currentColor"/><circle cx="10" cy="13" r="2.2" fill="currentColor"/><circle cx="14" cy="16" r="2.2" fill="currentColor"/><circle cx="19" cy="7" r="2.2" fill="currentColor"/></svg><span>Circuiti</span></button>
-    <button data-act="sec" data-v="boulder"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 19l3.5-8 4-3 3 2.5 3.5-1.5 4 10z" fill="currentColor"/><path d="M2 20.5h20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Boulder</span></button>
+    <button data-act="sec" data-v="boulder"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 21.5L4 10.5 9 3.5 16 2.5 21 9.5 22.5 21.5z" fill="currentColor"/><path d="M9 3.5L11.5 12 4 10.5M11.5 12L16 2.5M11.5 12L21 9.5M11.5 12L13.5 21.5M4 10.5L2.6 18" fill="none" stroke="var(--panel)" stroke-width="1.5" stroke-linejoin="round"/></svg><span>Boulder</span></button>
     <button data-act="mine" id="navMine" hidden><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7.5 12.3l3 3 6-6.3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Le mie salite</span></button>
   </nav>
 </div>
