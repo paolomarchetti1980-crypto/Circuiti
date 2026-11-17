@@ -5,10 +5,6 @@
 /* ---- struttura della pagina ---- */
 const BODY = `
 <div id="app">
-  <nav class="secbar" id="secbar" aria-label="Sezione">
-    <button data-act="sec" data-v="circ">Circuiti</button>
-    <button data-act="sec" data-v="boulder">Boulder</button>
-  </nav>
   <header class="top">
     <button class="backbtn" id="backBtn" data-act="bback" aria-label="Torna ai settori" hidden><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M11 3L5 9l6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     <button class="wallbtn" id="wallBtn" data-act="wall" aria-label="Scegli un muro">
@@ -46,6 +42,12 @@ const BODY = `
     <div class="chips" id="chips"></div>
     <div class="tools" id="tools"></div>
   </footer>
+  <!-- barra delle sezioni in basso, dove i clienti la cercano (come nelle app di tutti i giorni) -->
+  <nav class="secbar" id="secbar" aria-label="Sezione">
+    <button data-act="sec" data-v="circ"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19l5-6 4 3 5-9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5" cy="19" r="2.2" fill="currentColor"/><circle cx="10" cy="13" r="2.2" fill="currentColor"/><circle cx="14" cy="16" r="2.2" fill="currentColor"/><circle cx="19" cy="7" r="2.2" fill="currentColor"/></svg><span>Circuiti</span></button>
+    <button data-act="sec" data-v="boulder"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 19l3.5-8 4-3 3 2.5 3.5-1.5 4 10z" fill="currentColor"/><path d="M2 20.5h20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Boulder</span></button>
+    <button data-act="mine" id="navMine" hidden><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7.5 12.3l3 3 6-6.3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Le mie salite</span></button>
+  </nav>
 </div>
 <div class="sheet" id="sheet" hidden><div class="card" id="card"></div></div>
 <div class="toast" id="toast" hidden></div>
@@ -3128,7 +3130,9 @@ function renderTop(){
   pb.classList.toggle('on', inPrev);
   $('#instBtn').hidden = REAL_EDIT || !canInstall();
   /* Le mie salite sempre a un tocco, da ogni schermata */
-  const mb = $('#mineBtn'), mOn = acctOn() && !EDIT; mb.hidden = !mOn;
+  const mb = $('#mineBtn'), mOn = acctOn() && !EDIT; mb.hidden = true; $('#navMine').hidden = !mOn;
+  /* barra in basso: sparisce mentre lo staff traccia, per lasciare spazio alla foto */
+  $('#app').classList.toggle('tracing', EDIT && S.mode !== 'view' && !ui.home);
   if(mOn){ const nd = ACC() && ui.ticks ? [...ui.ticks.values()].filter(t => t.status === 'fatto').length : 0;
     mb.innerHTML = CUP_SVG + (hasNewB() ? '<i class="mbd"></i>' : ''); }
 }
