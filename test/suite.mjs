@@ -52,6 +52,8 @@ const draft = (pg) => pg.evaluate(async()=>{ await new Promise(r=>setTimeout(r,5
 
 /* tasti di tracciatura meno usati: stanno sotto "Altro" */
 const more = async pg => { if(await pg.locator('[data-act="moret"]:not(.on)').count()){ await pg.tap('[data-act="moret"]'); await pg.waitForTimeout(150); } };
+/* la barra delle sezioni sta in basso; mentre lo staff traccia dentro un muro è nascosta: si torna prima alla griglia */
+const toSec = async (pg, v) => { for(let k = 0; k < 3 && !(await pg.locator('#secbar [data-act="sec"]:visible').count()); k++){ if(await pg.locator('#backBtn:visible').count()) await pg.tap('#backBtn'); await pg.waitForTimeout(250); } await pg.tap('[data-act="sec"][data-v="' + v + '"]', {timeout:5000}); await pg.waitForTimeout(300); };
 // ---------- A: cliente ----------
 await session(null, async (pg) => {
   log('A.title', await pg.title());
@@ -74,7 +76,7 @@ await session(null, async (pg) => {
   await pg.tap('#lineTg', {timeout:5000}); await pg.waitForTimeout(300);
   log('A.ovLabels', await pg.evaluate(()=>[...document.querySelectorAll('#ov text')].map(t=>t.textContent)));
   await pg.goBack(); await pg.waitForTimeout(300);
-  await pg.tap('[data-act="sec"][data-v="boulder"]', {timeout:5000}); await pg.waitForTimeout(300);
+  await toSec(pg, 'boulder');
   log('A.boulderEmpty', (await pg.textContent('#empty')).replace(/\s+/g,' ').trim());
   await pg.tap('#menuBtn', {timeout:5000}); await pg.waitForTimeout(200);
   log('A.boulderSheet', await txt(pg, '#card button'));
@@ -124,7 +126,7 @@ if(!(await pg.locator('.scard[data-act=opensec]:visible').count()) && !(await pg
   await pg.tap('[data-act="tracing"]').catch(()=>{}); await (async()=>{ if(await pg.locator('#prevBtn.on').count()) await pg.tap('#prevBtn.on'); })(); await pg.waitForTimeout(200);
   await more(pg); log('B.editDimBtn', await pg.locator('[data-act="editdim"]').count());
   // boulder: nuovo settore
-  await pg.tap('[data-act="sec"][data-v="boulder"]', {timeout:5000}); await pg.waitForTimeout(300);
+  await toSec(pg, 'boulder');
   await pg.setInputFiles('#empty input[data-pick]:not([capture])', '/home/claude/circuiti/img/muro1.jpg'); await pg.waitForTimeout(800);
   await pg.tap('[data-act="cropAll"]', {timeout:5000}); await pg.waitForTimeout(1200);
   log('B.sector', await pg.textContent('#wallName'));
@@ -155,7 +157,7 @@ if(!(await pg.locator('.scard[data-act=opensec]:visible').count()) && !(await pg
 await session('tracciatore', async (pg) => {
   log('C.modes', await txt(pg, '#modes button:not([hidden])'));
   log('C.pickBtns', await pg.locator('#empty input[data-pick]').count());
-  await pg.tap('[data-act="sec"][data-v="boulder"]', {timeout:5000}); await pg.waitForTimeout(300);
+  await toSec(pg, 'boulder');
   log('C.boulderWall', await pg.textContent('#wallName'));
   if(await pg.locator('.scard[data-act=opensec]:visible').count()){ await pg.tap('.scard[data-act=opensec] >> nth=0'); await pg.waitForTimeout(300); }
   log('C.boulderModes', await txt(pg, '#modes button:not([hidden])'));
@@ -172,7 +174,7 @@ await session('tracciatore', async (pg) => {
 // ---------- D: filtri, elenchi, extra (gestore sul DB pubblicato da B) ----------
 await session('gestore', async (pg) => {
   // circuiti: dai al muro 3 dati vari
-  await pg.tap('[data-act="sec"][data-v="circ"]', {timeout:5000}).catch(()=>{}); await pg.waitForTimeout(300);
+  await toSec(pg, 'circ').catch(()=>{});
 if(!(await pg.locator('.scard[data-act=opensec]:visible').count()) && !(await pg.locator('#backBtn').isHidden())){ await pg.tap('#backBtn'); await pg.waitForTimeout(300); } await pg.tap('.scard[data-act=opensec] >> nth=1', {timeout:5000}); await pg.waitForTimeout(300);
   await (async()=>{ if(await pg.locator('#prevBtn.on').count()) await pg.tap('#prevBtn.on'); })(); await pg.waitForTimeout(200);
   await pg.tap('[data-act="clist"] >> nth=-1', {timeout:5000}); await pg.waitForTimeout(200);
@@ -195,7 +197,7 @@ if(!(await pg.locator('.scard[data-act=opensec]:visible').count()) && !(await pg
   log('D.img', await pg.locator('#card img.out').count());
   await pg.tap('[data-act="close"]', {timeout:5000});
   // boulder filtri
-  await pg.tap('[data-act="sec"][data-v="boulder"]', {timeout:5000}); await pg.waitForTimeout(300);
+  await toSec(pg, 'boulder');
   if(await pg.locator('.scard[data-act=opensec]').count()){ await pg.tap('.scard[data-act=opensec] >> nth=0'); await pg.waitForTimeout(300); }
   log('D.bRows', await txt(pg, '.lrow b'));
   await (async()=>{ if(await pg.locator('#prevBtn.on').count()) await pg.tap('#prevBtn.on'); })(); await pg.waitForTimeout(200);
