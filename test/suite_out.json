@@ -151,7 +151,7 @@
    "hold:L",
    "hold:R",
    "top:L",
-   "hold:R"
+   "top:R"
   ]
  ],
  [
@@ -204,7 +204,7 @@
    "walls": 4,
    "sectors": 1,
    "testCirc": true,
-   "sectorImg": "img/muro1.jpg?u=10tawpq-1794923074668.jpg"
+   "sectorImg": "img/muro1.jpg?u=s7wq1et-1795169024338.jpg"
   }
  ],
  [
@@ -290,7 +290,7 @@
  [
   "D.afterGrade",
   [
-   "L'Arcipelago della Capra Nuovo",
+   "Il Volo di Spider-Man Nuovo",
    "Arancio",
    "Giallo"
   ]

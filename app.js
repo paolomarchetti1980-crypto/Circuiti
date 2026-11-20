@@ -5291,11 +5291,15 @@ document.addEventListener('click', e => {
         /* accoppio (presa appena segnata): l'altra mano; passaggio successivo più avanti: la mano che tocca adesso */
         const consec = ui.sel === c.holds.length - 1;
         const nh = consec ? (h.hand === 'L' ? 'R' : h.hand === 'R' ? 'L' : (ui.nextHand || 'L')) : (ui.nextHand || (h.hand === 'L' ? 'R' : 'L'));
-        const copy = Object.assign({}, h, { role: 'hold' });
+        /* partenza o arrivo accoppiati (due mani sulla stessa presa): restano partenza/arrivo, con l'altra mano, subito dopo */
+        const keep = h.role === 'start' || h.role === 'top';
+        const copy = Object.assign({}, h, { role: keep ? h.role : 'hold' });
         if(h.poly) copy.poly = h.poly.slice();
-        if(nh) copy.hand = nh; else delete copy.hand;
-        c.holds.push(copy); ui.sel = c.holds.length - 1; ui.move = false;
-        if(nh === 'L') ui.nextHand = 'R'; else if(nh === 'R') ui.nextHand = 'L';
+        const hk = keep ? (h.hand === 'L' ? 'R' : h.hand === 'R' ? 'L' : (ui.nextHand || 'L')) : nh;
+        if(hk) copy.hand = hk; else delete copy.hand;
+        if(keep){ c.holds.splice(ui.sel + 1, 0, copy); ui.sel = ui.sel + 1; } else { c.holds.push(copy); ui.sel = c.holds.length - 1; }
+        ui.move = false;
+        if(!keep){ if(nh === 'L') ui.nextHand = 'R'; else if(nh === 'R') ui.nextHand = 'L'; }
         touch(); render();
       }
       break;
