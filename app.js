@@ -3057,10 +3057,11 @@ function overlay(w, o){
       if(h.poly) d += polyPath(h.poly);
       else { const r = h.r*w.w; d += `M${h.x-r},${h.y}a${r},${r} 0 1,0 ${2*r},0a${r},${r} 0 1,0 ${-2*r},0Z`; }
     });
+    if(o.ink) o.holdPath = d;
     const mid = 'dm' + String(act.id).replace(/[^\w-]/g, '') + (o.edit ? 'e' : 'v'), op = o.edit ? .5 : .62;
-    /* stampa (ink): invece di scurire si schiarisce quasi a bianco, così si consuma poco inchiostro; le prese restano a colori con un contorno scuro */
+    /* stampa (ink): invece di scurire si schiarisce; con inkBW la foto fuori dal blocco diventa grigio chiaro contrastato (vedi inkGray), le prese del blocco restano a colori con un contorno scuro */
     s += `<defs><mask id="${mid}" maskUnits="userSpaceOnUse" x="0" y="0" width="${w.w}" height="${w.h}"><rect x="0" y="0" width="${w.w}" height="${w.h}" fill="#fff"/><path d="${d}" fill="#000"/></mask></defs>`+
-         (o.ink ? `<rect x="0" y="0" width="${w.w}" height="${w.h}" fill="#fff" fill-opacity="0.82" mask="url(#${mid})"/><path d="${d}" fill="none" stroke="#111" stroke-width="${Math.max(3, w.w*0.0028)}" stroke-linejoin="round"/>`
+         (o.ink ? (o.inkBW ? '' : `<rect x="0" y="0" width="${w.w}" height="${w.h}" fill="#fff" fill-opacity="${o.inkVeil != null ? o.inkVeil : 0.82}" mask="url(#${mid})"/>`)+`<path d="${d}" fill="none" stroke="#111" stroke-width="${Math.max(3, w.w*0.0028)}" stroke-linejoin="round"/>`
                 : `<rect x="0" y="0" width="${w.w}" height="${w.h}" fill="#000" fill-opacity="${op}" mask="url(#${mid})"/>`);
     /* boulder: sui volumi e sulle prese grandi del blocco si oscurano anche le prese d'altro colore montate sopra */
     if(bo && !o.ink) act.holds.forEach(h => { const fm = foreignMask(w, act, h); if(fm) s += `<image href="${fm.url}" xlink:href="${fm.url}" x="${fm.x}" y="${fm.y}" width="${fm.w}" height="${fm.h}" preserveAspectRatio="none" opacity="${(op/0.62).toFixed(2)}"/>`; });
@@ -4497,13 +4498,36 @@ async function composeBlock(w, c, o){
   const keep = w.activeCircuit; w.activeCircuit = c.id;
   try{
     const photo = await loadImg(w.img);
-    const inner = overlay(w, Object.assign({ numbers: S.prefs.numbers, lines: S.prefs.lines, others: EDIT, edit: false, dim: S.prefs.dim }, o || {}));
+    const oo = Object.assign({ numbers: S.prefs.numbers, lines: S.prefs.lines, others: EDIT, edit: false, dim: S.prefs.dim }, o || {});
+    const inner = overlay(w, oo);
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w.w}" height="${w.h}" viewBox="0 0 ${w.w} ${w.h}">${inner}</svg>`;
     const ov = await loadImg('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg));
     const cv = document.createElement('canvas'); cv.width = w.w; cv.height = w.h;
-    const g = cv.getContext('2d'); g.drawImage(photo, 0, 0, w.w, w.h); g.drawImage(ov, 0, 0, w.w, w.h);
+    const g = cv.getContext('2d'); g.drawImage(photo, 0, 0, w.w, w.h);
+    if(oo.inkBW && oo.holdPath) await inkGray(g, w, oo.holdPath, oo.inkBW);
+    g.drawImage(ov, 0, 0, w.w, w.h);
     return cv;
   } finally { w.activeCircuit = keep; }
+}
+/* stampa: fuori dalle prese del blocco la foto diventa grigia e contrastata (solo inchiostro nero):
+   il muro liscio va quasi a bianco, le altre prese restano grigie e fanno da punti di riferimento */
+const INK_BW = { lo: 60, hi: 185, top: 175, gamma: 0.8 };   /* grigio chiaro: scelto da Paolo */
+async function inkGray(g, w, d, k){
+  const W = w.w, H = w.h, gc = document.createElement('canvas'); gc.width = W; gc.height = H;
+  const x = gc.getContext('2d'); x.drawImage(g.canvas, 0, 0);
+  const im = x.getImageData(0, 0, W, H), a = im.data;
+  const lo = k.lo, hi = k.hi, top = k.top, gm = k.gamma || 1;
+  for(let i = 0; i < a.length; i += 4){
+    const L = 0.3*a[i] + 0.59*a[i+1] + 0.11*a[i+2];
+    let t = (L - lo) / (hi - lo); t = t < 0 ? 0 : t > 1 ? 1 : t; t = Math.pow(t, gm);
+    const v = 255 - (1 - t)*(255 - top);
+    a[i] = a[i+1] = a[i+2] = v;
+  }
+  x.putImageData(im, 0, 0);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><path d="${d}" fill="#000"/></svg>`;
+  const m = await loadImg('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg));
+  x.globalCompositeOperation = 'destination-out'; x.drawImage(m, 0, 0, W, H);
+  g.drawImage(gc, 0, 0);
 }
 const blockTitle = (w, c) => isSec(w) ? bTitle(c) + (c.name ? ' · ' + c.name : '') : c.name;
 async function makeImage(){
@@ -4539,7 +4563,7 @@ async function printBlocks(all){
     const today = new Date().toLocaleDateString('it-IT');
     let html = '';
     for(const b of list){
-      const pic = await composeBlock(w, b, { numbers: !isSec(w), others: false, dim: true, ink: true });
+      const pic = await composeBlock(w, b, { numbers: !isSec(w), others: false, dim: true, ink: true, inkBW: INK_BW });
       /* sotto il titolo solo i dati (il grado è già grande a destra), poi le caratteristiche su una riga a parte */
       const meta = isSec(w)
         ? [holdColText(b), b.setter ? 'tracciato da ' + b.setter : '', b.dateSet ? 'tracciato il ' + fmtDate(b.dateSet) : ''].filter(Boolean)
