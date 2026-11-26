@@ -2058,11 +2058,34 @@ function hitIndex(c, W, x, y, tol){
   for(let i=c.holds.length-1;i>=0;i--){
     const h = c.holds[i];
     if(h.poly ? inPoly(h.poly, x, y) : Math.hypot(h.x-x, h.y-y) <= Math.max(h.r*W*1.1, tol)) return i;
+    if(h.poly2 && inPoly(h.poly2, x, y)) return i;
   }
   for(let i=c.holds.length-1;i>=0;i--){ const h = c.holds[i]; if(Math.hypot(h.x-x, h.y-y) <= tol) return i; }
   return -1;
 }
+/* presa doppia (due prese usate insieme, es. pollice + dita): un solo passaggio con un secondo contorno (poly2).
+   Attorno alle due si disegna un contorno unico, arrotondato e un po' staccato: è anche il bordo su cui si appoggia il numero */
+const pairCache = new WeakMap();
+function hullFlat(p){
+  const q = []; for(let i=0;i<p.length;i+=2) q.push([p[i], p[i+1]]);
+  q.sort((a,b) => a[0]-b[0] || a[1]-b[1]);
+  const cr = (o,a,b) => (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0]);
+  const lo = []; for(const t of q){ while(lo.length >= 2 && cr(lo[lo.length-2], lo[lo.length-1], t) <= 0) lo.pop(); lo.push(t); }
+  const up = []; for(let i=q.length-1;i>=0;i--){ const t = q[i]; while(up.length >= 2 && cr(up[up.length-2], up[up.length-1], t) <= 0) up.pop(); up.push(t); }
+  return lo.slice(0,-1).concat(up.slice(0,-1)).flat();
+}
+function pairHull(h, W){
+  const e = pairCache.get(h), key = W + '|' + (h.poly ? h.poly.length + ':' + h.poly[0] : h.x + ',' + h.y + ',' + h.r) + '|' + h.poly2.length + ':' + h.poly2[0];
+  if(e && e.key === key) return e.p;
+  const pad = Math.max(W*0.0028*3.5, W*0.008), base = h.poly || holdPts(Object.assign({}, h, { poly2: null }), W), pts = [];
+  [base, h.poly2].forEach(pl => { for(let i=0;i<pl.length;i+=2) for(let k=0;k<12;k++){ const a = k/12*Math.PI*2; pts.push(pl[i] + Math.cos(a)*pad, pl[i+1] + Math.sin(a)*pad); } });
+  const p = hullFlat(pts).map(v => Math.round(v*10)/10);
+  pairCache.set(h, { key, p }); return p;
+}
 function holdBox(h, W){
+  if(h.poly2){ const p = pairHull(h, W); let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for(let i=0;i<p.length;i+=2){ const x = p[i], y = p[i+1]; if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; }
+    return { x0, y0, x1, y1 }; }
   if(h.poly){
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     for(let i=0;i<h.poly.length;i+=2){ const x = h.poly[i], y = h.poly[i+1]; if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; }
@@ -2185,6 +2208,7 @@ function polyPath(p){
 /* ---------- disegno ---------- */
 /* ---- etichette: tonde, tangenti al contorno della presa, nel punto che copre meno linee e prese ---- */
 function holdPts(h, W, scale){
+  if(h.poly2) return pairHull(h, W);
   if(h.poly) return h.poly;
   const r = h.r*W*(scale || 1), p = [];
   for(let k=0;k<20;k++){ const a = k/20*Math.PI*2; p.push(h.x + Math.cos(a)*r, h.y + Math.sin(a)*r); }
@@ -2447,6 +2471,11 @@ function circuitSVG(c, W, alpha, o){
       const rr = rIn(h.r*W), rsw = Math.max(2, rr*0.10), rhw = rsw*0.55;
       s += `<circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${ha}" stroke-opacity=".55" stroke-width="${rsw+rhw*2}"/>`+
            `<circle cx="${h.x}" cy="${h.y}" r="${rr}" fill="none" stroke="${col}" stroke-width="${rsw}"${dash}/>`;
+    }
+    if(h.poly2 && !(lv && !lv.first)){
+      const c2 = split ? base : col, h2 = haloOf(c2), d2 = polyPath(h.poly2), dh = polyPath(pairHull(h, W));
+      s += `<path d="${d2}" fill="none" stroke="${h2}" stroke-opacity=".55" stroke-width="${sw+hw*2}" stroke-linejoin="round"/><path d="${d2}" fill="none" stroke="${c2}" stroke-width="${sw}" stroke-linejoin="round"/>`+
+           `<path d="${dh}" fill="none" stroke="${h2}" stroke-opacity=".55" stroke-width="${sw+hw*2}" stroke-linejoin="round"/><path d="${dh}" fill="none" stroke="${c2}" stroke-width="${sw}" stroke-dasharray="${(sw*2.6).toFixed(1)} ${(sw*1.8).toFixed(1)}" stroke-linejoin="round"/>`;
     }
     if(marks){ marks.forEach(q => { segs.push(q); s += tack(q, col, tw, 1); }); return; }
     let label = h.role === 'start' ? (starts.length > 1 && !o.boulder ? 'S' + (starts.indexOf(i)+1) : 'S') : h.role === 'top' ? 'T' : isFoot(h) ? 'P' : '';
@@ -2933,7 +2962,7 @@ async function computeForeign(w, c, h){
   return { url: o2.toDataURL('image/png'), x: bb.x0, y: bb.y0, w: bw, h: bh };
 }
 function traceBoulder(w, id){
-  ui.cand = null; w.activeCircuit = id; ui.secOver = false; ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.bline = false; ui.hnext = false; ui.zoom = 1;
+  ui.cand = null; w.activeCircuit = id; ui.secOver = false; ui.sel = null; ui.move = ui.merge = false; ui.bdraw = false; ui.draft = []; ui.bline = false; ui.hnext = false; ui.zoom = 1;
   ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
   try{ history.pushState({ sec: 1, ed: 1 }, ''); }catch(e){}
   save(); render();
@@ -3054,6 +3083,7 @@ function overlay(w, o){
     const cands = o.edit && bo && ui.cand && ui.cand.cid === act.id ? ui.cand.list : [];
     cands.forEach(q => { d += polyPath(q.poly); });
     act.holds.forEach(h => {
+      if(h.poly2) d += polyPath(h.poly2);
       if(h.poly) d += polyPath(h.poly);
       else { const r = h.r*w.w; d += `M${h.x-r},${h.y}a${r},${r} 0 1,0 ${2*r},0a${r},${r} 0 1,0 ${-2*r},0Z`; }
     });
@@ -3397,10 +3427,11 @@ function renderTools(){
   const dimBtn = `<button class="btn ${ui.editDim ? 'on' : ''}" data-act="editdim" aria-pressed="${!!ui.editDim}">Oscura</button>`;
   if(h){
     /* presa selezionata: tutto ciò che la riguarda, e "Fatto" per tornare a segnare */
-    el.innerHTML = `<p class="hint">${ui.move ? (sec ? 'Tocca il punto dove spostarla.' : 'Tocca la nuova presa: prende il posto di questa, con lo stesso numero, tipo e mano.') : isHid(h) ? 'Presa nascosta: sulla foto resta un cerchio tratteggiato con la freccia curva. Gira la freccia finché non sta perpendicolare al bordo del volume; regola misura e posizione se serve.' : 'Presa selezionata: cambia tipo' + (sec ? '' : ' o mano') + ', contorno o posizione.'}</p>`+
+    el.innerHTML = `<p class="hint">${ui.merge ? 'Presa doppia: tocca l\'altra presa da usare insieme a questa (per esempio quella per il pollice). Avranno un solo numero.' : ui.move ? (sec ? 'Tocca il punto dove spostarla.' : 'Tocca la nuova presa: prende il posto di questa, con lo stesso numero, tipo e mano.') : isHid(h) ? 'Presa nascosta: sulla foto resta un cerchio tratteggiato con la freccia curva. Gira la freccia finché non sta perpendicolare al bordo del volume; regola misura e posizione se serve.' : 'Presa selezionata: cambia tipo' + (sec ? '' : ' o mano') + ', contorno o posizione.'}</p>`+
       `<div class="trow">${roles}${hands}</div>`+
       `<div class="trow"><div class="seg"><button data-act="size" data-d="-1" aria-label="${lbl} più piccolo">${lbl} &minus;</button><button data-act="size" data-d="1" aria-label="${lbl} più grande">${lbl} +</button></div>`+
       `<button class="btn ${ui.move ? 'on' : ''}" data-act="move">${sec ? 'Sposta' : 'Cambia presa'}</button>`+
+      (sec || isFoot(h) ? '' : `<button class="btn ${ui.merge ? 'on' : ''}" data-act="merge" title="Due prese usate insieme (es. pollice e dita): un solo numero">${h.poly2 ? 'Separa' : 'Presa doppia'}</button>`)+
       (sec ? `<button class="btn" data-act="bdraw">Ridisegna</button>` : `<button class="btn" data-act="dup" title="${dupLabel(c, ui.sel) === 'Accoppia' ? 'Aggiunge un passaggio sulla stessa presa con l\'altra mano' : 'Aggiunge un nuovo passaggio su questa presa, come prossimo movimento'}">${dupLabel(c, ui.sel)}</button>`)+
       (sec ? `<button class="btn ${isHid(h) ? 'on' : ''}" data-act="hidtog" aria-pressed="${isHid(h)}">Nascosta</button>` : '')+
       (sec && isHid(h) && !h.poly ? `<div class="seg"><button data-act="hrot" data-d="-1" aria-label="Gira la freccia a sinistra">Freccia ↺</button><button data-act="hrot" data-d="1" aria-label="Gira la freccia a destra">↻</button></div>` : '')+
@@ -4161,7 +4192,7 @@ function openFromLink(){
   ui.sheet = null; renderSheet();
   ui.section = secOf(w); ui.home = false; ui.full = false; S.active = w.id; ui.lastSec[ui.section] = w.id; saveBUI();
   if(EDIT) S.mode = 'edit';
-  ui.bLevel = 'sector'; ui.secOver = true; ui.zoom = 1; ui.sel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.hnext = false;
+  ui.bLevel = 'sector'; ui.secOver = true; ui.zoom = 1; ui.sel = null; ui.move = ui.merge = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.hnext = false;
   ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save();
   try{ history.pushState({ grid: 1 }, ''); history.pushState({ sec: 1 }, ''); }catch(e){} render(); $('#box').scrollTop = 0;
   return true;
@@ -4807,12 +4838,12 @@ function setViewAs(v){
   EDIT = v !== 'cliente';
   if(inSector) ui.bLevel = 'sector';
   S.mode = EDIT ? 'edit' : 'view';
-  ui.sel = null; ui.csel = null; ui.move = false; ui.full = false; ui.draft = []; ui.bdraw = false; ui.sheet = null;
+  ui.sel = null; ui.csel = null; ui.move = ui.merge = false; ui.full = false; ui.draft = []; ui.bdraw = false; ui.sheet = null;
   renderSheet(); render();
   if(ui.viewAs && !ui.prevNew) toast(v === 'cliente' ? 'Anteprima: l\'app come la vede un cliente. Tocca la chiave inglese per tornare a lavorare.' : 'Vedi l\'app come un tracciatore.');
 }
 /* prima di pubblicare: i percorsi già pubblicati a cui sono cambiate le prese (aggiunte o tolte), da confermare */
-const holdKey = h => [h.role || '', Math.round(h.x), Math.round(h.y)].join('|');
+const holdKey = h => [h.role || '', Math.round(h.x), Math.round(h.y), h.cid2 || ''].join('|');
 function pubChanges(){
   const out = [];
   S.walls.forEach(w => (w.circuits || []).forEach(c => {
@@ -4917,7 +4948,21 @@ $('#stage').addEventListener('click', async e => {
   }
   if(ui.move && ui.sel != null && isHid(c.holds[ui.sel]) && !c.holds[ui.sel].poly){
     const h = c.holds[ui.sel]; h.x = h.sx = x; h.y = h.sy = y;
-    ui.move = false; touch(); render(); return;
+    ui.move = ui.merge = false; touch(); render(); return;
+  }
+  /* circuiti: presa doppia, si tocca la seconda presa da usare insieme a quella selezionata */
+  if(ui.merge && ui.sel != null && c.holds[ui.sel] && !isSec(w)){
+    const ci = catHit(w, x, y, ctol);
+    if(ci < 0){ toast('Qui non c\'è una presa del muro: tocca una presa riconosciuta.'); return; }
+    const h = c.holds[ui.sel], ch = w.holds[ci];
+    if(ch.id === h.cid){ toast('È la stessa presa: tocca l\'altra.'); return; }
+    h.poly2 = ch.poly.slice(); h.cid2 = ch.id;
+    /* se l'altra presa era già stata segnata subito prima o subito dopo, diventa parte di questa */
+    let rm = 0;
+    [ui.sel + 1, ui.sel - 1].forEach(k => { const q = c.holds[k]; if(q && q.cid === ch.id && q.role === 'hold' && !q.poly2 && !rm){ c.holds.splice(k, 1); if(k < ui.sel) ui.sel--; rm++; } });
+    ui.merge = false; touch(); render();
+    if(rm) toast('L\'altra presa era già nel circuito come passaggio a sé: ora fa parte di questa.');
+    return;
   }
   /* circuiti: "Cambia presa" sostituisce la presa con un'altra del muro, tenendo il suo posto nella sequenza (numero, tipo, mano) */
   if(ui.move && ui.sel != null && c.holds[ui.sel] && !isSec(w) && (w.holds || []).length){
@@ -4925,17 +4970,17 @@ $('#stage').addEventListener('click', async e => {
     if(ci < 0){ toast('Qui non c\'è una presa del muro: tocca una presa riconosciuta.'); return; }
     const h = c.holds[ui.sel], ch = w.holds[ci];
     Object.assign(h, { x: ch.x, y: ch.y, sx: ch.sx || ch.x, sy: ch.sy || ch.y, poly: ch.poly.slice(), cid: ch.id, ts: 1 });
-    ui.move = false; touch(); render(); return;
+    ui.move = ui.merge = false; touch(); render(); return;
   }
   if(ui.move && ui.sel != null && c.holds[ui.sel]){
     ui.busy = true;
     const h = c.holds[ui.sel];
     applySeg(h, await detect(w, x, y, h.ts || 1), x, y, w);
-    ui.move = false; ui.busy = false; touch(); render(); return;
+    ui.move = ui.merge = false; ui.busy = false; touch(); render(); return;
   }
   if(cLocked(w, c)){
     const hl = hitIndex(c, w.w, x, y, ctol);
-    if(hl >= 0){ ui.sel = ui.sel === hl ? null : hl; ui.move = false; render(); return; }
+    if(hl >= 0){ ui.sel = ui.sel === hl ? null : hl; ui.move = ui.merge = false; render(); return; }
     toast((isSec(w) ? 'Boulder' : 'Circuito') + ' già pubblicato: per aggiungere prese premi "Modifica prese".'); return;
   }
   if(isSec(w) && ui.cand && ui.cand.cid === c.id && ui.sel == null){
@@ -4944,7 +4989,7 @@ $('#stage').addEventListener('click', async e => {
   }
   const hit = hitIndex(c, w.w, x, y, ctol);
   if(hit >= 0 && isSec(w) && ui.nextRole === 'start' && ui.sel == null){ addMark(c, c.holds[hit], x, y); return; }
-  if(hit >= 0){ ui.sel = ui.sel === hit ? null : hit; ui.move = false; render(); return; }
+  if(hit >= 0){ ui.sel = ui.sel === hit ? null : hit; ui.move = ui.merge = false; render(); return; }
   if(isSec(w) && ui.nextRole === 'start' && startMarks(c) >= 4){ toast('Ci sono già 4 punti di partenza. Togline uno (seleziona la presa → Togli i segni) o passa a Presa.'); return; }
   if(isSec(w)){
     ui.busy = true;
@@ -4983,7 +5028,7 @@ document.addEventListener('click', e => {
   if(!EDIT && !PUBLIC_ACTS.includes(a)) return;
   if(!isMgr() && MGR_ACTS.includes(a)) return;
   switch(a){
-    case 'mode': if(EDIT && !scanHere() && !(b.dataset.v === 'wall' && !isMgr())){ S.mode = b.dataset.v; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.hnext = false; $('#stage').classList.remove('linedraw'); ui.redraw = null; ui.tool = 'detect'; render(); } break;
+    case 'mode': if(EDIT && !scanHere() && !(b.dataset.v === 'wall' && !isMgr())){ S.mode = b.dataset.v; ui.sel = null; ui.csel = null; ui.move = ui.merge = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.hnext = false; $('#stage').classList.remove('linedraw'); ui.redraw = null; ui.tool = 'detect'; render(); } break;
     case 'tool': ui.tool = b.dataset.v; ui.draft = []; ui.redraw = null; render(); break;
     case 'clrall':
       if(!w || !(w.holds || []).length) break;
@@ -5103,7 +5148,7 @@ document.addEventListener('click', e => {
       ui.sheet = null; renderSheet();
       ui.section = 'boulder'; ui.home = false; ui.full = false;
       if(EDIT) S.mode = 'edit'; S.active = w2.id; ui.lastSec.boulder = w2.id; saveBUI();
-      ui.bLevel = 'sector'; ui.secOver = true; ui.zoom = 1; ui.sel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.hnext = false;
+      ui.bLevel = 'sector'; ui.secOver = true; ui.zoom = 1; ui.sel = null; ui.move = ui.merge = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.hnext = false;
       ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save();
       try{ history.pushState({ grid: 1 }, ''); history.pushState({ sec: 1 }, ''); }catch(e){} render(); $('#box').scrollTop = 0; break; }
     case 'fball': ui.fbAll = b.dataset.v === '1'; renderSheet(); break;
@@ -5129,7 +5174,7 @@ document.addEventListener('click', e => {
       ui.section = v; ui.bLevel = 'sectors'; ui.home = false;
       const l = secWalls(), keep = l.find(x => x.id === ui.lastSec[v]) || l[0];
       if(keep) S.active = keep.id;
-      ui.full = false; ui.sel = null; ui.csel = null; ui.move = false; ui.zoom = 1; ui.draft = []; ui.bdraw = false; ui.redraw = null; ui.tool = 'detect';
+      ui.full = false; ui.sel = null; ui.csel = null; ui.move = ui.merge = false; ui.zoom = 1; ui.draft = []; ui.bdraw = false; ui.redraw = null; ui.tool = 'detect';
       if(EDIT && S.mode === 'wall' && v === 'boulder') S.mode = 'edit';
       ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); saveBUI(); render(); break;
     }
@@ -5148,18 +5193,18 @@ document.addEventListener('click', e => {
       touch(); renderChips(); break;
     }
     case 'editdim': ui.editDim = !ui.editDim; render(); break;
-    case 'desel': ui.sel = null; ui.move = false; render(); break;
+    case 'desel': ui.sel = null; ui.move = ui.merge = false; render(); break;
     case 'cfeet': if(c){ if(b.dataset.v) c.feet = b.dataset.v; else delete c.feet; touch(); renderChips(); renderSheet(); } break;
     case 'hnext': ui.hnext = !ui.hnext; render(); break;
     case 'hrot': { const h = c && ui.sel != null ? c.holds[ui.sel] : null;
       if(h && isHid(h)){ const a = (((h.hdir || 0) + (b.dataset.d === '1' ? 15 : -15)) % 360 + 360) % 360; if(a) h.hdir = a; else delete h.hdir; touch(); render(); } break; }
     case 'hidtog': { const h = c && ui.sel != null ? c.holds[ui.sel] : null;
       if(h){ if(isHid(h)) delete h.hid; else { h.hid = 1; delete h.poly; delete h.drawn; if(!h.r) h.r = S.prefs.r; } touch(); render(); } break; }
-    case 'bline': if(c){ ui.bline = true; ui.lineDraft = []; ui.lineBackup = c.line ? c.line.slice() : null; ui.sel = null; ui.move = false; $('#stage').classList.add('linedraw'); render(); } break;
+    case 'bline': if(c){ ui.bline = true; ui.lineDraft = []; ui.lineBackup = c.line ? c.line.slice() : null; ui.sel = null; ui.move = ui.merge = false; $('#stage').classList.add('linedraw'); render(); } break;
     case 'lineok': ui.bline = false; ui.hnext = false; ui.lineDraft = []; $('#stage').classList.remove('linedraw'); render(); break;
     case 'lineesc': if(c){ if(ui.lineBackup) c.line = ui.lineBackup; else delete c.line; touch(); } ui.bline = false; ui.hnext = false; ui.lineDraft = []; $('#stage').classList.remove('linedraw'); render(); break;
     case 'linedel': if(c){ delete c.line; touch(); } ui.lineDraft = []; render(); break;   /* resta nella linea: si vede quella automatica, poi Fatto */
-    case 'bdraw': if(c){ ui.bdraw = true; ui.draft = []; ui.move = false; render(); } break;
+    case 'bdraw': if(c){ ui.bdraw = true; ui.draft = []; ui.move = ui.merge = false; render(); } break;
     case 'bclose': if(w && c) finishBDraw(w, c); break;
     case 'bundo': ui.draft.pop(); render(); break;
     case 'bcancel': ui.bdraw = false; ui.draft = []; render(); break;
@@ -5216,7 +5261,7 @@ document.addEventListener('click', e => {
       if(ui.confirm !== 'wdel:' + id){ ui.confirm = 'wdel:' + id; renderSheet(); break; }
       S.walls = S.walls.filter(q => q.id !== id); ui.confirm = null; if(!archWalls().length) ui.sheet = null; touch(); renderSheet(); render(); toast('Eliminato. Ricordati di pubblicare.'); break;
     }
-    case 'opensec': if(EDIT) S.mode = 'edit'; S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.bLevel = 'sector'; ui.secOver = true; ui.zoom = 1; ui.sel = null; ui.move = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.hnext = false; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save(); try{ history.pushState({ sec: 1 }, ''); }catch(e){} render(); $('#box').scrollTop = 0; break;
+    case 'opensec': if(EDIT) S.mode = 'edit'; S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.bLevel = 'sector'; ui.secOver = true; ui.zoom = 1; ui.sel = null; ui.move = ui.merge = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.hnext = false; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); save(); try{ history.pushState({ sec: 1 }, ''); }catch(e){} render(); $('#box').scrollTop = 0; break;
     case 'bback':
       if(ui.full){ try{ history.back(); }catch(e){} ui.full = false; ui.zoom = 1; render(); break; }
       if(EDIT && BO() && ui.bLevel === 'sector' && !bGrid() && curWall() && !ui.secOver && S.mode !== 'view'){ if(history.state && history.state.ed){ try{ history.back(); }catch(e){} } ui.secOver = true; ui.sel = null; ui.zoom = 1; }
@@ -5237,7 +5282,7 @@ document.addEventListener('click', e => {
     case 'viewas': setViewAs(b.dataset.v); break;
     case 'preview': if(ui.viewAs === 'cliente') setViewAs(ME.role); else { ui.prevNew = true; setViewAs('cliente'); } break;
     case 'prevtoday': ui.prevNew = false; setViewAs('cliente'); break;
-    case 'wallmode': if(EDIT && isMgr() && w && !isSec(w)){ S.mode = 'wall'; ui.bLevel = 'sector'; ui.sel = null; ui.csel = null; ui.move = false; ui.draft = []; ui.redraw = null; ui.tool = 'detect'; ui.sheet = null; renderSheet(); render(); } break;
+    case 'wallmode': if(EDIT && isMgr() && w && !isSec(w)){ S.mode = 'wall'; ui.bLevel = 'sector'; ui.sel = null; ui.csel = null; ui.move = ui.merge = false; ui.draft = []; ui.redraw = null; ui.tool = 'detect'; ui.sheet = null; renderSheet(); render(); } break;
     case 'printone': printBlocks(false); break;
     case 'printall': printBlocks(true); break;
     case 'publish': publish(); break;
@@ -5272,7 +5317,7 @@ document.addEventListener('click', e => {
     case 'pubgo': ui.sheet = null; renderSheet(); ui.pubOk = true; publish(); break;
     case 'cunlock': if(c){ (ui.unl = ui.unl || {})[c.id] = 1; render(); } break;
     case 'pubrev': { const pw = S.walls.find(x => x.id === b.dataset.w), pc = pw && pw.circuits.find(x => x.id === b.dataset.id), bc = pw && baseC(pw.id, b.dataset.id);
-      if(pc && bc){ pc.holds = JSON.parse(JSON.stringify(bc.holds)); if(ui.unl) delete ui.unl[pc.id]; ui.sel = null; ui.move = false; touch(); toast('Prese di ' + (isSec(pw) ? bTitle(pc) : pc.name) + ' tornate come nella versione pubblicata.'); }
+      if(pc && bc){ pc.holds = JSON.parse(JSON.stringify(bc.holds)); if(ui.unl) delete ui.unl[pc.id]; ui.sel = null; ui.move = ui.merge = false; touch(); toast('Prese di ' + (isSec(pw) ? bTitle(pc) : pc.name) + ' tornate come nella versione pubblicata.'); }
       if(!pubChanges().length){ ui.sheet = null; renderSheet(); render(); } else { renderSheet(); render(); } break; }
     case 'pubsee': { const pw = S.walls.find(x => x.id === b.dataset.w); if(pw){ ui.sheet = null; renderSheet(); ui.ev = isEv(pw) ? pw.ev.id : null; ui.section = secOf(pw); ui.home = false; ui.full = false; if(isSec(pw)) ui.bLevel = 'sector'; S.active = pw.id; pw.activeCircuit = b.dataset.id; ui.sel = null; save(); render(); } break; }
     case 'pref': S.prefs[b.dataset.k] = !S.prefs[b.dataset.k]; saveViewPrefs(); render(); break;
@@ -5284,7 +5329,7 @@ document.addEventListener('click', e => {
       if(!w) break;
       if(bOver() && EDIT && S.mode !== 'view'){ ui.sheet = null; renderSheet(); traceBoulder(w, b.dataset.id); break; }
       const again = w.activeCircuit === b.dataset.id && b.classList.contains('lrow');
-      w.activeCircuit = b.dataset.id; ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.bline = false; ui.hnext = false; $('#stage').classList.remove('linedraw'); ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
+      w.activeCircuit = b.dataset.id; ui.sel = null; ui.move = ui.merge = false; ui.bdraw = false; ui.draft = []; ui.bline = false; ui.hnext = false; $('#stage').classList.remove('linedraw'); ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
       ui.sheet = null; save(); renderSheet();
       if((again || bOver()) && (!EDIT || S.mode === 'view')) setFull(true); else render();
       break;
@@ -5301,7 +5346,7 @@ document.addEventListener('click', e => {
       if(!w) break;
       const n = newCircuit(w); w.circuits.push(n); w.activeCircuit = n.id;
       if(isSec(w) && ui.secOver){ ui.secOver = false; try{ history.pushState({ sec: 1, ed: 1 }, ''); }catch(e){} }
-      ui.sel = null; ui.move = false; ui.bdraw = false; ui.draft = []; ui.nextRole = 'start'; ui.nextHand = 'L'; S.mode = 'edit'; touch(); render(); openSheet('circ'); break;
+      ui.sel = null; ui.move = ui.merge = false; ui.bdraw = false; ui.draft = []; ui.nextRole = 'start'; ui.nextHand = 'L'; S.mode = 'edit'; touch(); render(); openSheet('circ'); break;
     }
     case 'hand': {
       const h = c && ui.sel != null ? c.holds[ui.sel] : null, v = b.dataset.v;
@@ -5322,7 +5367,7 @@ document.addEventListener('click', e => {
         const hk = keep ? (h.hand === 'L' ? 'R' : h.hand === 'R' ? 'L' : (ui.nextHand || 'L')) : nh;
         if(hk) copy.hand = hk; else delete copy.hand;
         if(keep){ c.holds.splice(ui.sel + 1, 0, copy); ui.sel = ui.sel + 1; } else { c.holds.push(copy); ui.sel = c.holds.length - 1; }
-        ui.move = false;
+        ui.move = ui.merge = false;
         if(!keep){ if(nh === 'L') ui.nextHand = 'R'; else if(nh === 'R') ui.nextHand = 'L'; }
         touch(); render();
       }
@@ -5360,24 +5405,28 @@ document.addEventListener('click', e => {
       } else { h.r = clamp(h.r*(up ? 1.15 : 1/1.15), 0.012, 0.09); touch(); render(); }
       break;
     }
-    case 'move': ui.move = !ui.move; render(); break;
+    case 'move': ui.move = !ui.move; ui.merge = false; render(); break;
+    case 'merge': { const h = c && ui.sel != null ? c.holds[ui.sel] : null; if(!h) break;
+      if(h.poly2){ delete h.poly2; delete h.cid2; ui.merge = false; touch(); toast('Separate: ora è una presa sola. L\'altra, se serve, va segnata di nuovo.'); }
+      else { ui.merge = !ui.merge; ui.move = false; }
+      render(); break; }
     case 'del':
       if(S.mode === 'wall'){ if(w && ui.csel != null && (w.holds || [])[ui.csel]) delCat(w, ui.csel); break; }
-      if(c && ui.sel != null){ c.holds.splice(ui.sel, 1); ui.sel = null; ui.move = false; ui.nextHand = handFor(c); if(!c.holds.length) ui.nextRole = 'start'; touch(); render(); } break;
+      if(c && ui.sel != null){ c.holds.splice(ui.sel, 1); ui.sel = null; ui.move = ui.merge = false; ui.nextHand = handFor(c); if(!c.holds.length) ui.nextRole = 'start'; touch(); render(); } break;
     case 'clrmarks': { const h = c && ui.sel != null ? c.holds[ui.sel] : null; if(h){ delete h.marks; ui.markUndo = null; touch(); render(); } break; }
     case 'undo': if(c && ui.markUndo && c.holds.includes(ui.markUndo.h)){
         const { h, prev } = ui.markUndo; ui.markUndo = null;
         if(prev){ h.role = prev.role; if(prev.marks) h.marks = prev.marks; else delete h.marks; } else if((h.marks || []).length) h.marks.pop();
         touch(); render(); break;
       }
-      if(c && c.holds.length){ c.holds.pop(); ui.sel = null; ui.move = false; ui.nextHand = handFor(c); if(!c.holds.length) ui.nextRole = 'start'; touch(); render(); } break;
+      if(c && c.holds.length){ c.holds.pop(); ui.sel = null; ui.move = ui.merge = false; ui.nextHand = handFor(c); if(!c.holds.length) ui.nextRole = 'start'; touch(); render(); } break;
     case 'delc':
       if(!w || !c) break;
       if(ui.confirm !== 'delc'){ ui.confirm = 'delc'; renderSheet(); break; }
       w.circuits = w.circuits.filter(x => x.id !== c.id);
       w.activeCircuit = w.circuits.length ? w.circuits[0].id : null; ui.sel = null; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
       ui.sheet = null; ui.confirm = null; touch(); render(); renderSheet(); break;
-    case 'pickw': if(EDIT) S.mode = 'edit'; S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.full = false; ui.sel = null; ui.zoom = 1; ui.move = false; ui.sheet = null; save(); render(); renderSheet(); break;
+    case 'pickw': if(EDIT) S.mode = 'edit'; S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.full = false; ui.sel = null; ui.zoom = 1; ui.move = ui.merge = false; ui.sheet = null; save(); render(); renderSheet(); break;
     case 'delw':
       if(!w || !isMgr()) break;
       if(ui.confirm !== 'delw'){ ui.confirm = 'delw'; renderSheet(); break; }
@@ -5473,7 +5522,7 @@ async function finishCrop0(cr){
   /* i settori partono subito col primo boulder; i muri dei circuiti no: prima si segnano le prese, poi "+ Nuovo circuito" */
   if(bo){ const circ = newCircuit(w); w.circuits.push(circ); w.activeCircuit = circ.id; }
   S.walls.push(w); S.active = w.id; S.mode = 'edit'; ui.bLevel = 'sector'; ui.secOver = false;
-  ui.sel = null; ui.move = false; ui.zoom = 1; ui.nextRole = 'start'; ui.crop = null; ui.sheet = null;
+  ui.sel = null; ui.move = ui.merge = false; ui.zoom = 1; ui.nextRole = 'start'; ui.crop = null; ui.sheet = null;
   touch(); render(); renderSheet();
 }
 document.addEventListener('change', e => { if(e.target && e.target.matches && e.target.matches('input[data-pick]')) onFile(e); });
