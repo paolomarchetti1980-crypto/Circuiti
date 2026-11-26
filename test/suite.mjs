@@ -112,7 +112,7 @@ if(!(await pg.locator('.scard[data-act=opensec]:visible').count()) && !(await pg
   const bb = await pg.locator('#stage').boundingBox();
   await pg.mouse.click(bb.x + last.x/w0.w*bb.width, bb.y + last.y/w0.h*bb.height); await pg.waitForTimeout(300);
   await pg.tap('[data-act="role"][data-v="top"]', {timeout:5000}); await pg.waitForTimeout(200);
-  await pg.tap('[data-act="dup"]', {timeout:5000}); await pg.waitForTimeout(200);
+  await more(pg); await pg.tap('[data-act="dup"]', {timeout:5000}); await pg.waitForTimeout(200);
   d = await draft(pg); const c1 = d.walls.find(w => w.id === d.active).circuits.find(c => c.name === 'Test Circuito');
   log('B.afterDup', c1.holds.map(h => h.role + ':' + h.hand));
   await pg.screenshot({path:'tr_sel.png'});

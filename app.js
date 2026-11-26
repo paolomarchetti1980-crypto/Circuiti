@@ -3426,18 +3426,23 @@ function renderTools(){
   const hands = sec || role === 'foot' ? '' : `<div class="seg" role="group" aria-label="Mano">${hb('L',dot(S.prefs.handL)+'Sinistra')}${hb('R',dot(S.prefs.handR)+'Destra')}</div>`;
   const dimBtn = `<button class="btn ${ui.editDim ? 'on' : ''}" data-act="editdim" aria-pressed="${!!ui.editDim}">Oscura</button>`;
   if(h){
-    /* presa selezionata: tutto ciò che la riguarda, e "Fatto" per tornare a segnare */
+    /* presa selezionata: tutto ciò che la riguarda, e "Fatto" per tornare a segnare.
+       Circuiti: "Presa doppia" e "Secondo passaggio" stanno in "Altro" (tranne mentre si sta scegliendo la seconda presa) */
+    const xh = sec ? '' : (isFoot(h) ? '' : `<button class="btn ${ui.merge ? 'on' : ''}" data-act="merge" title="Due prese usate insieme (es. pollice e dita): un solo numero">${h.poly2 ? 'Separa' : 'Presa doppia'}</button>`)+
+      (ui.merge ? '' : `<button class="btn" data-act="dup" title="${dupLabel(c, ui.sel) === 'Accoppia' ? 'Aggiunge un passaggio sulla stessa presa con l\'altra mano' : 'Aggiunge un nuovo passaggio su questa presa, come prossimo movimento'}">${dupLabel(c, ui.sel)}</button>`);
+    const xmore = !sec && !ui.merge;
     el.innerHTML = `<p class="hint">${ui.merge ? 'Presa doppia: tocca l\'altra presa da usare insieme a questa (per esempio quella per il pollice). Avranno un solo numero.' : ui.move ? (sec ? 'Tocca il punto dove spostarla.' : 'Tocca la nuova presa: prende il posto di questa, con lo stesso numero, tipo e mano.') : isHid(h) ? 'Presa nascosta: sulla foto resta un cerchio tratteggiato con la freccia curva. Gira la freccia finché non sta perpendicolare al bordo del volume; regola misura e posizione se serve.' : 'Presa selezionata: cambia tipo' + (sec ? '' : ' o mano') + ', contorno o posizione.'}</p>`+
       `<div class="trow">${roles}${hands}</div>`+
       `<div class="trow"><div class="seg"><button data-act="size" data-d="-1" aria-label="${lbl} più piccolo">${lbl} &minus;</button><button data-act="size" data-d="1" aria-label="${lbl} più grande">${lbl} +</button></div>`+
       `<button class="btn ${ui.move ? 'on' : ''}" data-act="move">${sec ? 'Sposta' : 'Cambia presa'}</button>`+
-      (sec || isFoot(h) ? '' : `<button class="btn ${ui.merge ? 'on' : ''}" data-act="merge" title="Due prese usate insieme (es. pollice e dita): un solo numero">${h.poly2 ? 'Separa' : 'Presa doppia'}</button>`)+
-      (sec ? `<button class="btn" data-act="bdraw">Ridisegna</button>` : `<button class="btn" data-act="dup" title="${dupLabel(c, ui.sel) === 'Accoppia' ? 'Aggiunge un passaggio sulla stessa presa con l\'altra mano' : 'Aggiunge un nuovo passaggio su questa presa, come prossimo movimento'}">${dupLabel(c, ui.sel)}</button>`)+
+      (sec ? `<button class="btn" data-act="bdraw">Ridisegna</button>` : (ui.merge ? xh : ''))+
       (sec ? `<button class="btn ${isHid(h) ? 'on' : ''}" data-act="hidtog" aria-pressed="${isHid(h)}">Nascosta</button>` : '')+
       (sec && isHid(h) && !h.poly ? `<div class="seg"><button data-act="hrot" data-d="-1" aria-label="Gira la freccia a sinistra">Freccia ↺</button><button data-act="hrot" data-d="1" aria-label="Gira la freccia a destra">↻</button></div>` : '')+
       (sec && isStart(h) && (h.marks || []).length ? `<button class="btn" data-act="clrmarks">Togli i segni (${h.marks.length})</button>` : '')+
       `<button class="btn danger" data-act="del">Elimina</button>`+
-      `<button class="btn primary" data-act="desel">Fatto</button></div>`;
+      (xmore ? `<button class="btn ${ui.moreT ? 'on' : ''}" data-act="moret" aria-expanded="${!!ui.moreT}">${ui.moreT ? 'Meno' : 'Altro ⋯'}</button>` : '')+
+      `<button class="btn primary" data-act="desel">Fatto</button></div>`+
+      (xmore && ui.moreT ? `<div class="trow">${xh}</div>` : '');
     return;
   }
   if(c && cLocked(w, c)){
