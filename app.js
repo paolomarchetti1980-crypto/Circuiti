@@ -914,16 +914,6 @@ function makeSeg(px0, W, H, opt){
 }
 /* SEG-END */
 
-async function samplePanelColor(w, x, y){
-  const im = await loadImg(w.img);
-  const r = 7;
-  const cv = document.createElement('canvas'); cv.width = 1; cv.height = 1;
-  const g = cv.getContext('2d');
-  g.drawImage(im, Math.max(0, x-r), Math.max(0, y-r), r*2, r*2, 0, 0, 1, 1);
-  const d = g.getImageData(0, 0, 1, 1).data;
-  return [d[0], d[1], d[2]];
-}
-
 /* ---------- SAM (MobileSAM) nel browser: il telefono "studia" la foto una volta, poi ogni tocco dà il contorno quasi subito ---------- */
 const SAMCFG = { ort: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/', enc: 'models/mobilesam_encoder.onnx', dec: 'models/mobilesam_decoder.onnx' };
 const sam = { state: 'off', enc: null, dec: null, emb: {}, loading: null };
@@ -3358,16 +3348,8 @@ function renderTools(){
     let hint;
     if(drawing) hint = (ui.redraw != null ? 'Ridisegna il contorno: ' : '') + 'passa il dito lungo il bordo della presa (staccandolo vicino all\'inizio si chiude da solo), oppure tocca i punti e poi Chiudi. Con due dita sposti e ingrandisci.';
     else if(erasing) hint = 'Gomma: tocca un contorno per eliminarlo. Puoi ripristinare l\'ultimo eliminato.';
-    else if(ui.tool === 'panel') hint = 'Tocca uno o più punti di pannello vuoto, uno per ogni zona con colore/luce diversi. "Fine campionamento" quando hai finito.';
     else hint = `${n} prese nel muro. Tocca un contorno per selezionarlo (tocca ancora nello stesso punto per passare a quello sotto). Quelli arancioni sembrano sospetti.`;
-    const samples = w.panelSamples || [];
-    const swatches = samples.map(s => `<span style="display:inline-block;width:1em;height:1em;border-radius:50%;background:rgb(${s.rgb.join(',')});border:1px solid #888;margin:0 3px -2px 0"></span>`).join('');
-    const panelLine = samples.length
-      ? `${swatches}${samples.length} campion${samples.length>1?'i':'e'} — <button class="linklike" data-act="panelReset">azzera</button>`
-      : 'automatico (nessun campione)';
-    let h = `<p class="hint">${hint}</p><div class="seg">${tb('detect','Rileva')}${tb('draw','Disegna')}${tb('erase','Gomma')}${tb('panel','Colore pannello')}</div>`+
-      (ui.tool === 'panel' ? `<button class="btn primary" data-act="panelDone">Fine campionamento</button>` : '') +
-      `<p class="hint">Riferimento colore pannello: ${panelLine}</p>`+
+    let h = `<p class="hint">${hint}</p><div class="seg">${tb('detect','Rileva')}${tb('draw','Disegna')}${tb('erase','Gomma')}</div>`+
       `<p class="hint">${samStatus(w)}</p>`+
       (ui.scan ? `<button class="btn" disabled>Rilevamento in corso su un altro muro</button>` : `<button class="btn" data-act="autoall">Rileva tutte le prese</button>`)+
       (ui.cleared && ui.cleared.id === w.id ? `<button class="btn" data-act="unclrall">Annulla cancellazione (${ui.cleared.holds.length})</button>` :
@@ -4917,14 +4899,6 @@ $('#stage').addEventListener('click', async e => {
       if(ui.draft.length >= 3 && Math.hypot(x - ui.draft[0][0], y - ui.draft[0][1]) <= Math.min(10*k, 28)){ finishDraw(w); return; }
       ui.draft.push([Math.round(x), Math.round(y)]); render(); return;
     }
-    if(ui.tool === 'panel'){
-      const rgb = await samplePanelColor(w, Math.round(x), Math.round(y));
-      (w.panelSamples = w.panelSamples || []).push({ x: Math.round(x), y: Math.round(y), rgb });
-      delete segCache[w.id];
-      touch(); render();
-      toast(`Campione aggiunto (${w.panelSamples.length}). Tocca altre zone o premi "Fine".`);
-      return;
-    }
     const lst = catList(w, x, y, ctol);
     if(ui.tool === 'erase'){
       if(lst.length){ delCat(w, lst[0]); }
@@ -5026,7 +5000,7 @@ $('#stage').addEventListener('click', async e => {
 /* azioni che può fare chiunque; tutte le altre richiedono di essere dello staff */
 const PUBLIC_ACTS = ['evopen','evback','acctage','badges','hi','tries','dimtg','prevtoday','fgo','bcolorall','rate','minetab','tick','vote','mine','acct','acctmode','acctgo','acctreset','delacct','welcome','wnext','wskip','minego','bnew','cnew','fbnew','fbsend','csearch','cfilt','sqang','sqsty','sqfeet','sqreset','sqgo','pickhome','preview','opensec','bback','viewas','menu','printone','printall','logout','wall','pickw','pref','zoom','clist','pickc','fang','bshow','bcolor','fexit','fnav','sec','img','close','install','login','sendlink','passlogin','codelogin','loginback','setpass','savepass'];
 /* azioni riservate al gestore (preparazione dei muri e dei settori) */
-const MGR_ACTS = ['qr','qrprint','qrcopy','tcopy','tsend','dash','dashsec','fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','panelReset','panelDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
+const MGR_ACTS = ['qr','qrprint','qrcopy','tcopy','tsend','dash','dashsec','fblist','fbcopy','fball','fbdone','susok','susdel','hist','hsel','hrest','wman','wren','wrensave','warch','archlist','wrestore','wdel','wallmode','clrall','unclrall','cropZoom','lock','unlock','autoall','stopauto','delw','cropAll','cropTap','cropUndo','cropClose','cropReset','cropDone','tool','closeDraw','undoPt','cancelDraw','redraw','undel','susnext','staff','staffadd','staffdel'];
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if(!b || b.disabled) return;
   const a = b.dataset.act, w = curWall(), c = curCircuit();
@@ -5071,8 +5045,6 @@ document.addEventListener('click', e => {
     case 'redraw': if(w && ui.csel != null && (w.holds || [])[ui.csel]){ ui.redraw = ui.csel; ui.tool = 'draw'; ui.draft = []; render(); } break;
     case 'lock': if(w){ w.locked = true; ui.draft = []; ui.redraw = null; ui.tool = 'detect'; ui.csel = null; S.mode = 'edit'; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit()); touch(); render(); } break;
     case 'unlock': if(w){ w.locked = false; touch(); render(); } break;
-    case 'panelReset': if(w){ delete w.panelSamples; delete segCache[w.id]; touch(); render(); } break;
-    case 'panelDone': ui.tool = 'detect'; render(); break;
     case 'cropTap': {
       const cr = ui.crop; if(!cr || cr.closed || Date.now() - (cr.pinchAt || 0) < 400) break;
       const r = b.getBoundingClientRect();
