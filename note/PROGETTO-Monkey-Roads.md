@@ -54,6 +54,7 @@ Monkey Roads è la web app di **Monkey Island Roma**, la palestra di boulder di 
 - Carica la foto del muro: JPG, PNG, WebP, HEIC e anche i RAW delle fotocamere, come i NEF.
 - **Risoluzione delle foto (dal 26/10):** il ritaglio si fa sulla foto originale, letta fino a 4096 px. Si salvano due versioni: 3000 px per lo staff e la rilevazione delle prese, 1600 px per i clienti. I muri caricati prima sono rimasti a 1100–1500 px.
 - **Rilevazione (dal 27/10):** al tocco, se il riconoscimento non trova la presa (o prende solo il bullone) si usa il colore. Nel rilevamento automatico: le prese sopra i volumi vengono separate (solo colore deciso e forma compatta, così le chiazze di vernice si scartano) e c'è una seconda passata ingrandita per le prese piccole (contorni pieni, rilevamento circa un terzo più lento).
+- **Colore del pannello (tolto il 26/11, v226):** lo strumento "Colore pannello", che serviva a indicare a mano il colore del pannello vuoto, non c'è più: il rilevamento lo stima già da solo. Nella preparazione del muro restano Rileva, Disegna e Gomma. Nessun muro aveva campioni salvati; se ce ne fossero, resterebbero nel database (campo `panelSamples` del muro).
 - Rileva le prese e prepara il muro ("Blocca muro", poi "+ Nuovo circuito"). Finché il muro non è pronto lo vede solo il gestore.
 - **Tracciatura:** partenza (quadrato), prese con mano sinistra o destra, arrivo (rombo), **piedi obbligati** (tratteggio giallo con l'impronta). I numeri hanno tutti la stessa misura; mentre si traccia si possono vedere gli altri circuiti in trasparenza.
 - **Boulder:** colore, **numero scelto dal tracciatore** (ordine di difficoltà nel colore del settore, 1 = il più facile; scegliendo un numero già usato i due boulder se lo scambiano), soprannome, **tracciatore da menu a tendina** (solo nomi dello staff), "Tracciato il", **Scadenza**, caratteristiche, note.
@@ -106,6 +107,7 @@ Monkey Roads è la web app di **Monkey Island Roma**, la palestra di boulder di 
 - **Privacy:** dati minimi, server in UE, pareri anonimi per lo staff; account inattivi cancellati dopo 24 mesi; sotto i 14 anni l'account lo crea un genitore con la sua email.
 - **Prova completa da cliente:** fatta il 26/10, tutto a posto.
 - **Prese nascoste:** cerchio tratteggiato con freccia curva, dal disegno di Paolo; solo sui boulder (decisione del 29/10, pubblicata con la v185).
+- **Colore del pannello:** tolto lo strumento manuale perché il rilevamento automatico basta (decisione del 26/11, pubblicata con la v226).
 - **Prossimo passo:** prova di 2 settimane con 8–10 clienti fidati e un paio di tracciatori (messaggio pronto in `note/messaggio-tester.md`), poi presentazione alla dirigenza.
 
 ## Cosa manca (vedi `LANCIO.md`)
