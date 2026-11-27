@@ -76,8 +76,6 @@ html,body{touch-action:pan-x pan-y}
 #app.clean .top,#app.clean #fcard,#app.clean .zoom,#app.clean .pubbar,#app.clean .viewbar{display:none!important}
 .fcard{flex:none;margin:-16px 0 0;position:relative;z-index:3;background:var(--panel);border-radius:20px 20px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom,0px));box-shadow:0 -6px 20px rgba(0,0,0,.4)}
 .fcard .btn{min-width:52px;font-size:17px}
-.mini{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
-.mini .btn{padding:6px 10px;font-size:13px;border-radius:999px}
 .curbar{display:flex;align-items:center;gap:8px;padding:2px 0 6px}
 .curbar .cinfo{flex:1;min-width:0;display:flex;align-items:center;gap:10px;background:none;border:0;padding:4px 2px;text-align:left}
 .ctext{min-width:0;display:flex;flex-direction:column}
@@ -291,7 +289,6 @@ html,body{touch-action:pan-x pan-y}
 .toast .undo{pointer-events:auto;margin-left:10px;border:0;background:none;color:#b84a00;font:700 15px Barlow,sans-serif;text-transform:uppercase;letter-spacing:.04em;padding:6px 2px}
 .toast.top{bottom:auto;top:calc(70px + env(safe-area-inset-top,0px))}
 .minebtn{position:relative;color:var(--accent,#ff7a1a)}
-.minebtn .mbn{position:absolute;right:-5px;top:-5px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--accent,#ff7a1a);color:#111;font:700 11px/18px Barlow,sans-serif;font-style:normal}
 .mbd{position:absolute;left:-3px;top:-3px;width:10px;height:10px;border-radius:50%;background:#e5312b;box-shadow:0 0 0 2px var(--bg,#111)}
 .hmine{position:relative;flex:none;display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:18px;background:var(--panel);color:var(--ink);padding:14px 16px;text-align:left}
 .hmine>svg:first-child{color:var(--accent,#ff7a1a);width:30px;height:30px;flex:none}
@@ -325,7 +322,6 @@ html,body{touch-action:pan-x pan-y}
 .bcin span{color:#ccc;font-size:16px;max-width:280px}
 @keyframes bcf{from{opacity:0}}
 @keyframes bcp{0%{transform:scale(.2) rotate(-12deg);opacity:0}100%{transform:none;opacity:1}}
-.tabdot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#e5312b;margin-left:6px;vertical-align:2px;box-shadow:0 0 0 2px var(--panel)}
 .badge{position:relative}
 .badge.isnew{box-shadow:0 0 0 2px #e5312b inset;animation:nbg 1.6s ease-in-out 3}
 .badge .nbd{position:absolute;top:6px;right:6px;background:#e5312b;color:#fff;font:700 10px Barlow,sans-serif;font-style:normal;text-transform:uppercase;letter-spacing:.06em;padding:2px 6px;border-radius:8px}
@@ -358,7 +354,6 @@ html,body{touch-action:pan-x pan-y}
 .tghead b{flex:1;min-width:0;text-align:right;color:var(--accent);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tghead b i{color:var(--muted);font-style:normal}
 .tghead em{font-style:normal;color:var(--muted)}
 .tgrp .tags{padding:0 10px 10px;margin:0}
-.tgroup{margin:10px 0 4px;font:600 12px Barlow,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .bgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .badge{display:flex;flex-direction:column;align-items:center;text-align:center;gap:3px;padding:10px 6px;border-radius:12px;background:rgba(255,255,255,.04)}
 .badge b{font:700 14px/1.1 "Barlow Semi Condensed",Barlow,sans-serif}
@@ -371,5 +366,5 @@ html,body{touch-action:pan-x pan-y}
 </style></head><body><div id="root"></div>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="namegen.js?v=226"></script><script id="app-js" src="app.js?v=226"></script>
+<script src="namegen.js?v=227"></script><script id="app-js" src="app.js?v=227"></script>
 </body></html>

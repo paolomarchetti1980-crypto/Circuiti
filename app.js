@@ -60,7 +60,6 @@ const $ = s => document.querySelector(s);
 const PALETTE = [['Giallo','#f2c200'],['Arancio','#ff7a1a'],['Rosso','#e5312b'],['Rosa','#ff5fa2'],['Viola','#8a4dff'],
                  ['Blu','#1e6bff'],['Azzurro','#22c3e6'],['Verde','#23b45a'],['Bianco','#ffffff'],['Nero','#111111']];
 const GRADES = ['','3','4','5a','5b','5c','6a','6a+','6b','6b+','6c','6c+','7a','7a+','7b','7b+','7c','7c+','8a','8a+','8b','8b+','8c'];
-const STYLES = ['','Equilibrio','Dinamico','Forza','Tecnico','Resistenza','Coordinazione','Tacche','Svasi','Volumi'];
 const ANGLES = Array.from({length:41}, (_,i) => i);
 /* boulder: difficoltà a colori della palestra, dalla più facile alla più difficile */
 const DIFFS = [['bianco','Bianco','#ffffff'],['blu','Blu','#1e6bff'],['verde','Verde','#23b45a'],['giallo','Giallo','#f2c200'],['rosso','Rosso','#e5312b'],['nero','Nero','#111111']];
@@ -198,8 +197,6 @@ let EDIT = false, SB = null, BASE = null, ME = null;
 /* REAL_EDIT: l'account è dello staff. EDIT: in questo momento si modifica (falso se il gestore guarda "come cliente").
    ui.viewAs permette allo staff di vedere l'app come la vede un ruolo con meno permessi. */
 let REAL_EDIT = false;
-/* nuova parte clienti: finché NEWC_LIVE è false la vede solo lo staff, da menu ⋮ → Anteprima parte clienti */
-const NEWC_LIVE = true;
 /* account cliente e "Le mie salite": finché ACCT_LIVE è false li vede solo lo staff, da menu ⋮ → Anteprima con Le mie salite
    (prima bisogna collegare a Supabase un servizio per l'invio delle email) */
 const ACCT_LIVE = false;
@@ -217,7 +214,7 @@ const ACCT_LIVE = false;
 const acctTest = (() => { try{ return localStorage.getItem('mr-acct-test') === '1'; }catch(e){ return false; } })();
 const acctOn = () => ACCT_LIVE || acctTest || (REAL_EDIT && !!ui.prevNew);
 let CL = null;   /* account cliente: { id, email } */
-const newC = () => !EDIT && (NEWC_LIVE || !!ui.prevNew);
+const newC = () => !EDIT;   /* parte clienti: chi non sta tracciando (clienti e staff in anteprima) */
 /* chi salva le salite: il cliente, oppure lo staff mentre prova l'anteprima */
 const ACC = () => CL || (REAL_EDIT && ME && ME.uid ? { id: ME.uid, email: ME.email } : null);
 const isMgr = () => !ME || (ME.role === 'gestore' && ui.viewAs !== 'tracciatore' && ui.viewAs !== 'cliente');
@@ -592,19 +589,11 @@ function makeSeg(px0, W, H, opt){
       edge[i] = m > 255 ? 255 : m;
     }
   }
-  /* colore dominante = pannello */
-  const bins = new Int32Array(4096);
-  for(let i=0;i<N;i+=5){ bins[(px[i*4]>>4)*256 + (px[i*4+1]>>4)*16 + (px[i*4+2]>>4)]++; }
-  let bb = 0; for(let i=1;i<4096;i++) if(bins[i] > bins[bb]) bb = i;
-  let pr = 0, pg = 0, pbb = 0, pc = 0;
-  for(let i=0;i<N;i+=5){ if(((px[i*4]>>4)*256 + (px[i*4+1]>>4)*16 + (px[i*4+2]>>4)) === bb){ pr += px[i*4]; pg += px[i*4+1]; pbb += px[i*4+2]; pc++; } }
-  const PANEL = (function(){ const save = [px[0],px[1],px[2]]; return { r:pr/pc, g:pg/pc, b:pbb/pc }; })();
   function labOfRGB(r,g,b){
     const R = lin[Math.round(r)], G = lin[Math.round(g)], B = lin[Math.round(b)];
     const fX = fx((0.4124*R + 0.3576*G + 0.1805*B)/0.95047), fY = fx(0.2126*R + 0.7152*G + 0.0722*B), fZ = fx((0.0193*R + 0.1192*G + 0.9505*B)/1.08883);
     return [116*fY-16, 500*(fX-fY), 200*(fY-fZ)];
   }
-  const PLAB = labOfRGB(PANEL.r, PANEL.g, PANEL.b);
   const vis = new Int32Array(N); let stamp = 0;
   const queue = new Int32Array(Math.floor(N*0.03) + 16);
 
@@ -1641,7 +1630,6 @@ function cropLab(im, X0, Y0, W0, H0, max){
   const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(im, X0, Y0, W0, H0, 0, 0, cw, ch);
   return { d: g.getImageData(0, 0, cw, ch).data, cw, ch, f };
 }
-const labDist = (a, b) => Math.hypot((a[0] - b[0])*0.5, a[1] - b[1], a[2] - b[2]);
 async function smallOnVolume(w, x, y, r){
   if(!r.poly || r.poly.length < 6) return null;
   const L = Math.max(w.w, w.h), area = polyArea(r.poly);
@@ -4261,8 +4249,6 @@ function renderSheet(){
   else if(ui.sheet === 'pubchk') h = pubChkSheet();
   else if(ui.sheet === 'evnew') h = evSheet();
   else if(ui.sheet === 'circ' && c && EDIT && isSec(w)){
-    const gradeOpt = v => `<option value="${v}" ${(c.grade || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
-    const styleOpt = v => `<option value="${v}" ${(c.style || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
     const tags = bTags(c);
     const evNo = isEv(w) && !w.ev.colors;
     h = `<h2>${esc(bTitle(c))}</h2>`+
@@ -4293,7 +4279,6 @@ function renderSheet(){
       `<div class="row" style="margin-top:14px">${EDIT ? `<button class="btn primary" data-act="addc">+ Nuovo boulder</button>` : ''}<button class="btn" data-act="close">Chiudi</button></div>`;
   } else if(ui.sheet === 'circ' && c && EDIT){
     const gradeOpt = v => `<option value="${v}" ${(c.grade || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
-    const styleOpt = v => `<option value="${v}" ${(c.style || '') === v ? 'selected' : ''}>${v || '—'}</option>`;
     h = `<h2>Circuito</h2>`+
       `<label class="field">Nome<span style="display:flex;gap:8px;margin-top:4px"><input id="cname" value="${esc(c.name)}" maxlength="40" style="margin-top:0;flex:1"><button type="button" class="btn" data-act="cgen" aria-label="Proponi un nome" title="Proponi un nome" style="flex:none;font-size:20px;padding:6px 12px">🎲</button></span></label>`+
       `<label class="field">Tracciato il<input id="cdset" type="date" value="${esc(c.dateSet || '')}"></label>`+setterField(c)+
@@ -4372,8 +4357,6 @@ function renderSheet(){
       (canInstall() ? row('install', "Installa l'app", 'sulla schermata Home') : '')+
       (SB ? row('fbnew', 'Segnala un problema', 'o un suggerimento: arriva al gestore') : '')+
       `</div><h3 class="mhead">Account</h3><div class="list">`+
-      (SB && !REAL_EDIT ? row('login', 'Accesso staff', ui.authEmail ? 'sei entrato come ' + esc(ui.authEmail) + ', che non è nello staff' : 'per gestore e tracciatori') : '')+
-      (SB && !REAL_EDIT && ui.authEmail ? row('logout', 'Esci', esc(ui.authEmail)) : '')+
       (SB && (REAL_EDIT || ui.authEmail) ? row('setpass', 'Imposta password', 'per entrare senza aspettare l\'email') : '')+
       (SB && REAL_EDIT ? row('logout', 'Esci', ME ? esc(ME.email) + ' · ' + (ME.role === 'gestore' ? 'gestore' : 'tracciatore') : '') : '')+
       `</div>`+
@@ -5007,7 +4990,6 @@ document.addEventListener('click', e => {
   if(!EDIT && !PUBLIC_ACTS.includes(a)) return;
   if(!isMgr() && MGR_ACTS.includes(a)) return;
   switch(a){
-    case 'mode': if(EDIT && !scanHere() && !(b.dataset.v === 'wall' && !isMgr())){ S.mode = b.dataset.v; ui.sel = null; ui.csel = null; ui.move = ui.merge = false; ui.draft = []; ui.bdraw = false; ui.bline = false; ui.hnext = false; $('#stage').classList.remove('linedraw'); ui.redraw = null; ui.tool = 'detect'; render(); } break;
     case 'tool': ui.tool = b.dataset.v; ui.draft = []; ui.redraw = null; render(); break;
     case 'clrall':
       if(!w || !(w.holds || []).length) break;
@@ -5403,7 +5385,6 @@ document.addEventListener('click', e => {
       w.circuits = w.circuits.filter(x => x.id !== c.id);
       w.activeCircuit = w.circuits.length ? w.circuits[0].id : null; ui.sel = null; ui.nextRole = roleFor(curCircuit()); ui.nextHand = handFor(curCircuit());
       ui.sheet = null; ui.confirm = null; touch(); render(); renderSheet(); break;
-    case 'pickw': if(EDIT) S.mode = 'edit'; S.active = b.dataset.id; ui.lastSec[ui.section] = b.dataset.id; saveBUI(); ui.full = false; ui.sel = null; ui.zoom = 1; ui.move = ui.merge = false; ui.sheet = null; save(); render(); renderSheet(); break;
     case 'delw':
       if(!w || !isMgr()) break;
       if(ui.confirm !== 'delw'){ ui.confirm = 'delw'; renderSheet(); break; }
@@ -5448,7 +5429,6 @@ document.addEventListener('input', e => {
   if(e.target.id === 'cname' && c){ if(isSec(w)) c.name = e.target.value.trim(); else c.name = e.target.value || 'Circuito'; renderChips(); touch(); }
   if(e.target.id === 'wname' && w){ w.name = e.target.value || (isSec(w) ? 'Settore' : 'Muro'); renderTop(); touch(); }
   if(e.target.id === 'cgrade' && c){ if(e.target.value) c.grade = e.target.value; else delete c.grade; renderChips(); touch(); }
-  if(e.target.id === 'cstyle' && c){ if(e.target.value) c.style = e.target.value; else delete c.style; touch(); }
   if(e.target.id === 'cangle' && c){ if(e.target.value !== '') c.angle = +e.target.value; else delete c.angle; renderChips(); touch(); }
 });
 document.addEventListener('keydown', e => {
