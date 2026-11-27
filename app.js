@@ -3786,7 +3786,7 @@ const BADGES = [
   { id: 'flr', f: 'tent', name: 'Fulmine a ciel sereno', desc: 'Un boulder rosso o nero al primo tentativo', ok: s => s.flashR, left: s => 'un rosso o un nero al primo tentativo' },
   ...[[1, 'Non mollo'], [10, 'Testa dura'], [25, 'Irriducibile']].map(([k, n]) => ({ id: 'gr' + k, f: 'tent', name: n, desc: k === 1 ? 'Un percorso lavorato, chiuso in più sessioni' : k + ' percorsi lavorati, chiusi in più sessioni', ok: s => s.nGrit >= k, left: s => k === 1 ? 'chiudi un percorso lavorato' : s.nGrit + ' di ' + k, big: k > 1 ? String(k) : null })),
   /* "Giornata di grazia" su più livelli, secondo il grado dei boulder chiusi al primo tentativo nello stesso giorno */
-  ...[['gdv', 'Mano calda', 'verde', 'verdi', 3], ['gdf', 'Giornata di grazia', 'giallo', 'gialli', 3], ['gdr', 'Stato di grazia', 'rosso', 'rossi', 3], ['gdn', 'Giornata leggendaria', 'nero', 'neri', 2]].map(([id, n, g, gp, k]) => ({ id, f: 'tent', name: n,
+  ...[['gdv', 'Mano calda', 'verde', 'verdi', 3], ['gdf', 'Giornata di grazia', 'giallo', 'gialli', 3], ['gdr', 'Giornata leggendaria', 'rosso', 'rossi', 3]].map(([id, n, g, gp, k]) => ({ id, f: 'tent', name: n,
     desc: k + ' boulder ' + gp + (g === 'nero' ? '' : ' o più duri') + ' al primo tentativo nello stesso giorno', ok: s => s.dayFl[g] >= k, left: s => 'il tuo record in un giorno: ' + s.dayFl[g] })),
   { id: 'gdw', f: 'tent', name: 'Giornata da ricordare', desc: '3 percorsi lavorati (o superlavorati) chiusi nello stesso giorno', ok: s => s.dayWorked >= 3, left: s => 'record: ' + s.dayWorked + ' in un giorno' },
   ...[[1, 'Prima salita'], [5, 'Apriporta'], [20, 'Pioniere']].map(([k, n]) => ({ id: 'fa' + k, f: 'vel', name: n, desc: k === 1 ? 'Il primo cliente a chiudere un percorso nuovo' : 'Prima salita su ' + k + ' percorsi diversi', ok: s => s.nFirst >= k, left: s => k === 1 ? 'chiudi per primo un percorso appena tracciato' : s.nFirst + ' di ' + k, big: k > 1 ? String(k) : null })),
@@ -3910,7 +3910,7 @@ const B_LOOK = (() => {
   ser(['fr1', 'fr10', 'fr25'], 'sprout', (st, id) => st.nFresh / num(id), true);
   L.trail = { t: 'g', i: 'trail', pr: null }; L.last = { t: 's', i: 'hourglass', pr: null }; L.cesa = { t: 'g', i: 'whistle', pr: null };
   ser(['bt5', 'bt20', 'bt50'], 'flask', (st, id) => st.nBeta / num(id), true);
-  L.gdv = { t: 'b', i: 'calbolt', pr: st => st.dayFl.verde / 3 }; L.gdf = { t: 's', i: 'calbolt', pr: st => st.dayFl.giallo / 3 }; L.gdr = { t: 'g', i: 'calbolt', pr: st => st.dayFl.rosso / 3 }; L.gdn = { t: 'g', i: 'calbolt', pr: st => st.dayFl.nero / 2, sc: 1.15 }; L.gdw = { t: 'g', i: 'calstar', pr: st => st.dayWorked / 3 };
+  L.gdv = { t: 'b', i: 'calbolt', pr: st => st.dayFl.verde / 3 }; L.gdf = { t: 's', i: 'calbolt', pr: st => st.dayFl.giallo / 3 }; L.gdr = { t: 'g', i: 'calbolt', pr: st => st.dayFl.rosso / 3 }; L.gdw = { t: 'g', i: 'calstar', pr: st => st.dayWorked / 3 };
   ser(['tr5', 'tr25', 'tr50'], 'book', (st, id) => st.nTries / num(id), true);
   ser(['hi5', 'hi20'], 'up', (st, id) => st.hiUps / num(id)); L.hi5.t = 's';
   ser(['g1', 'g10', 'g50', 'g100'], ['heart', 'heart', 'heart', 'hearts'], (st, id) => st.nRate / num(id), true); L.g100.sc = 1.15;
