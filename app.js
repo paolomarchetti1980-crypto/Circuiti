@@ -3878,7 +3878,7 @@ const B_MID = { b: '#b5793f', s: '#aab1b9', g: '#dcae2a' };   /* tono intermedio
 /* per ogni badge: metallo, disegno e quanto manca (da 0 a 1) */
 const B_LOOK = (() => {
   /* ser: una serie di badge; ico può essere un elenco (un disegno per gradino); grow = il disegno cresce a ogni gradino */
-  const L = {}, ser = (ids, ico, pr, grow) => { const n = ids.length, T = n === 1 ? ['s'] : n === 2 ? ['b', 'g'] : n === 3 ? ['b', 's', 'g'] : n === 4 ? ['b', 's', 'g', 'g'] : n === 5 ? ['b', 'b', 's', 'g', 'g'] : ['b', 'b', 's', 's', 'g', 'g'];
+  const L = {}, ser = (ids, ico, pr, grow) => { const n = ids.length, T = n === 1 ? ['s'] : n === 2 ? ['b', 'g'] : n === 3 ? ['b', 's', 'g'] : n === 4 ? ['b', 's', 'g', 'g'] : n === 5 ? ['b', 'b', 's', 'g', 'g'] : ['b', 's', 'g', 'b', 's', 'g'];   /* 6 gradini = due terne, ognuna bronzo, argento, oro */
     ids.forEach((id, k) => { L[id] = { t: T[k], i: Array.isArray(ico) ? ico[k] : ico, pr: pr ? (st => pr(st, id)) : null, sc: grow ? 0.78 + 0.5 * k / Math.max(1, n - 1) : 1 }; }); };
   const num = id => +id.replace(/\D/g, '') || 1;
   ser(['primo', 's10', 's50'], ['peak1', 'peak2', 'peak3'], (st, id) => st.n / num(id));
