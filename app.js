@@ -3788,7 +3788,7 @@ const BADGES = [
   /* "Giornata di grazia" su più livelli, secondo il grado dei boulder chiusi al primo tentativo nello stesso giorno */
   ...[['gdv', 'Mano calda', 'verde', 'verdi', 3], ['gdf', 'Giornata di grazia', 'giallo', 'gialli', 3], ['gdr', 'Giornata leggendaria', 'rosso', 'rossi', 3]].map(([id, n, g, gp, k]) => ({ id, f: 'tent', name: n,
     desc: k + ' boulder ' + gp + (g === 'nero' ? '' : ' o più duri') + ' al primo tentativo nello stesso giorno', ok: s => s.dayFl[g] >= k, left: s => 'il tuo record in un giorno: ' + s.dayFl[g] })),
-  { id: 'gdw', f: 'tent', name: 'Giornata da ricordare', desc: '3 percorsi lavorati (o superlavorati) chiusi nello stesso giorno', ok: s => s.dayWorked >= 3, left: s => 'record: ' + s.dayWorked + ' in un giorno' },
+  { id: 'gdw', f: 'tent', name: 'Stato di grazia', desc: '3 percorsi lavorati (o superlavorati) chiusi nello stesso giorno', ok: s => s.dayWorked >= 3, left: s => 'record: ' + s.dayWorked + ' in un giorno' },
   ...[[1, 'Prima salita'], [5, 'Apriporta'], [20, 'Pioniere']].map(([k, n]) => ({ id: 'fa' + k, f: 'vel', name: n, desc: k === 1 ? 'Il primo cliente a chiudere un percorso nuovo' : 'Prima salita su ' + k + ' percorsi diversi', ok: s => s.nFirst >= k, left: s => k === 1 ? 'chiudi per primo un percorso appena tracciato' : s.nFirst + ' di ' + k, big: k > 1 ? String(k) : null })),
   /* primo flash: il primo cliente a chiudere un percorso al primo tentativo (a vista o flash); 'ffl' resta l'id del primo livello */
   ...[['ffl', 1, 'Il Paparazzo'], ['ffl5', 5, 'Flash Gordon'], ['ffl20', 20, 'The Flash']].map(([id, k, n]) => ({ id, f: 'vel', name: n,
